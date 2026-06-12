@@ -1,0 +1,13 @@
+{% macro pl_chip(amount, pct, currency) %}
+<span class="value-chip {{ amount|pl_class }}">
+  <span class="pl-amount">{% if currency == 'usd' %}{{ amount|pl_usd }}{% else %}{{ amount|pl_brl }}{% endif %}</span>
+  {% if pct is not none %}<span class="pl-pct">{{ pct|pl_pct }}</span>{% endif %}
+</span>
+{% endmacro %}
+
+{% macro pl_kpi(amount, pct, currency) %}
+<div class="kpi__value {{ amount|pl_class }}">
+  <span class="pl-amount">{% if currency == 'usd' %}{{ amount|pl_usd }}{% else %}{{ amount|pl_brl }}{% endif %}</span>
+  {% if pct is not none %}<span class="pl-pct">{{ pct|pl_pct }}</span>{% endif %}
+</div>
+{% endmacro %}

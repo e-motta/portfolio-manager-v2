@@ -1,0 +1,18 @@
+{% set link_cls = link_class|default('sidebar__link') %}
+{% set label_cls = label_class|default('sidebar__label') %}
+{% set group_cls = group_class|default('sidebar__group') %}
+<nav class="{{ nav_class|default('sidebar__nav') }}">
+  {% for section_name, items in nav_sections %}
+  <div class="{{ group_cls }}">
+    {% if section_name != "Overview" and show_labels|default(true) %}
+    <div class="{{ label_cls }}">{{ section_name }}</div>
+    {% endif %}
+    {% for item in items %}
+    <a href="{{ item.href }}"
+       class="{{ link_cls }}{% if request.url.path == item.href or request.url.path.startswith(item.prefix + '/') %} is-active{% endif %}">
+      {{ item.label }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</nav>

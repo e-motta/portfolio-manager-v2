@@ -1,0 +1,59 @@
+{% from "partials/icons.html" import icon_edit, icon_save, icon_cancel, icon_delete, icon_clear %}
+<tr id="asset-type-{{ asset_type.id }}" class="editable-row">
+  <form hx-post="/allocation/classes/{{ asset_type.id }}"
+        hx-target="#asset-type-{{ asset_type.id }}"
+        hx-swap="outerHTML"
+        class="row-form-table">
+    <td>
+      {% if asset_type.is_exchange_traded %}
+      <strong>{{ asset_type.name }}</strong>
+      {% else %}
+      <span class="view-mode"><strong>{{ asset_type.name }}</strong></span>
+      <input class="edit-mode" type="text" name="name" value="{{ asset_type.name }}" required>
+      {% endif %}
+    </td>
+    <td class="num">{{ asset_count }}</td>
+    <td>
+      {% if asset_type.target_pct is not none %}
+      <span class="view-mode editable-value">{{ "%.1f"|format(asset_type.target_pct * 100) }}%</span>
+      {% else %}
+      <span class="view-mode muted">—</span>
+      {% endif %}
+      <div class="edit-mode target-edit">
+        <input class="input-sm" type="text" name="target_pct" inputmode="decimal"
+               value="{% if asset_type.target_pct is not none %}{{ '%.1f'|format(asset_type.target_pct * 100) }}{% endif %}"
+               placeholder="No target" aria-label="Target weight percent">
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-clear-target"
+                aria-label="Remove target weight" title="Remove target weight">{{ icon_clear() }}</button>
+      </div>
+    </td>
+    <td class="actions-cell">
+      <div class="view-mode actions-inline">
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-edit"
+                aria-label="Edit" title="Edit">{{ icon_edit() }}</button>
+        {% if not asset_type.is_exchange_traded %}
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-delete"
+                hx-delete="/allocation/classes/{{ asset_type.id }}"
+                hx-target="#asset-type-{{ asset_type.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Delete this asset class?"
+                aria-label="Delete" title="Delete">{{ icon_delete() }}</button>
+        {% endif %}
+      </div>
+      <div class="edit-mode actions-inline">
+        <button type="submit" class="btn btn-secondary btn-small btn-icon-only"
+                aria-label="Save" title="Save">{{ icon_save() }}</button>
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-cancel-edit"
+                aria-label="Cancel" title="Cancel">{{ icon_cancel() }}</button>
+        {% if not asset_type.is_exchange_traded %}
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-delete"
+                hx-delete="/allocation/classes/{{ asset_type.id }}"
+                hx-target="#asset-type-{{ asset_type.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Delete this asset class?"
+                aria-label="Delete" title="Delete">{{ icon_delete() }}</button>
+        {% endif %}
+      </div>
+    </td>
+  </form>
+</tr>

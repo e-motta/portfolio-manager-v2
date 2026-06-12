@@ -1,0 +1,30 @@
+<div id="add-asset-class-modal" class="form-modal" hidden>
+  <div class="form-modal__backdrop" data-form-modal-dismiss tabindex="-1" aria-hidden="true"></div>
+  <div class="form-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="add-asset-class-modal-title">
+    <div class="form-modal__header">
+      <h2 id="add-asset-class-modal-title" class="form-modal__title">Add class</h2>
+      <button type="button"
+              class="form-modal__close btn btn-secondary btn-icon-only"
+              data-form-modal-dismiss
+              aria-label="Close">
+        <span aria-hidden="true">×</span>
+      </button>
+    </div>
+    <div class="form-modal__body">
+      <form class="inline-form form-grid"
+            action="/allocation/classes"
+            method="post">
+        <div class="field">
+          <label for="add-asset-class-name">Name</label>
+          <input id="add-asset-class-name" type="text" name="name" placeholder="Commodities" required>
+        </div>
+        <div class="field">
+          <label for="add-asset-class-target">Target % <span class="muted">(optional)</span></label>
+          <input id="add-asset-class-target" class="input-sm" type="text" name="target_pct"
+                 inputmode="decimal" placeholder="No target">
+        </div>
+        <button type="submit" class="btn btn-primary">Add class</button>
+      </form>
+    </div>
+  </div>
+</div>

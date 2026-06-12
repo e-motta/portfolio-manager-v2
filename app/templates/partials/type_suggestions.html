@@ -1,0 +1,59 @@
+{% from "partials/weight_column_hints.html" import weight_label_total, weight_label_alloc %}
+<div class="table-wrap table-wrap--flush">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th rowspan="2">Asset class</th>
+        <th rowspan="2" class="num">Market value</th>
+        <th colspan="2" class="num weight-group-head">Current %</th>
+        <th colspan="2" class="num weight-group-head">Target %</th>
+        <th rowspan="2" class="num">Target value</th>
+        <th rowspan="2">Trade</th>
+        <th rowspan="2" class="num">Adjustment</th>
+      </tr>
+      <tr>
+        <th class="num weight-subhead weight-subhead--total">{{ weight_label_total() }}</th>
+        <th class="num weight-subhead weight-subhead--alloc">{{ weight_label_alloc() }}</th>
+        <th class="num weight-subhead weight-subhead--total">{{ weight_label_total() }}</th>
+        <th class="num weight-subhead weight-subhead--alloc">{{ weight_label_alloc() }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in suggestions %}
+      <tr class="action-{{ item.action }}">
+        <td><span class="cell-primary">{{ item.label }}</span></td>
+        <td class="num">{{ item.current_value|brl }}</td>
+        <td class="num weight-cell">
+          <span class="weight-pct weight-pct--total">{{ "%.1f"|format(item.current_weight * 100) }}%</span>
+        </td>
+        <td class="num weight-cell">
+          {% if item.current_weight_allocation is not none %}
+          <span class="weight-pct weight-pct--alloc">{{ "%.1f"|format(item.current_weight_allocation * 100) }}%</span>
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td class="num weight-cell">
+          <span class="weight-pct weight-pct--total">{{ "%.1f"|format(item.target_weight * 100) }}%</span>
+        </td>
+        <td class="num weight-cell">
+          {% if item.target_weight_allocation is not none %}
+          <span class="weight-pct weight-pct--alloc">{{ "%.1f"|format(item.target_weight_allocation * 100) }}%</span>
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td class="num">{{ item.ideal_value|brl }}</td>
+        <td><span class="badge badge-{{ item.action }}">{{ item.action|action_label }}</span></td>
+        <td class="num">
+          {% if item.delta > 0 %}+{% endif %}{{ item.delta|brl }}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="9" class="empty-state">No asset classes with target weights.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

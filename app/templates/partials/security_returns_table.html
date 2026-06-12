@@ -1,0 +1,74 @@
+{% from "partials/pl_value.html" import pl_chip %}
+<div class="table-wrap table-wrap--flush">
+  <table class="data-table pnl-table">
+    <colgroup>
+      <col class="col-symbol">
+      <col class="col-num">
+      <col class="col-num">
+      <col class="col-num">
+      <col class="col-num">
+      <col class="col-num">
+      <col class="col-num">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Ticker</th>
+        <th class="num">Unrealized P/L (USD)</th>
+        <th class="num">Dividends net (USD)</th>
+        <th class="num">Total return (USD)</th>
+        <th class="num">Total return (BRL)</th>
+        <th class="num">Payments</th>
+        <th class="num">Gross div. (USD)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in security_returns %}
+      <tr>
+        <td class="symbol-cell" title="{{ item.name }}">
+          <span class="ticker">{{ item.symbol }}</span>
+          <div class="cell-sub symbol-name">{{ item.name }}</div>
+        </td>
+        <td class="num">{{ pl_chip(item.unrealized_pl_usd, item.unrealized_pl_pct_usd, 'usd') }}</td>
+        <td class="num">
+          {% if item.dividend_net_usd > 0 %}
+          {{ item.dividend_net_usd|usd }}
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td class="num">{{ pl_chip(item.total_return_usd, item.total_return_pct_usd, 'usd') }}</td>
+        <td class="num">{{ pl_chip(item.total_return_brl, item.total_return_pct_brl, 'brl') }}</td>
+        <td class="num">
+          {% if item.dividend_payment_count > 0 %}
+          {{ item.dividend_payment_count }}
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td class="num">
+          {% if item.dividend_gross_usd > 0 %}
+          {{ item.dividend_gross_usd|usd }}
+          {% else %}
+          <span class="muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty-state">No securities or dividends yet.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if security_returns %}
+    <tfoot>
+      <tr class="total-row">
+        <td><strong>Total</strong></td>
+        <td class="num">{{ pl_chip(return_totals.unrealized_pl_usd, return_totals.unrealized_pl_pct_usd, 'usd') }}</td>
+        <td class="num">{{ return_totals.dividend_net_usd|usd }}</td>
+        <td class="num">{{ pl_chip(return_totals.total_return_usd, return_totals.total_return_pct_usd, 'usd') }}</td>
+        <td class="num">{{ pl_chip(return_totals.total_return_brl, return_totals.total_return_pct_brl, 'brl') }}</td>
+        <td class="num">{% if dividend_count %}{{ dividend_count }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="num">{{ return_totals.dividend_gross_usd|usd }}</td>
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</div>

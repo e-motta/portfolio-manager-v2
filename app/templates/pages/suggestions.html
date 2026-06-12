@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Rebalancing — Portfolio Manager{% endblock %}
+{% block topbar_title %}Rebalancing{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>Rebalancing</h1>
+  <p>Trade suggestions to move the portfolio toward target weights</p>
+</section>
+
+<div class="panel">
+  <div class="panel__header"><h2 class="panel__title">Parameters</h2></div>
+  <div class="form-panel">
+    <div class="inline-form form-grid">
+      <div class="field">
+        <span class="field-label">Mode</span>
+        <div class="btn-group">
+          <label>
+            <input type="radio" name="mode" id="mode-buy-only" value="buy_only" checked>
+            Cash-only
+          </label>
+          <label>
+            <input type="radio" name="mode" id="mode-buy-sell" value="buy_and_sell">
+            Full rebalance
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <label for="suggestion-cash">Cash to deploy (BRL)</label>
+        <input id="suggestion-cash" type="number" name="new_cash" value="0" min="0" step="0.01">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel__header"><h2 class="panel__title">By asset class</h2></div>
+  <div id="type-suggestions-panel"
+       hx-get="/allocation/rebalance/types?mode=buy_only&new_cash=0"
+       hx-trigger="load, change from:.btn-group, change from:#suggestion-cash"
+       hx-include=".btn-group, #suggestion-cash">
+    <div class="htmx-indicator"><span class="spinner"></span> Loading…</div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel__header"><h2 class="panel__title">By holding</h2></div>
+  <div id="security-suggestions-panel"
+       hx-get="/allocation/rebalance/securities?mode=buy_only&new_cash=0"
+       hx-trigger="load, change from:.btn-group, change from:#suggestion-cash"
+       hx-include=".btn-group, #suggestion-cash">
+    <div class="htmx-indicator"><span class="spinner"></span> Loading…</div>
+  </div>
+</div>
+{% endblock %}

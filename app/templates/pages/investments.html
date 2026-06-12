@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon_add %}
+
+{% block title %}Other — Portfolio Manager{% endblock %}
+{% block topbar_title %}Other{% endblock %}
+{% block topbar_actions %}
+<div class="topbar__action-group">
+  <button type="button" class="btn btn-secondary btn-small"
+          data-form-modal-open="add-investment-modal">
+    Add investment
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>Other</h1>
+  <p>{{ investment_count }} positions outside securities · BRL</p>
+</section>
+
+<div class="kpi-grid">
+  <div class="kpi kpi--featured">
+    <div class="kpi__label">Total value</div>
+    <div class="kpi__value">{{ total_current|brl }}</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi__label">Positions</div>
+    <div class="kpi__value">{{ investment_count }}</div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel__header"><h2 class="panel__title">By bank / institution</h2></div>
+  <div class="table-wrap table-wrap--flush">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Bank / institution</th>
+          <th class="num">Positions</th>
+          <th class="num">Total value</th>
+          <th class="num">Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in institution_summaries %}
+        <tr>
+          <td><span class="cell-primary">{{ row.institution }}</span></td>
+          <td class="num">{{ row.position_count }}</td>
+          <td class="num"><span class="money">{{ row.total_value|brl }}</span></td>
+          <td class="num">{{ "%.1f"|format(row.weight * 100) }}%</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="empty-state">No positions yet.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if institution_summaries %}
+      <tfoot>
+        <tr class="total-row">
+          <td><strong>Total</strong></td>
+          <td class="num"><strong>{{ investment_count }}</strong></td>
+          <td class="num"><strong>{{ total_current|brl }}</strong></td>
+          <td class="num"><strong>{% if total_current > 0 %}100.0%{% else %}—{% endif %}</strong></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel__header">
+    <h2 class="panel__title">Positions</h2>
+    <div class="panel__actions">
+      <button type="button" class="btn btn-secondary btn-small"
+              data-form-modal-open="add-investment-modal">
+        {{ icon_add() }} Add investment
+      </button>
+    </div>
+  </div>
+  <div class="table-wrap table-wrap--flush">
+    <table class="data-table investments-table">
+      <colgroup>
+        <col class="col-symbol">
+        <col class="col-symbol">
+        <col class="col-symbol">
+        <col class="col-num">
+        <col class="col-date">
+        <col class="col-actions">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Bank / institution</th>
+          <th>Investment</th>
+          <th>Asset class</th>
+          <th class="num">Current value</th>
+          <th>Updated</th>
+          <th class="actions-cell">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="investments-body">
+        {% for investment in investments %}
+          {% include "partials/investment_row.html" %}
+        {% else %}
+        <tr><td colspan="6" class="empty-state">No positions yet. Use Add investment to record your first position.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if investments %}
+      <tfoot>
+        <tr class="total-row">
+          <td colspan="3"><strong>Total</strong></td>
+          <td class="num"><strong>{{ total_current|brl }}</strong></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_modals %}
+{% include "partials/add_investment_modal.html" %}
+{% endblock %}

@@ -1,0 +1,39 @@
+{% from "partials/icons.html" import icon_edit, icon_save, icon_cancel %}
+<tr id="symbol-{{ item.symbol }}">
+  <td class="symbol-cell" title="{{ item.name }}">
+    <div class="symbol-title">
+      <span class="ticker">{{ item.symbol }}</span>
+      {% if item.has_provisional_fx %}
+      <span class="badge badge-warn" title="At least one tax lot uses an estimated FX rate." aria-label="At least one tax lot uses an estimated FX rate.">Est.</span>
+      {% endif %}
+    </div>
+    <div class="cell-sub symbol-name">{{ item.name }}</div>
+  </td>
+  <td class="num">{{ item.total_position|num(4) }}</td>
+  <td class="num">{{ item.avg_purchase_price_usd|usd }}</td>
+  <td class="num"><span class="money">{{ item.avg_purchase_price_brl|brl }}</span></td>
+  <td class="num">{{ item.current_price_usd|usd }}</td>
+  <td class="num"><span class="money">{{ item.current_price_brl|brl }}</span></td>
+  <td class="num"><strong><span class="money">{{ item.current_value_brl|brl }}</span></strong></td>
+  <td class="num">{{ "%.1f"|format(item.current_weight * 100) }}%</td>
+  <td class="num sticky-col">
+    <div class="editable-cell">
+      <span class="view-mode editable-value">{{ "%.1f"|format(item.target_pct * 100) }}%</span>
+      <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-edit view-mode"
+              aria-label="Edit target weight" title="Edit target weight">{{ icon_edit() }}</button>
+      <form hx-post="/portfolio/holdings/symbols/{{ item.symbol }}"
+            hx-target="#symbol-{{ item.symbol }}"
+            hx-swap="outerHTML swap:0 settle:0"
+            hx-indicator="none"
+            class="edit-mode compact-form">
+        <input type="number" name="target_pct"
+               value="{{ '%.1f'|format(item.target_pct * 100) }}"
+               step="0.1" min="0" max="100" required>
+        <button type="submit" class="btn btn-secondary btn-small btn-icon-only"
+                aria-label="Save" title="Save">{{ icon_save() }}</button>
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-cancel-edit"
+                aria-label="Cancel" title="Cancel">{{ icon_cancel() }}</button>
+      </form>
+    </div>
+  </td>
+</tr>

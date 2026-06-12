@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon_add %}
+
+{% block title %}Asset Classes — Portfolio Manager{% endblock %}
+{% block topbar_title %}Asset classes{% endblock %}
+{% block topbar_actions %}
+<div class="topbar__action-group">
+  <button type="button" class="btn btn-secondary btn-small"
+          data-form-modal-open="add-asset-class-modal">
+    Add class
+  </button>
+  {% if weighted_count == 0 %}
+  <span class="status-pill warn">No target weights set</span>
+  {% elif target_total == 1 %}
+  <span class="status-pill ok">Targets = 100%</span>
+  {% else %}
+  <span class="status-pill warn">Targets = {{ "%.1f"|format(target_total * 100) }}%</span>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>Asset classes</h1>
+  <p>Target weights for allocation policy · leave blank to exclude a class from drift and rebalancing</p>
+</section>
+
+<div class="panel">
+  <div class="panel__header">
+    <h2 class="panel__title">Classes</h2>
+    <div class="panel__actions">
+      <button type="button" class="btn btn-secondary btn-small"
+              data-form-modal-open="add-asset-class-modal">
+        {{ icon_add() }} Add class
+      </button>
+    </div>
+  </div>
+  <div class="table-wrap table-wrap--flush">
+    <table class="data-table asset-types-table">
+      <thead>
+        <tr>
+          <th>Asset class</th>
+          <th class="num">Assets</th>
+          <th>Target weight</th>
+          <th class="actions-cell">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="asset-types-body">
+        {% for asset_type in asset_types %}
+          {% with asset_count=get_asset_count(asset_type) %}
+            {% include "partials/asset_type_row.html" %}
+          {% endwith %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_modals %}
+{% include "partials/add_asset_class_modal.html" %}
+{% endblock %}

@@ -1,0 +1,54 @@
+{% from "partials/icons.html" import icon_edit, icon_save, icon_cancel, icon_delete %}
+<tr id="dividend-{{ dividend.id }}" class="editable-row">
+  <form hx-post="/portfolio/holdings/dividends/{{ dividend.id }}"
+        hx-target="#dividend-{{ dividend.id }}"
+        hx-swap="outerHTML"
+        class="row-form-table">
+    <td class="symbol-cell"><span class="ticker">{{ dividend.symbol }}</span></td>
+    <td class="col-date">
+      <span class="view-mode editable-value">{{ dividend.pay_date|date_fmt }}</span>
+      <input class="edit-mode input-date" type="date" name="pay_date"
+             value="{{ dividend.pay_date.isoformat() }}" required>
+    </td>
+    <td class="num">
+      <span class="view-mode editable-value">{{ dividend.gross_amount_usd|usd }}</span>
+      <input class="edit-mode input-price" type="number" name="gross_amount_usd"
+             value="{{ dividend.gross_amount_usd|num(2) }}" step="0.01" min="0" required>
+    </td>
+    <td class="num">
+      <span class="view-mode editable-value">{{ dividend.withholding_tax_usd|usd }}</span>
+      <input class="edit-mode input-price" type="number" name="withholding_tax_usd"
+             value="{{ dividend.withholding_tax_usd|num(2) }}" step="0.01" min="0" required>
+    </td>
+    <td class="num">{{ dividend.net_amount_usd|usd }}</td>
+    <td class="source-cell">
+      <span class="badge">
+        {{ 'Manual' if dividend.source == 'manual' else 'Statement' }}
+      </span>
+    </td>
+    <td class="actions-cell sticky-col">
+      <div class="view-mode actions-inline">
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-edit"
+                aria-label="Edit" title="Edit">{{ icon_edit() }}</button>
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-delete"
+                hx-delete="/portfolio/holdings/dividends/{{ dividend.id }}"
+                hx-target="#dividend-{{ dividend.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Delete this dividend?"
+                aria-label="Delete" title="Delete">{{ icon_delete() }}</button>
+      </div>
+      <div class="edit-mode actions-inline">
+        <button type="submit" class="btn btn-secondary btn-small btn-icon-only"
+                aria-label="Save" title="Save">{{ icon_save() }}</button>
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-cancel-edit"
+                aria-label="Cancel" title="Cancel">{{ icon_cancel() }}</button>
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-delete"
+                hx-delete="/portfolio/holdings/dividends/{{ dividend.id }}"
+                hx-target="#dividend-{{ dividend.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Delete this dividend?"
+                aria-label="Delete" title="Delete">{{ icon_delete() }}</button>
+      </div>
+    </td>
+  </form>
+</tr>
