@@ -14,12 +14,17 @@ from app.web.helpers import (
     build_dashboard_rows,
     get_consolidated_securities,
     get_investments,
+    get_portfolio,
 )
 
 
 def capture_portfolio_snapshot(session: Session, snapshot_date: date) -> PortfolioSnapshot:
+    portfolio = get_portfolio(session)
     existing = session.exec(
-        select(PortfolioSnapshot).where(PortfolioSnapshot.snapshot_date == snapshot_date)
+        select(PortfolioSnapshot).where(
+            PortfolioSnapshot.portfolio_id == portfolio.id,
+            PortfolioSnapshot.snapshot_date == snapshot_date,
+        )
     ).first()
     if existing:
         session.delete(existing)
@@ -33,7 +38,11 @@ def capture_portfolio_snapshot(session: Session, snapshot_date: date) -> Portfol
         start=Decimal("0"),
     )
 
-    snapshot = PortfolioSnapshot(snapshot_date=snapshot_date, total_value=total_value)
+    snapshot = PortfolioSnapshot(
+        portfolio_id=portfolio.id,
+        snapshot_date=snapshot_date,
+        total_value=total_value,
+    )
     session.add(snapshot)
     session.flush()
 
@@ -78,9 +87,11 @@ def capture_portfolio_snapshot(session: Session, snapshot_date: date) -> Portfol
 
 
 def get_snapshots(session: Session) -> list[PortfolioSnapshot]:
+    portfolio = get_portfolio(session)
     return list(
         session.exec(
             select(PortfolioSnapshot)
+            .where(PortfolioSnapshot.portfolio_id == portfolio.id)
             .options(selectinload(PortfolioSnapshot.asset_classes))  # type: ignore[arg-type]
             .order_by(PortfolioSnapshot.snapshot_date.desc())
         ).all()
@@ -88,9 +99,13 @@ def get_snapshots(session: Session) -> list[PortfolioSnapshot]:
 
 
 def get_snapshot(session: Session, snapshot_id) -> PortfolioSnapshot | None:
+    portfolio = get_portfolio(session)
     return session.exec(
         select(PortfolioSnapshot)
-        .where(PortfolioSnapshot.id == snapshot_id)
+        .where(
+            PortfolioSnapshot.id == snapshot_id,
+            PortfolioSnapshot.portfolio_id == portfolio.id,
+        )
         .options(
             selectinload(PortfolioSnapshot.asset_classes),  # type: ignore[arg-type]
             selectinload(PortfolioSnapshot.investments),  # type: ignore[arg-type]

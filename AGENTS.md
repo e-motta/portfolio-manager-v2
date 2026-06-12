@@ -46,8 +46,13 @@ Follow the [official FastAPI skill](https://github.com/fastapi/fastapi/blob/mast
 - **`buy_only`**: delta = max(ideal - current, 0); scale buys if sum > new_cash
 - **`buy_and_sell`**: delta = ideal - current (negative = sell)
 
-## Do not
+## Auth
 
-- Add auth or multi-user features without explicit request
+- Google OAuth via `/auth/login`; session cookie stores `user_id`
+- Env: `SECRET_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` (see `.env.example`)
+- First login creates an empty portfolio with default asset types via `ensure_user_portfolio`
+- `bind_current_user` sets `session.info["user_id"]` for scoped queries
+
+## Do not
 - Put business logic in route handlers or templates
 - Use `ORJSONResponse` or Pydantic `RootModel`

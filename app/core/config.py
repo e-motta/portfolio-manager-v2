@@ -1,13 +1,24 @@
-import os
+import secrets
 
-from pydantic_settings import BaseSettings
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./local.db")
-    TEST_DATABASE_URL: str = os.getenv("TEST_DATABASE_URL", "sqlite:///:memory:")
-    DISPLAY_TIMEZONE: str = os.getenv("DISPLAY_TIMEZONE", "America/Sao_Paulo")
-    DISPLAY_TIMEZONE_LABEL: str = os.getenv("DISPLAY_TIMEZONE_LABEL", "BRT")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    DATABASE_URL: str = "sqlite:///./local.db"
+    TEST_DATABASE_URL: str = "sqlite:///:memory:"
+    DISPLAY_TIMEZONE: str = "America/Sao_Paulo"
+    DISPLAY_TIMEZONE_LABEL: str = "BRT"
+    SECRET_KEY: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://127.0.0.1:8000/auth/callback"
 
 
 settings = Settings()

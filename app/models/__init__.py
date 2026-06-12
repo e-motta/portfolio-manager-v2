@@ -10,6 +10,7 @@ from app.models.snapshot import (
     SnapshotInvestment,
 )
 from app.models.symbol_target import SymbolTarget
+from app.models.user import User
 
 __all__ = [
     "Portfolio",
@@ -23,4 +24,5 @@ __all__ = [
     "SecurityLot",
     "Dividend",
     "SymbolTarget",
+    "User",
 ]

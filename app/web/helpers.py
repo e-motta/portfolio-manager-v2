@@ -4,6 +4,7 @@ from typing import NamedTuple
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
+from app.core.auth import get_current_user_id
 from app.models.asset_type import AssetType
 from app.models.dividend import Dividend
 from app.models.investment import Investment
@@ -28,9 +29,12 @@ from app.services.securities import (
 
 
 def get_portfolio(session: Session) -> Portfolio:
-    portfolio = session.exec(select(Portfolio)).first()
+    user_id = get_current_user_id(session)
+    portfolio = session.exec(
+        select(Portfolio).where(Portfolio.user_id == user_id)
+    ).first()
     if not portfolio:
-        raise RuntimeError("Portfolio not seeded. Run migrations and init_db.")
+        raise RuntimeError("Portfolio not found for user.")
     return portfolio
 
 

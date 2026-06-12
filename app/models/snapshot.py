@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -11,9 +12,13 @@ if TYPE_CHECKING:
 
 class PortfolioSnapshot(SQLModel, table=True):
     __tablename__ = "portfolio_snapshots"
+    __table_args__ = (UniqueConstraint("portfolio_id", "snapshot_date"),)
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    snapshot_date: date = Field(index=True, unique=True)
+    portfolio_id: UUID | None = Field(
+        default=None, foreign_key="portfolios.id", ondelete="CASCADE"
+    )
+    snapshot_date: date = Field()
     total_value: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=2)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

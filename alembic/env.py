@@ -15,6 +15,7 @@ from app.models import (  # noqa: F401
     SnapshotHolding,
     SnapshotInvestment,
     SymbolTarget,
+    User,
 )
 
 config = context.config

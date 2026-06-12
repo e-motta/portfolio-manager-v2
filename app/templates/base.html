@@ -52,6 +52,23 @@
       <div class="topbar__title">{% block topbar_title %}Portfolio Manager{% endblock %}</div>
       <div class="topbar__actions">
         {% block topbar_actions %}{% endblock %}
+        {% if request.state.current_user is defined and request.state.current_user %}
+        <div class="user-menu">
+          {% if request.state.current_user.picture_url %}
+          <img
+            class="user-menu__avatar"
+            src="{{ request.state.current_user.picture_url }}"
+            alt=""
+            width="28"
+            height="28"
+          >
+          {% endif %}
+          <span class="user-menu__name">{{ request.state.current_user.name or request.state.current_user.email }}</span>
+          <form method="post" action="/auth/logout" class="user-menu__logout">
+            <button type="submit" class="btn btn--ghost btn--sm">Sign out</button>
+          </form>
+        </div>
+        {% endif %}
       </div>
     </header>
 

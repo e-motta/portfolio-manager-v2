@@ -1,21 +1,34 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
 
+from app.core.auth import bind_current_user
 from app.core.db import SessionDep
 from app.services.prices import refresh_all_exchange_traded_prices
 from app.web.navigation import LEGACY_REDIRECTS
-from app.web.routes import asset_types, dashboard, investments, securities, snapshots, suggestions
+from app.web.routes import (
+    asset_types,
+    auth,
+    dashboard,
+    investments,
+    securities,
+    snapshots,
+    suggestions,
+)
 
 router = APIRouter()
-router.include_router(dashboard.router)
-router.include_router(asset_types.router)
-router.include_router(investments.router)
-router.include_router(securities.router)
-router.include_router(snapshots.router)
-router.include_router(suggestions.router)
+router.include_router(auth.router)
+
+protected = APIRouter(dependencies=[Depends(bind_current_user)])
+protected.include_router(dashboard.router)
+protected.include_router(asset_types.router)
+protected.include_router(investments.router)
+protected.include_router(securities.router)
+protected.include_router(snapshots.router)
+protected.include_router(suggestions.router)
+router.include_router(protected)
 
 
-@router.post("/prices/refresh")
+@router.post("/prices/refresh", dependencies=[Depends(bind_current_user)])
 def refresh_prices(session: SessionDep) -> RedirectResponse:
     refresh_all_exchange_traded_prices(session)
     return RedirectResponse(url="/portfolio/holdings", status_code=303)
@@ -34,4 +47,5 @@ for _legacy_path, _target_path in LEGACY_REDIRECTS.items():
         _legacy_redirect(_target_path),
         methods=["GET"],
         include_in_schema=False,
+        dependencies=[Depends(bind_current_user)],
     )

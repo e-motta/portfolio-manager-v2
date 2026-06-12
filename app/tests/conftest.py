@@ -10,14 +10,17 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 
+from app.core.auth import bind_user_to_session
 from app.core.config import settings
 from app.core.db import init_db
+from app.services.auth import ensure_user_portfolio
 from app.main import app
 from app.models.asset_type import AssetType
 from app.models.dividend import Dividend
 from app.models.investment import Investment
 from app.models.security import SecurityLot
 from app.models.symbol_target import SymbolTarget
+from app.models.user import User
 from app.services.dividends import compute_net_amount
 from app.services import prices
 
@@ -32,6 +35,16 @@ def session_fixture():
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
         init_db(session)
+        user = User(
+            email="test@example.com",
+            google_sub="test-google-sub",
+            name="Test User",
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        ensure_user_portfolio(session, user)
+        bind_user_to_session(session, user)
         yield session
 
 
