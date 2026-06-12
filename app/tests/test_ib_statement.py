@@ -22,10 +22,9 @@ from app.services.ib_statement import (
 from app.tests.conftest import make_lot
 
 
-EXAMPLE_CSV = Path(__file__).resolve().parents[2] / "examples" / "U00000001_2024_2024.csv"
-POSITIONS_ONLY_CSV = (
-    Path(__file__).resolve().parents[2] / "examples" / "U00000001_20260101_20260609.csv"
-)
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+EXAMPLE_CSV = FIXTURES / "U00000001_2024_2024.csv"
+POSITIONS_ONLY_CSV = FIXTURES / "U00000001_20260101_20260609.csv"
 
 
 @pytest.fixture(autouse=True)

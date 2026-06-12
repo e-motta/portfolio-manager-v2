@@ -1,0 +1,38 @@
+﻿Statement,Header,Field Name,Field Value
+Statement,Data,BrokerName,Interactive Brokers LLC
+Statement,Data,Title,Activity Statement
+Statement,Data,Period,"January 1, 2026 - June 9, 2026"
+Statement,Data,WhenGenerated,"2026-06-09, 12:00:00 EDT"
+Account Information,Header,Field Name,Field Value
+Account Information,Data,Name,Test User
+Account Information,Data,Account,U00000001
+Open Positions,Header,DataDiscriminator,Asset Category,Currency,Symbol,Quantity,Mult,Cost Price,Cost Basis,Close Price,Value,Unrealized P/L,Code
+Open Positions,Data,Summary,Stocks,USD,IJS,10.0000,1,50.00,500.00,55.00,550.00,50.00,
+Open Positions,Data,Summary,Stocks,USD,SCHH,120.0000,1,20.00,2400.00,22.00,2640.00,240.00,
+Open Positions,Data,Summary,Stocks,USD,VBR,5.0000,1,200.00,1000.00,210.00,1050.00,50.00,
+Open Positions,Data,Summary,Stocks,USD,VOOV,10.0000,1,180.00,1800.00,190.00,1900.00,100.00,
+Open Positions,Data,Summary,Stocks,USD,VTI,12.0000,1,100.00,1200.00,100.00,1200.00,0.00,
+Open Positions,Data,Summary,Stocks,USD,XLRE,25.0000,1,40.00,1000.00,42.00,1050.00,50.00,
+Dividends,Header,Currency,Date,Description,Amount
+Dividends,Data,USD,2026-03-20,IJS(US4642878791) Cash Dividend USD 1.00 per Share (Ordinary Dividend),10.00
+Dividends,Data,USD,2026-03-25,XLRE(US81369Y8600) Cash Dividend USD 1.00 per Share (Ordinary Dividend),25.00
+Dividends,Data,USD,2026-03-26,VOOV(US9219327031) Cash Dividend USD 1.00 per Share (Ordinary Dividend),10.00
+Dividends,Data,USD,2026-03-30,SCHH(US8085248479) Cash Dividend USD 1.00 per Share (Ordinary Dividend),120.00
+Dividends,Data,USD,2026-03-31,VBR(US9229086114) Cash Dividend USD 1.00 per Share (Ordinary Dividend),5.00
+Dividends,Data,USD,2026-03-31,VTI(US9229087690) Cash Dividend USD 1.00 per Share (Ordinary Dividend),12.00
+Dividends,Data,Total,,,182.00
+Withholding Tax,Header,Currency,Date,Description,Amount,Code
+Withholding Tax,Data,USD,2026-03-20,IJS(US4642878791) Cash Dividend USD 1.00 per Share - US Tax,-3.00,
+Withholding Tax,Data,USD,2026-03-25,XLRE(US81369Y8600) Cash Dividend USD 1.00 per Share - US Tax,-7.00,
+Withholding Tax,Data,USD,2026-03-26,VOOV(US9219327031) Cash Dividend USD 1.00 per Share - US Tax,-3.00,
+Withholding Tax,Data,USD,2026-03-30,SCHH(US8085248479) Cash Dividend USD 1.00 per Share - US Tax,-36.00,
+Withholding Tax,Data,USD,2026-03-31,VBR(US9229086114) Cash Dividend USD 1.00 per Share - US Tax,-1.00,
+Withholding Tax,Data,USD,2026-03-31,VTI(US9229087690) Cash Dividend USD 1.00 per Share - US Tax,-4.00,
+Withholding Tax,Data,Total,,,-54.00,
+Financial Instrument Information,Header,Asset Category,Symbol,Description,Conid,Security ID,Underlying,Listing Exch,Multiplier,Type,Code
+Financial Instrument Information,Data,Stocks,IJS,ISHARES S&P SMALL-CAP 600 VA,10435409,US4642878791,IJS,ARCA,1,ETF,
+Financial Instrument Information,Data,Stocks,SCHH,SCHWAB US REIT ETF,82817278,US8085248479,SCHH,ARCA,1,ETF,
+Financial Instrument Information,Data,Stocks,VBR,VANGUARD SMALL-CAP VALUE ETF,27638062,US9229086114,VBR,ARCA,1,ETF,
+Financial Instrument Information,Data,Stocks,VOOV,VANGUARD S&P 500 VALUE ETF,78645820,US9219327031,VOOV,ARCA,1,ETF,
+Financial Instrument Information,Data,Stocks,VTI,VANGUARD TOTAL STOCK MKT ETF,12340041,US9229087690,VTI,ARCA,1,ETF,
+Financial Instrument Information,Data,Stocks,XLRE,REAL ESTATE SELECT SECT SPDR,209048377,US81369Y8600,XLRE,ARCA,1,ETF,
