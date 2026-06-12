@@ -12,6 +12,8 @@ class User(SQLModel, table=True):
     google_sub: str = Field(unique=True, index=True)
     name: str = Field(default="")
     picture_url: str = Field(default="")
+    google_refresh_token: str | None = Field(default=None)
+    google_drive_folder_id: str | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     portfolios: list["Portfolio"] = Relationship(back_populates="user")  # noqa: F821

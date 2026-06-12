@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon_refresh %}
+
+{% block title %}Backups — Portfolio Manager{% endblock %}
+{% block topbar_title %}Backups{% endblock %}
+
+{% block content %}
+<section class="page-intro">
+  <h1>Google Drive backups</h1>
+  <p>Save and restore your full portfolio in Google Drive</p>
+</section>
+
+{% if saved %}
+<div class="panel panel--notice">
+  <p>Backup saved to Google Drive.</p>
+</div>
+{% endif %}
+{% if restored %}
+<div class="panel panel--notice">
+  <p>Portfolio restored from backup.</p>
+</div>
+{% endif %}
+{% if connected %}
+<div class="panel panel--notice">
+  <p>Google Drive connected.</p>
+</div>
+{% endif %}
+{% if error_message %}
+<div class="panel panel--error">
+  <p>{{ error_message }}</p>
+</div>
+{% endif %}
+
+{% if not google_configured %}
+<div class="panel">
+  <p class="empty-state">Google Drive backup requires Google OAuth credentials in the server environment.</p>
+</div>
+{% elif not drive_connected %}
+<div class="panel">
+  <div class="panel__header"><h2 class="panel__title">Connect Google Drive</h2></div>
+  <p class="panel__desc">
+    Grant access so Portfolio Manager can save backups in a dedicated folder on your Google Drive.
+  </p>
+  <div class="form-panel">
+    <a href="/backups/google/connect" class="btn btn-primary">Connect Google Drive</a>
+  </div>
+</div>
+{% else %}
+<div class="panel">
+  <div class="panel__header"><h2 class="panel__title">Create backup</h2></div>
+  <p class="panel__desc">
+    Exports asset classes, holdings, investments, dividends, targets, and snapshot history as JSON.
+  </p>
+  <div class="form-panel">
+    <form action="/backups/create" method="post">
+      <button type="submit" class="btn btn-primary">Save backup</button>
+    </form>
+  </div>
+</div>
+
+{% if drive_error %}
+<div class="panel panel--error">
+  <p>{{ drive_error }}</p>
+  <div class="panel__actions panel__actions--padded">
+    <a href="/backups/google/connect" class="btn btn-secondary">Reconnect Google Drive</a>
+  </div>
+</div>
+{% elif backups %}
+<div class="panel">
+  <div class="panel__header"><h2 class="panel__title">Saved backups</h2></div>
+  <div class="table-wrap table-wrap--flush">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>File</th>
+          <th class="num">Size</th>
+          <th class="actions-cell"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for backup in backups %}
+        <tr>
+          <td>
+            <div class="cell-primary">{{ backup.created_at|datetime_fmt }}</div>
+          </td>
+          <td>{{ backup.name }}</td>
+          <td class="num">{{ backup.size_bytes }} B</td>
+          <td class="actions-cell">
+            <button type="button" class="btn btn-secondary btn-small btn-icon-only"
+                    hx-post="/backups/{{ backup.file_id }}/restore"
+                    hx-confirm="Restore this backup? This replaces all current portfolio data."
+                    aria-label="Restore backup" title="Restore backup">{{ icon_refresh() }}</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="panel">
+  <p class="empty-state">No backups yet. Save your first backup above.</p>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

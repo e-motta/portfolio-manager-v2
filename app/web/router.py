@@ -8,6 +8,7 @@ from app.web.navigation import LEGACY_REDIRECTS
 from app.web.routes import (
     asset_types,
     auth,
+    backups,
     dashboard,
     investments,
     securities,
@@ -24,6 +25,7 @@ protected.include_router(asset_types.router)
 protected.include_router(investments.router)
 protected.include_router(securities.router)
 protected.include_router(snapshots.router)
+protected.include_router(backups.router)
 protected.include_router(suggestions.router)
 router.include_router(protected)
 

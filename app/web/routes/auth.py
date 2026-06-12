@@ -1,27 +1,19 @@
-from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from starlette.config import Config
+from urllib.parse import quote
 
 from app.core.config import settings
 from app.core.db import SessionDep
 from app.services.auth import ensure_user_portfolio, find_or_create_user
+from app.services.google_drive_auth import (
+    OAUTH_PURPOSE_DRIVE,
+    complete_drive_connection,
+    get_logged_in_user,
+)
+from app.services.google_oauth import oauth
 from app.web.dependencies import TemplatesDep
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-config = Config(environ={
-    "GOOGLE_CLIENT_ID": settings.GOOGLE_CLIENT_ID,
-    "GOOGLE_CLIENT_SECRET": settings.GOOGLE_CLIENT_SECRET,
-})
-oauth = OAuth(config)
-oauth.register(
-    name="google",
-    client_id=settings.GOOGLE_CLIENT_ID,
-    client_secret=settings.GOOGLE_CLIENT_SECRET,
-    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-    client_kwargs={"scope": "openid email profile"},
-)
 
 
 @router.get("/login")
@@ -39,8 +31,8 @@ def login_page(request: Request, templates: TemplatesDep):
 async def google_login(request: Request) -> RedirectResponse:
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Google login is not configured")
-    redirect_uri = settings.GOOGLE_REDIRECT_URI
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    request.session.pop("oauth_purpose", None)
+    return await oauth.google.authorize_redirect(request, settings.GOOGLE_REDIRECT_URI)
 
 
 @router.get("/callback")
@@ -49,6 +41,19 @@ async def google_callback(request: Request, session: SessionDep) -> RedirectResp
         raise HTTPException(status_code=503, detail="Google login is not configured")
 
     token = await oauth.google.authorize_access_token(request)
+    oauth_purpose = request.session.pop("oauth_purpose", None)
+
+    if oauth_purpose == OAUTH_PURPOSE_DRIVE:
+        user = get_logged_in_user(session, request.session.get("user_id"))
+        try:
+            complete_drive_connection(session, user, token)
+        except HTTPException as exc:
+            return RedirectResponse(
+                url=f"/backups?error={quote(exc.detail)}",
+                status_code=303,
+            )
+        return RedirectResponse(url="/backups?connected=1", status_code=303)
+
     userinfo = token.get("userinfo")
     if not userinfo:
         raise HTTPException(status_code=400, detail="Google did not return user info")

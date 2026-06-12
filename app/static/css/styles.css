@@ -434,6 +434,29 @@ body {
   overflow: hidden;
 }
 
+.panel--notice {
+  padding: 0.85rem 1.35rem;
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.panel--notice p,
+.panel--error p {
+  margin: 0;
+}
+
+.panel--error {
+  padding: 0.85rem 1.35rem 1.25rem;
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.panel__actions--padded {
+  margin-top: 0.85rem;
+}
+
 .panel__head,
 .panel > .panel__header {
   display: flex;
@@ -1431,6 +1454,7 @@ button,
   font-weight: 600;
   font-size: 0.8125rem;
   line-height: 1.2;
+  text-decoration: none;
   transition: background 0.12s, border-color 0.12s, box-shadow 0.12s, transform 0.1s;
 }
 

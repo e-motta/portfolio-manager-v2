@@ -25,7 +25,13 @@ NAV_SECTIONS = [
             NavItem("Rebalancing", "/allocation/rebalance", "/allocation/rebalance", "Allocation"),
         ],
     ),
-    ("History", [NavItem("Snapshots", "/history", "/history")]),
+    (
+        "History",
+        [
+            NavItem("Snapshots", "/history", "/history"),
+            NavItem("Backups", "/backups", "/backups"),
+        ],
+    ),
 ]
 
 LEGACY_REDIRECTS = {
