@@ -20,6 +20,11 @@
       <span class="view-mode cell-primary">{{ entry.description or "—" }}</span>
       <input class="edit-mode" type="text" name="description" value="{{ entry.description }}" required>
     </td>
+    <td>
+      <span class="view-mode">
+        <span class="finance-source-badge">{{ entry.source|finance_source }}</span>
+      </span>
+    </td>
     <td class="num">
       <span class="view-mode editable-value money pl-positive">{{ entry.amount|brl }}</span>
       <input class="edit-mode input-md" type="number" name="amount"

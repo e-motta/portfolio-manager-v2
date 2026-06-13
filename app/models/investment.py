@@ -17,6 +17,8 @@ class Investment(SQLModel, table=True):
     institution: str = Field(default="", index=True)
     name: str
     current_value: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=2)
+    source: str = Field(default="manual", index=True)
+    external_id: str | None = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

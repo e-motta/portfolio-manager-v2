@@ -14,6 +14,12 @@ class User(SQLModel, table=True):
     picture_url: str = Field(default="")
     google_refresh_token: str | None = Field(default=None)
     google_drive_folder_id: str | None = Field(default=None)
+    cumbuca_refresh_token: str | None = Field(default=None)
+    cumbuca_access_token: str | None = Field(default=None)
+    cumbuca_token_expires_at: datetime | None = Field(default=None)
+    cumbuca_oauth_client_id: str | None = Field(default=None)
+    cumbuca_oauth_client_secret: str | None = Field(default=None)
+    cumbuca_connected_at: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     portfolios: list["Portfolio"] = Relationship(back_populates="user")  # noqa: F821

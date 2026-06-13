@@ -22,7 +22,7 @@
     <div class="finance-kpi__sub">YTD {{ year_income|pl_brl }}</div>
   </div>
   <div class="finance-kpi finance-kpi--expense">
-    <div class="finance-kpi__label">Expenses</div>
+    <div class="finance-kpi__label">Summary expenses</div>
     <div class="finance-kpi__value pl-negative">{{ month_expenses|pl_brl }}</div>
     <div class="finance-kpi__sub">YTD {{ year_expenses|pl_brl }}</div>
   </div>
@@ -37,39 +37,7 @@
 
 <div class="finance-summary-sections">
 {% for section in summary_sections %}
-<section class="finance-section panel">
-  <div class="panel__header">
-    <div>
-      <h2 class="panel__title">{{ section.title }}</h2>
-      <p class="panel__hint">{{ section.subtitle }}</p>
-    </div>
-    {% if section.id == 'income' %}
-    <a class="btn btn-secondary btn-small" href="/finance/income?year={{ year }}&month={{ selected_month }}">Manage income</a>
-    {% elif section.id in ['expenses-contas', 'expenses-regular'] %}
-    <a class="btn btn-secondary btn-small" href="/finance/expenses?year={{ year }}&month={{ selected_month }}">Manage expenses</a>
-    {% endif %}
-  </div>
-  <ul class="finance-line-list">
-    {% for row in section.rows %}
-    {% set value = row.amounts.get(selected_month) %}
-    {% if row.editable %}
-    {% include "partials/finance_summary_line.html" %}
-    {% else %}
-    <li class="finance-line">
-      <span class="finance-line__label">{{ row.label }}</span>
-      <div class="finance-line__value">
-        <span class="money {{ value|pl_class }}">{{ value|pl_brl }}</span>
-        {% if row.key == 'outros' %}
-        <span class="finance-line__hint">From Income tab</span>
-        {% elif row.key in ['debito', 'dinheiro', 'reembolsos'] %}
-        <span class="finance-line__hint">Auto-calculated</span>
-        {% endif %}
-      </div>
-    </li>
-    {% endif %}
-    {% endfor %}
-  </ul>
-</section>
+{% include "partials/finance_summary_section.html" %}
 {% endfor %}
 </div>
 

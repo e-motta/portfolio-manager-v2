@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
@@ -17,14 +17,29 @@ from app.services.finance import (
     build_income_context,
     build_summary_context,
     create_expense_entries,
+    link_expense_reversal,
     normalize_summary_amount,
     resolve_month,
     resolve_year,
     upsert_summary_amount,
+    upsert_summary_section,
 )
 from app.web.dependencies import TemplatesDep, is_htmx
 
 router = APIRouter(prefix="/finance", tags=["finance"])
+
+
+def _parse_optional_date(value: str, field_name: str = "date") -> date | None:
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    try:
+        return date.fromisoformat(cleaned)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid {field_name}.",
+        ) from exc
 
 
 def _parse_expense_amount(value: str, field_name: str = "amount") -> Decimal:
@@ -113,6 +128,17 @@ def _finance_query(year: int, month: int | None = None) -> str:
     return query
 
 
+def _expense_row_context(context: dict, entry: FinanceExpenseEntry) -> dict:
+    return {
+        "entry": entry,
+        "month_labels": context["month_labels"],
+        "expense_categories": EXPENSE_CATEGORIES,
+        "payment_accounts": PAYMENT_ACCOUNTS,
+        "link_targets": context.get("link_targets", {}),
+        "show_month_column": context.get("show_month_column", True),
+    }
+
+
 def _page_shell(
     context: dict,
     *,
@@ -155,6 +181,24 @@ def summary_page(
         name="pages/finance_summary.html",
         context=context,
     )
+
+
+def _summary_section_context(
+    session: SessionDep,
+    user_id: UUID,
+    year: int,
+    month: int,
+    section_id: str,
+) -> dict | None:
+    context = build_summary_context(session, user_id, year, selected_month=month)
+    for section in context["summary_sections"]:
+        if section["id"] == section_id:
+            return {
+                "section": section,
+                "year": year,
+                "selected_month": month,
+            }
+    return None
 
 
 def _summary_line_context(
@@ -226,6 +270,70 @@ def update_summary_cell(
             request=request,
             name="partials/finance_summary_line.html",
             context=line_context,
+        )
+
+    return RedirectResponse(
+        url=f"/finance/summary?{_finance_query(parsed_year, parsed_month)}",
+        status_code=303,
+    )
+
+
+@router.post("/summary/section", response_model=None)
+def update_summary_section(
+    request: Request,
+    session: SessionDep,
+    templates: TemplatesDep,
+    current_user: CurrentUserDep,
+    year: Annotated[str, Form()],
+    month: Annotated[str, Form()],
+    section_id: Annotated[str, Form()],
+    line_key: Annotated[list[str], Form()],
+    amount: Annotated[list[str], Form()],
+) -> HTMLResponse | RedirectResponse:
+    parsed_year = _parse_year(year)
+    parsed_month = _parse_month(month)
+    section_id = section_id.strip()
+
+    if len(line_key) != len(amount):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Mismatched summary line updates.",
+        )
+
+    updates = {
+        key.strip(): _parse_amount(raw, "amount", allow_negative=True)
+        for key, raw in zip(line_key, amount, strict=True)
+    }
+    try:
+        upsert_summary_section(
+            session,
+            current_user.id,
+            parsed_year,
+            parsed_month,
+            section_id,
+            updates,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    section_context = _summary_section_context(
+        session,
+        current_user.id,
+        parsed_year,
+        parsed_month,
+        section_id,
+    )
+    if section_context is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    if is_htmx(request):
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/finance_summary_section.html",
+            context=section_context,
         )
 
     return RedirectResponse(
@@ -379,6 +487,7 @@ def create_expense_entry(
     vendor: Annotated[str, Form()],
     payment_account: Annotated[str, Form()],
     amount: Annotated[str, Form()],
+    transaction_date: Annotated[str, Form()] = "",
     installments: Annotated[str, Form()] = "",
     installments_enabled: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
@@ -411,6 +520,7 @@ def create_expense_entry(
             payment_account=payment_account,
             amount=parsed_amount,
             installments=parsed_installments,
+            transaction_date=_parse_optional_date(transaction_date),
         )
     except ValueError as exc:
         raise HTTPException(
@@ -438,6 +548,7 @@ def update_expense_entry(
     vendor: str = Form(default=""),
     payment_account: str = Form(default=""),
     amount: str = Form(default=""),
+    transaction_date: str = Form(default=""),
 ) -> HTMLResponse:
     entry = session.get(FinanceExpenseEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
@@ -463,6 +574,7 @@ def update_expense_entry(
         entry.payment_account = payment_account
     if amount:
         entry.amount = _parse_expense_amount(amount)
+    entry.transaction_date = _parse_optional_date(transaction_date)
     entry.updated_at = datetime.utcnow()
     session.add(entry)
     session.commit()
@@ -472,12 +584,54 @@ def update_expense_entry(
     return templates.TemplateResponse(
         request=request,
         name="partials/finance_expense_row.html",
-        context={
-            "entry": entry,
-            "month_labels": context["month_labels"],
-            "expense_categories": EXPENSE_CATEGORIES,
-            "payment_accounts": PAYMENT_ACCOUNTS,
-        },
+        context=_expense_row_context(context, entry),
+    )
+
+
+@router.post("/expenses/{entry_id}/link", response_class=HTMLResponse)
+def link_expense_reversal_entry(
+    request: Request,
+    session: SessionDep,
+    templates: TemplatesDep,
+    current_user: CurrentUserDep,
+    entry_id: UUID,
+    target_id: Annotated[str, Form()],
+) -> HTMLResponse:
+    try:
+        parsed_target_id = UUID(target_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid target expense.",
+        ) from exc
+
+    try:
+        target = link_expense_reversal(
+            session,
+            user_id=current_user.id,
+            reversal_id=entry_id,
+            target_id=parsed_target_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    session.commit()
+    session.refresh(target)
+
+    context = build_expenses_context(
+        session,
+        current_user.id,
+        target.year,
+        selected_month=target.month,
+    )
+    row_context = _expense_row_context(context, target)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/finance_expense_row_oob.html",
+        context=row_context,
     )
 
 

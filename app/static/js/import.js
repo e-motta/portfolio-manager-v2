@@ -307,7 +307,7 @@ function initImportPreview(root) {
 
   form.querySelectorAll("[data-import-row]").forEach((row) => {
     row.addEventListener("click", (event) => {
-      if (event.target.closest("input, button, a, label")) {
+      if (event.target.closest("input, button, a, label, select")) {
         return;
       }
       const box = row.querySelector(`input[name="${itemName}"]:not(:disabled)`);
@@ -329,4 +329,5 @@ function initImportPreview(root) {
 document.addEventListener("DOMContentLoaded", () => {
   bindImportModalDismiss();
   initImportDropzone(document);
+  initImportPreview(document);
 });

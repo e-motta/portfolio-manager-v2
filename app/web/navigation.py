@@ -30,6 +30,7 @@ NAV_SECTIONS = [
         [
             NavItem("Snapshots", "/history", "/history"),
             NavItem("Backups", "/backups", "/backups"),
+            NavItem("Open Finance", "/open-finance", "/open-finance"),
         ],
     ),
     (

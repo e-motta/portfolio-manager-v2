@@ -1,0 +1,44 @@
+{
+  "investments": [
+    {
+      "id": "inv-cdb-nubank-001",
+      "name": "CDB Liquidez Diária",
+      "type": "FIXED_INCOME",
+      "subtype": "CDB",
+      "institution": "Nubank",
+      "balance": 45000.0,
+      "amount": 45000.0,
+      "currencyCode": "BRL"
+    },
+    {
+      "id": "inv-tesouro-001",
+      "name": "Tesouro Selic 2029",
+      "type": "FIXED_INCOME",
+      "subtype": "TREASURY",
+      "institution": "XP",
+      "balance": 120000.0,
+      "amount": 120000.0,
+      "currencyCode": "BRL"
+    },
+    {
+      "id": "inv-fii-001",
+      "name": "HGLG11",
+      "type": "EQUITY",
+      "subtype": "REIT",
+      "institution": "XP",
+      "balance": 8500.0,
+      "amount": 100.0,
+      "currencyCode": "BRL"
+    },
+    {
+      "id": "inv-poupanca-001",
+      "name": "Poupança",
+      "type": "FIXED_INCOME",
+      "subtype": "SAVINGS",
+      "institution": "Banco do Brasil",
+      "balance": 12500.0,
+      "amount": 12500.0,
+      "currencyCode": "BRL"
+    }
+  ]
+}

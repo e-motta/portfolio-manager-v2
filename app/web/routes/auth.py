@@ -10,6 +10,11 @@ from app.services.google_drive_auth import (
     complete_drive_connection,
     get_logged_in_user,
 )
+from app.services.cumbuca_oauth import (
+    OAUTH_PURPOSE_CUMBUCA,
+    build_authorization_request,
+    complete_authorization,
+)
 from app.services.google_oauth import oauth
 from app.web.dependencies import TemplatesDep
 
@@ -80,3 +85,59 @@ async def google_callback(request: Request, session: SessionDep) -> RedirectResp
 def logout(request: Request) -> RedirectResponse:
     request.session.clear()
     return RedirectResponse(url="/auth/login", status_code=303)
+
+
+@router.get("/cumbuca")
+def cumbuca_login(request: Request, session: SessionDep) -> RedirectResponse:
+    user = get_logged_in_user(session, request.session.get("user_id"))
+    try:
+        authorization_url, state, verifier = build_authorization_request(session, user)
+    except HTTPException as exc:
+        return RedirectResponse(
+            url=f"/open-finance?error={quote(exc.detail)}",
+            status_code=303,
+        )
+    request.session["oauth_purpose"] = OAUTH_PURPOSE_CUMBUCA
+    request.session["cumbuca_oauth_state"] = state
+    request.session["cumbuca_code_verifier"] = verifier
+    return RedirectResponse(url=authorization_url, status_code=303)
+
+
+@router.get("/cumbuca/callback")
+def cumbuca_callback(request: Request, session: SessionDep) -> RedirectResponse:
+    user = get_logged_in_user(session, request.session.get("user_id"))
+    request.session.pop("oauth_purpose", None)
+
+    error = request.query_params.get("error")
+    if error:
+        description = request.query_params.get("error_description") or error
+        return RedirectResponse(
+            url=f"/open-finance?error={quote(description)}",
+            status_code=303,
+        )
+
+    state = request.query_params.get("state")
+    code = request.query_params.get("code")
+    expected_state = request.session.pop("cumbuca_oauth_state", None)
+    code_verifier = request.session.pop("cumbuca_code_verifier", None)
+
+    if not code or not code_verifier or state != expected_state:
+        return RedirectResponse(
+            url="/open-finance?error=Invalid%20Open%20Finance%20callback",
+            status_code=303,
+        )
+
+    try:
+        complete_authorization(
+            session,
+            user,
+            code=code,
+            code_verifier=code_verifier,
+        )
+    except HTTPException as exc:
+        return RedirectResponse(
+            url=f"/open-finance?error={quote(exc.detail)}",
+            status_code=303,
+        )
+
+    return RedirectResponse(url="/open-finance?connected=1", status_code=303)

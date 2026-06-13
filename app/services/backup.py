@@ -12,6 +12,7 @@ from app.models.finance import (
     FinanceExpenseEntry,
     FinanceIncomeEntry,
     FinanceSummaryAmount,
+    FinanceVendorCategory,
 )
 from app.models.investment import Investment
 from app.models.security import SecurityLot
@@ -50,6 +51,12 @@ def _parse_decimal(value: str | None) -> Decimal | None:
 
 
 def _parse_date(value: str) -> date:
+    return date.fromisoformat(value)
+
+
+def _parse_optional_date(value: str | None) -> date | None:
+    if not value:
+        return None
     return date.fromisoformat(value)
 
 
@@ -153,6 +160,8 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
                         "institution": investment.institution,
                         "name": investment.name,
                         "current_value": _serialize_decimal(investment.current_value),
+                        "source": investment.source,
+                        "external_id": investment.external_id,
                     }
                 )
 
@@ -218,6 +227,8 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
             "month": entry.month,
             "description": entry.description,
             "amount": _serialize_decimal(entry.amount),
+            "source": entry.source,
+            "external_id": entry.external_id,
             "created_at": _serialize_datetime(entry.created_at),
             "updated_at": _serialize_datetime(entry.updated_at),
         }
@@ -236,10 +247,15 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
         {
             "year": entry.year,
             "month": entry.month,
+            "transaction_date": entry.transaction_date.isoformat()
+            if entry.transaction_date
+            else None,
             "category": entry.category,
             "vendor": entry.vendor,
             "payment_account": entry.payment_account,
             "amount": _serialize_decimal(entry.amount),
+            "source": entry.source,
+            "external_id": entry.external_id,
             "created_at": _serialize_datetime(entry.created_at),
             "updated_at": _serialize_datetime(entry.updated_at),
         }
@@ -275,6 +291,20 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
         ).all()
     ]
 
+    finance_vendor_categories = [
+        {
+            "vendor_key": entry.vendor_key,
+            "category": entry.category,
+            "created_at": _serialize_datetime(entry.created_at),
+            "updated_at": _serialize_datetime(entry.updated_at),
+        }
+        for entry in session.exec(
+            select(FinanceVendorCategory)
+            .where(FinanceVendorCategory.user_id == user_id)
+            .order_by(FinanceVendorCategory.vendor_key)
+        ).all()
+    ]
+
     exported_at = datetime.now(timezone.utc)
     return {
         "version": BACKUP_VERSION,
@@ -289,6 +319,7 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
         "finance_income": finance_income,
         "finance_expenses": finance_expenses,
         "finance_summary": finance_summary,
+        "finance_vendor_categories": finance_vendor_categories,
     }
 
 
@@ -310,6 +341,10 @@ def _clear_finance_data(session: Session) -> None:
         session.delete(entry)
     for entry in session.exec(
         select(FinanceSummaryAmount).where(FinanceSummaryAmount.user_id == user_id)
+    ).all():
+        session.delete(entry)
+    for entry in session.exec(
+        select(FinanceVendorCategory).where(FinanceVendorCategory.user_id == user_id)
     ).all():
         session.delete(entry)
 
@@ -407,6 +442,8 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
                 institution=row.get("institution", ""),
                 name=row["name"],
                 current_value=_parse_decimal(row.get("current_value")) or Decimal("0"),
+                source=row.get("source", "manual"),
+                external_id=row.get("external_id"),
             )
         )
 
@@ -494,6 +531,8 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
             month=row["month"],
             description=row.get("description", ""),
             amount=_parse_decimal(row.get("amount")) or Decimal("0"),
+            source=row.get("source", "manual"),
+            external_id=row.get("external_id"),
         )
         if row.get("created_at"):
             entry.created_at = datetime.fromisoformat(row["created_at"])
@@ -506,10 +545,13 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
             user_id=user_id,
             year=row["year"],
             month=row["month"],
+            transaction_date=_parse_optional_date(row.get("transaction_date")),
             category=row["category"],
             vendor=row.get("vendor", ""),
             payment_account=row.get("payment_account", ""),
             amount=_parse_decimal(row.get("amount")) or Decimal("0"),
+            source=row.get("source", "manual"),
+            external_id=row.get("external_id"),
         )
         if row.get("created_at"):
             entry.created_at = datetime.fromisoformat(row["created_at"])
@@ -524,6 +566,18 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
             month=row["month"],
             line_key=row["line_key"],
             amount=_parse_decimal(row.get("amount")) or Decimal("0"),
+        )
+        if row.get("created_at"):
+            entry.created_at = datetime.fromisoformat(row["created_at"])
+        if row.get("updated_at"):
+            entry.updated_at = datetime.fromisoformat(row["updated_at"])
+        session.add(entry)
+
+    for row in payload.get("finance_vendor_categories", []):
+        entry = FinanceVendorCategory(
+            user_id=user_id,
+            vendor_key=row["vendor_key"],
+            category=row["category"],
         )
         if row.get("created_at"):
             entry.created_at = datetime.fromisoformat(row["created_at"])

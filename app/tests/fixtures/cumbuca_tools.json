@@ -1,0 +1,12 @@
+{
+  "tools": [
+    { "name": "list_accounts" },
+    { "name": "list_account_transactions" },
+    { "name": "list_credit_cards" },
+    { "name": "list_credit_card_bills" },
+    { "name": "list_credit_card_bill_transactions" },
+    { "name": "get_account" },
+    { "name": "get_consent_status" },
+    { "name": "revoke_consent" }
+  ]
+}

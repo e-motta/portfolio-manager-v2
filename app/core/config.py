@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = "http://127.0.0.1:8000/auth/callback"
+    CUMBUCA_MCP_URL: str = "https://mcp.cumbuca.com/mcp"
+    CUMBUCA_AUTH_SERVER: str = "https://idc.cumbuca.com/realms/cumbuca-mcp"
+    CUMBUCA_REDIRECT_URI: str = "http://127.0.0.1:8000/auth/cumbuca/callback"
+    CUMBUCA_OAUTH_SCOPES: str = "openid profile offline_access open-finance"
 
 
 settings = Settings()

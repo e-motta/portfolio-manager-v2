@@ -1,0 +1,168 @@
+{% if error %}
+<div class="open-finance-preview__error" role="alert">
+  <p>{{ error }}</p>
+  <div class="open-finance-preview__error-actions">
+    <a href="/open-finance" class="btn btn-secondary">Back to Open Finance</a>
+  </div>
+</div>
+{% elif rows %}
+{% from "partials/open_finance_category_select.html" import category_picker, category_badge, category_options with context %}
+{% if warnings %}
+<div class="open-finance-callout open-finance-callout--warn" role="status">
+  <p class="open-finance-callout__title">Some sources were skipped</p>
+  <ul class="open-finance-callout__list">
+    {% for warning in warnings %}
+    <li>{{ warning }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+<form action="{{ confirm_action }}"
+      method="post"
+      data-import-preview-form
+      data-import-item-name="selected_rows">
+  <input type="hidden" name="import_token" value="{{ import_token }}">
+
+  <div class="import-modal-summary open-finance-preview__summary">
+    <div class="import-modal-summary__meta">
+      <span class="import-modal-summary__eyebrow">{{ period_label }}</span>
+      <span class="import-modal-summary__date">{{ month_label }} {{ year }}</span>
+      {% if expense_mapping %}
+      <p class="open-finance-preview__mapping">{{ expense_mapping }}</p>
+      {% endif %}
+    </div>
+    <div class="import-modal-summary__badges">
+      <span class="import-count-badge import-count-badge--new">
+        <span class="import-count-badge__value">{{ new_count }}</span>
+        <span class="import-count-badge__label">new</span>
+      </span>
+      {% if existing_count > 0 %}
+      <span class="import-count-badge import-count-badge--held">
+        <span class="import-count-badge__value">{{ existing_count }}</span>
+        <span class="import-count-badge__label">already imported</span>
+      </span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if new_count > 0 or existing_count > 0 %}
+  <div class="open-finance-preview__toolbar">
+    {% if existing_count > 0 %}
+    <label class="open-finance-preview__toggle">
+      <input type="checkbox" data-of-toggle-imported>
+      Show already imported
+    </label>
+    {% endif %}
+    {% if new_count > 0 %}
+    <div class="open-finance-preview__bulk-category">
+      <label class="open-finance-preview__bulk-label" for="of-bulk-category">Apply to selected</label>
+      <div class="of-category-picker of-category-picker--toolbar of-category-picker--{{ expense_categories[0]|expense_category_slug }}"
+           data-of-bulk-picker
+           data-category="{{ expense_categories[0] }}">
+        <span class="of-category-picker__dot" aria-hidden="true"></span>
+        <select id="of-bulk-category"
+                class="of-category-picker__select"
+                data-of-bulk-category
+                aria-label="{{ expense_categories[0] }}">
+          {{ category_options(expense_categories[0]) }}
+        </select>
+      </div>
+      <button type="button"
+              class="btn btn-secondary btn-small"
+              data-of-apply-bulk-category>
+        Apply
+      </button>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="table-wrap table-wrap--flush import-modal-table-wrap">
+    <table class="data-table import-preview-table">
+      <thead>
+        <tr>
+          <th class="col-check">
+            {% if new_count > 0 %}
+            <input type="checkbox"
+                   id="import-select-all"
+                   data-import-select-all
+                   checked
+                   aria-label="Select all new transactions">
+            {% endif %}
+          </th>
+          <th>Date</th>
+          <th>Vendor</th>
+          <th class="col-category">Category</th>
+          <th>Account</th>
+          <th class="num">Amount</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="import-row{% if row.already_exists %} import-row--existing{% else %} import-row--new{% endif %}{% if not row.already_exists and row.category == 'Outros' %} import-row--needs-category{% endif %}"
+            data-import-row>
+          <td class="col-check">
+            {% if not row.already_exists %}
+            <label class="import-check">
+              <input type="checkbox"
+                     name="selected_rows"
+                     value="{{ row.row_key }}"
+                     checked
+                     aria-label="Import {{ row.vendor }}">
+            </label>
+            {% endif %}
+          </td>
+          <td>{{ row.transaction_date|date_fmt }}</td>
+          <td><span class="cell-primary">{{ row.vendor }}</span></td>
+          <td class="col-category">
+            {% if row.already_exists %}
+            {{ category_badge(row.category) }}
+            {% else %}
+            {{ category_picker("category_" ~ row.row_key, row.category, row_key=row.row_key) }}
+            {% endif %}
+          </td>
+          <td>{{ row.payment_account }}</td>
+          <td class="num {{ row.amount|pl_class }}">{{ row.amount|pl_brl }}</td>
+          <td>
+            {% if row.already_exists %}
+            <span class="status-pill muted">Imported</span>
+            {% elif row.is_reversal %}
+            <span class="status-pill status-pill--reversal">Reversal</span>
+            {% elif row.category == 'Outros' %}
+            <span class="status-pill warn">Review</span>
+            {% else %}
+            <span class="status-pill ok">New</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="import-modal__footer">
+    <p class="import-modal__selection">
+      <span data-import-selected-count>{{ new_count }}</span>
+      transaction{% if new_count != 1 %}s{% endif %} selected
+    </p>
+    <div class="import-modal__footer-actions">
+      <a href="/open-finance" class="btn btn-secondary">Cancel</a>
+      <button type="submit"
+              class="btn btn-primary"
+              data-import-confirm
+              {% if new_count == 0 %}disabled{% endif %}>
+        Import selected
+      </button>
+    </div>
+  </div>
+</form>
+{% else %}
+<div class="open-finance-preview__empty">
+  <p class="open-finance-preview__empty-title">No transactions found</p>
+  <p class="open-finance-preview__empty-desc">
+    There were no matching transactions for {{ month_label }} {{ year }} on this connection.
+  </p>
+  <a href="/open-finance" class="btn btn-secondary">Back to Open Finance</a>
+</div>
+{% endif %}

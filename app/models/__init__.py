@@ -4,6 +4,7 @@ from app.models.finance import (
     FinanceExpenseEntry,
     FinanceIncomeEntry,
     FinanceSummaryAmount,
+    FinanceVendorCategory,
 )
 from app.models.investment import Investment
 from app.models.portfolio import Portfolio
@@ -23,6 +24,7 @@ __all__ = [
     "FinanceIncomeEntry",
     "FinanceExpenseEntry",
     "FinanceSummaryAmount",
+    "FinanceVendorCategory",
     "Investment",
     "PortfolioSnapshot",
     "SnapshotAssetClass",

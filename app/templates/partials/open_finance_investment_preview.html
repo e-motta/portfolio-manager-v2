@@ -1,0 +1,101 @@
+{% if error %}
+<div class="open-finance-preview__error" role="alert">
+  <p>{{ error }}</p>
+  <div class="open-finance-preview__error-actions">
+    <a href="/open-finance" class="btn btn-secondary">Back to Open Finance</a>
+  </div>
+</div>
+{% elif rows %}
+<form action="/open-finance/sync/investments/confirm"
+      method="post"
+      data-import-preview-form
+      data-import-item-name="selected_rows">
+  <input type="hidden" name="import_token" value="{{ import_token }}">
+
+  <div class="import-modal-summary open-finance-preview__summary">
+    <div class="import-modal-summary__meta">
+      <span class="import-modal-summary__eyebrow">Investment sync</span>
+      <span class="import-modal-summary__date">{{ rows|length }} position{% if rows|length != 1 %}s{% endif %} found</span>
+      <p class="open-finance-preview__mapping">Non-exchange positions only · updates existing matches by external ID</p>
+    </div>
+    <div class="import-modal-summary__badges">
+      <span class="import-count-badge import-count-badge--new">
+        <span class="import-count-badge__value">{{ new_count }}</span>
+        <span class="import-count-badge__label">new</span>
+      </span>
+      {% if update_count > 0 %}
+      <span class="import-count-badge import-count-badge--held">
+        <span class="import-count-badge__value">{{ update_count }}</span>
+        <span class="import-count-badge__label">updates</span>
+      </span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="table-wrap table-wrap--flush import-modal-table-wrap">
+    <table class="data-table import-preview-table">
+      <thead>
+        <tr>
+          <th class="col-check">
+            <input type="checkbox"
+                   id="import-select-all"
+                   data-import-select-all
+                   checked
+                   aria-label="Select all investments">
+          </th>
+          <th>Institution</th>
+          <th>Name</th>
+          <th>Asset class</th>
+          <th class="num">Value</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="import-row import-row--new" data-import-row>
+          <td class="col-check">
+            <label class="import-check">
+              <input type="checkbox"
+                     name="selected_rows"
+                     value="{{ row.row_key }}"
+                     checked
+                     aria-label="Import {{ row.name }}">
+            </label>
+          </td>
+          <td>{{ row.institution }}</td>
+          <td><span class="cell-primary">{{ row.name }}</span></td>
+          <td>{{ row.asset_type_slug }}</td>
+          <td class="num">{{ row.current_value|pl_brl }}</td>
+          <td>
+            {% if row.is_update %}
+            <span class="status-pill warn">Update</span>
+            {% else %}
+            <span class="status-pill ok">New</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="import-modal__footer">
+    <p class="import-modal__selection">
+      <span data-import-selected-count>{{ rows|length }}</span>
+      position{% if rows|length != 1 %}s{% endif %} selected
+    </p>
+    <div class="import-modal__footer-actions">
+      <a href="/open-finance" class="btn btn-secondary">Cancel</a>
+      <button type="submit" class="btn btn-primary" data-import-confirm>Import selected</button>
+    </div>
+  </div>
+</form>
+{% else %}
+<div class="open-finance-preview__empty">
+  <p class="open-finance-preview__empty-title">No positions to import</p>
+  <p class="open-finance-preview__empty-desc">
+    No importable investment positions were returned from your bank connection.
+  </p>
+  <a href="/open-finance" class="btn btn-secondary">Back to Open Finance</a>
+</div>
+{% endif %}

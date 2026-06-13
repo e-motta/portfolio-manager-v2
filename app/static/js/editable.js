@@ -15,7 +15,49 @@ function showEditError(form, message) {
   form.appendChild(error);
 }
 
+function syncFinanceSectionEditing(section) {
+  if (!section?.classList.contains("finance-section--editable")) {
+    return;
+  }
+  const hasEditingRow = Boolean(section.querySelector(".editable-row.is-editing"));
+  section.classList.toggle("is-editing", hasEditingRow);
+}
+
 document.body.addEventListener("click", (event) => {
+  const editSectionButton = event.target.closest(".btn-edit-section");
+  if (editSectionButton) {
+    const section = editSectionButton.closest(".finance-section--editable");
+    if (!section) {
+      return;
+    }
+    section.classList.add("is-editing");
+    section.querySelectorAll(".editable-row").forEach((row) => {
+      clearEditError(row);
+      row.classList.add("is-editing");
+    });
+    const field = section.querySelector(".editable-row .edit-mode input, .editable-row .edit-mode select, .editable-row .edit-mode textarea");
+    field?.focus();
+    if (field?.select && field.type !== "date") {
+      field.select();
+    }
+    return;
+  }
+
+  const cancelSectionButton = event.target.closest(".btn-cancel-section");
+  if (cancelSectionButton) {
+    const section = cancelSectionButton.closest(".finance-section--editable");
+    if (!section) {
+      return;
+    }
+    section.classList.remove("is-editing");
+    section.querySelector(".finance-section-form")?.reset();
+    section.querySelectorAll(".editable-row").forEach((row) => {
+      clearEditError(row);
+      row.classList.remove("is-editing");
+    });
+    return;
+  }
+
   const editButton = event.target.closest(".btn-edit");
   if (editButton) {
     const container = editButton.closest(".editable-cell, .editable-row");
@@ -52,6 +94,7 @@ document.body.addEventListener("click", (event) => {
     clearEditError(container);
     container.classList.remove("is-editing");
     container.querySelector("form")?.reset();
+    syncFinanceSectionEditing(container.closest(".finance-section--editable"));
   }
 });
 
@@ -76,6 +119,9 @@ document.body.addEventListener("htmx:responseError", (event) => {
 
 document.body.addEventListener("htmx:afterSwap", () => {
   document.querySelectorAll(".editable-cell.is-editing, .editable-row.is-editing").forEach((el) => {
+    el.classList.remove("is-editing");
+  });
+  document.querySelectorAll(".finance-section.is-editing").forEach((el) => {
     el.classList.remove("is-editing");
   });
 });

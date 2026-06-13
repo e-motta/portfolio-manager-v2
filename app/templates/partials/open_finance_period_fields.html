@@ -1,0 +1,29 @@
+<div class="open-finance-period">
+  <div class="open-finance-period__toolbar">
+    <span class="open-finance-period__label">{{ period_label }}</span>
+    <label class="year-selector" for="{{ form_id }}-year">
+      <span class="visually-hidden">Year</span>
+      <select id="{{ form_id }}-year" class="year-selector__control" name="year">
+        {% for option in year_options %}
+        <option value="{{ option }}"{% if option == default_year %} selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <fieldset class="open-finance-period__months">
+    <legend class="visually-hidden">Month</legend>
+    <div class="finance-months open-finance-months">
+      {% for month in range(1, 13) %}
+      <label class="finance-months__pill{% if month == default_month %} is-active{% endif %}">
+        <input type="radio" name="month" value="{{ month }}"{% if month == default_month %} checked{% endif %}>
+        <span class="finance-months__short">{{ month_labels[month - 1][:3] }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+  {% if period_mode == "credit_card" %}
+  <p class="open-finance-card__period-hint" data-of-period-preview data-of-period-mode="credit_card" aria-live="polite"></p>
+  {% else %}
+  <p class="open-finance-card__period-hint" data-of-period-preview data-of-period-mode="calendar" aria-live="polite"></p>
+  {% endif %}
+</div>

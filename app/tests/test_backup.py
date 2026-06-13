@@ -103,7 +103,7 @@ def test_export_includes_finance_data(session):
             user_id=user.id,
             year=2026,
             month=2,
-            category="Uber",
+            category="Transporte",
             vendor="Uber",
             payment_account="Nubank",
             amount=Decimal("-42.50"),
@@ -124,7 +124,8 @@ def test_export_includes_finance_data(session):
     assert len(payload["finance_income"]) == 1
     assert payload["finance_income"][0]["description"] == "Salary"
     assert len(payload["finance_expenses"]) == 1
-    assert payload["finance_expenses"][0]["category"] == "Uber"
+    assert payload["finance_expenses"][0]["category"] == "Transporte"
+    assert payload["finance_expenses"][0]["transaction_date"] is None
     assert len(payload["finance_summary"]) == 1
     assert payload["finance_summary"][0]["line_key"] == "aluguel"
 
@@ -164,6 +165,72 @@ def test_restore_replaces_finance_data(session):
     assert income[0].month == 3
 
 
+def test_export_and_restore_expense_transaction_date(session):
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=2,
+            category="Transporte",
+            vendor="Metro",
+            payment_account="Nubank",
+            amount=Decimal("-5.50"),
+            transaction_date=date(2026, 2, 10),
+        )
+    )
+    session.commit()
+
+    raw = export_portfolio_json(session)
+    for entry in session.exec(select(FinanceExpenseEntry)).all():
+        session.delete(entry)
+    session.commit()
+
+    restore_portfolio_json(session, raw)
+    entry = session.exec(select(FinanceExpenseEntry)).one()
+    assert entry.transaction_date == date(2026, 2, 10)
+
+
 def test_restore_rejects_unsupported_version(session):
     with pytest.raises(ValueError, match="Unsupported backup version"):
         restore_portfolio_json(session, b'{"version": 99, "asset_types": []}')
+
+
+def test_export_includes_open_finance_metadata(session, exchange_type):
+    user = _test_user(session)
+    cash = session.exec(
+        select(AssetType).where(
+            AssetType.slug == "cash",
+            AssetType.portfolio_id == exchange_type.portfolio_id,
+        )
+    ).one()
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=6,
+            category="Transporte",
+            vendor="Uber",
+            payment_account="Nubank",
+            amount=Decimal("-20"),
+            source="open_finance",
+            external_id="tx-abc",
+        )
+    )
+    session.add(
+        Investment(
+            asset_type_id=cash.id,
+            institution="Nubank",
+            name="CDB",
+            current_value=Decimal("1000"),
+            source="open_finance",
+            external_id="inv-abc",
+        )
+    )
+    session.commit()
+
+    payload = export_portfolio_data(session)
+    assert payload["finance_expenses"][0]["source"] == "open_finance"
+    assert payload["finance_expenses"][0]["external_id"] == "tx-abc"
+    assert payload["investments"][0]["source"] == "open_finance"
+    assert payload["investments"][0]["external_id"] == "inv-abc"
