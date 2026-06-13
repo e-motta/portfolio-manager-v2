@@ -1,0 +1,113 @@
+{% extends "finance_base.html" %}
+{% from "partials/icons.html" import icon_add %}
+
+{% block title %}Expenses — Finance{% endblock %}
+{% block topbar_title %}Expenses{% endblock %}
+
+{% block finance_topbar_actions %}
+<button type="button" class="btn btn-secondary btn-small" data-form-modal-open="add-expense-modal">
+  {{ icon_add() }} Add
+</button>
+{% endblock %}
+
+{% block finance_title %}Expenses{% endblock %}
+{% block finance_subtitle %}
+{% if filter_month %}{{ month_labels[filter_month - 1] }} {{ year }}{% else %}Full year {{ year }}{% endif %}
+· {{ all_entries|length }} transactions
+{% endblock %}
+
+{% block finance_content %}
+{% set base_path = '/finance/expenses' %}
+{% set show_all_option = true %}
+{% include "partials/finance_month_pills.html" %}
+
+<div class="finance-kpi-grid finance-kpi-grid--compact">
+  <div class="finance-kpi finance-kpi--expense">
+    <div class="finance-kpi__label">{% if filter_month %}This month{% else %}Year total{% endif %}</div>
+    <div class="finance-kpi__value pl-negative">
+      {% if filter_month %}{{ month_totals[filter_month]|pl_brl }}{% else %}{{ year_total|pl_brl }}{% endif %}
+    </div>
+  </div>
+  <div class="finance-kpi">
+    <div class="finance-kpi__label">Transactions</div>
+    <div class="finance-kpi__value">{{ entries|length }}</div>
+  </div>
+</div>
+
+{% include "partials/finance_monthly_chart.html" %}
+
+<div class="panel finance-quick-panel">
+  <div class="panel__header">
+    <h2 class="panel__title">Quick add</h2>
+    <p class="panel__hint">Amounts are saved as expenses automatically</p>
+  </div>
+  <div class="panel__body">
+    {% include "partials/finance_quick_expense.html" %}
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel__header">
+    <h2 class="panel__title">By payment account</h2>
+    <p class="panel__hint">{% if filter_month %}{{ month_labels[filter_month - 1] }}{% else %}Full year{% endif %}</p>
+  </div>
+  <div class="finance-payment-grid">
+    {% for account in payment_accounts %}
+    {% set total = month_payment_totals[account] %}
+    <div class="finance-payment-card{% if total != 0 %} has-value{% endif %}">
+      <div class="finance-payment-card__name">{{ account }}</div>
+      <div class="finance-payment-card__amount money pl-negative">{{ total|pl_brl }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% for category in expense_categories %}
+{% set cat_entries = categories[category] %}
+<details class="finance-category panel"{% if cat_entries %} open{% endif %}>
+  <summary class="finance-category__summary">
+    <span class="finance-category__title">{{ category }}</span>
+    <span class="finance-category__meta">
+      {% if filter_month %}
+        {{ cat_entries|length }} items · {{ cat_entries|map(attribute='amount')|sum|brl }}
+      {% else %}
+        {{ all_categories[category]|length }} items · {{ category_year_totals[category]|brl }}
+      {% endif %}
+    </span>
+  </summary>
+  <div class="finance-category__quick">
+    {% set preset_category = category %}
+    {% include "partials/finance_quick_expense.html" %}
+  </div>
+  <div class="table-wrap table-wrap--flush">
+    <table class="data-table">
+      <thead>
+        <tr>
+          {% if not filter_month %}<th>Month</th>{% endif %}
+          <th>Vendor</th>
+          <th>Payment</th>
+          <th class="num">Amount</th>
+          <th class="actions-cell">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set show_month_column = not filter_month %}
+        {% for entry in cat_entries %}
+        {% include "partials/finance_expense_row.html" %}
+        {% else %}
+        <tr>
+          <td colspan="{% if filter_month %}4{% else %}5{% endif %}" class="empty-state">
+            No transactions{% if filter_month %} this month{% endif %}.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endfor %}
+{% endblock %}
+
+{% block page_modals %}
+{% include "partials/add_finance_expense_modal.html" %}
+{% endblock %}

@@ -1,0 +1,68 @@
+<div id="add-expense-modal" class="form-modal" hidden>
+  <div class="form-modal__backdrop" data-form-modal-dismiss tabindex="-1" aria-hidden="true"></div>
+  <div class="form-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="add-expense-modal-title">
+    <div class="form-modal__header">
+      <h2 id="add-expense-modal-title" class="form-modal__title">Add expense</h2>
+      <button type="button"
+              class="form-modal__close btn btn-secondary btn-icon-only"
+              data-form-modal-dismiss
+              aria-label="Close">
+        <span aria-hidden="true">×</span>
+      </button>
+    </div>
+    <div class="form-modal__body">
+      <form class="inline-form form-grid" action="/finance/expenses" method="post">
+        <input type="hidden" name="year" value="{{ year }}">
+        <div class="field">
+          <label for="add-expense-month">Month</label>
+          <select id="add-expense-month" name="month" required>
+            {% for month in range(1, 13) %}
+            <option value="{{ month }}"{% if month == form_default_month %} selected{% endif %}>
+              {{ month_labels[month - 1] }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="add-expense-category">Category</label>
+          <select id="add-expense-category" name="category" required>
+            {% for category in expense_categories %}
+            <option value="{{ category }}">{{ category }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="add-expense-vendor">Vendor</label>
+          <input id="add-expense-vendor" type="text" name="vendor" placeholder="Store or service" required>
+        </div>
+        <div class="field">
+          <label for="add-expense-payment">Payment account</label>
+          <select id="add-expense-payment" name="payment_account" required>
+            {% for account in payment_accounts %}
+            <option value="{{ account }}">{{ account }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="add-expense-amount">Amount (BRL)</label>
+          <input id="add-expense-amount" class="input-md" type="number" name="amount"
+                 placeholder="0.00" step="0.01" min="0" inputmode="decimal" required>
+          <p class="field-hint">Amount is always stored as an expense (positive or negative input).</p>
+        </div>
+        <div class="field finance-installments-field" data-finance-installments>
+          <label class="finance-installments-toggle">
+            <input type="checkbox" name="installments_enabled" value="1" data-finance-installments-toggle>
+            Split into installments
+          </label>
+          <div class="finance-installments-control" data-finance-installments-panel hidden>
+            <label for="add-expense-installments">Number of installments</label>
+            <input id="add-expense-installments" class="input-sm" type="number" name="installments"
+                   min="2" max="48" step="1" value="2" inputmode="numeric" disabled>
+            <p class="field-hint">Total amount is divided equally across the selected month and the following months.</p>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Add expense</button>
+      </form>
+    </div>
+  </div>
+</div>

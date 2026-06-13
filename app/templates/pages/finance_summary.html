@@ -1,0 +1,120 @@
+{% extends "finance_base.html" %}
+
+{% block title %}Summary — Finance{% endblock %}
+{% block topbar_title %}Summary{% endblock %}
+
+{% block finance_title %}Summary{% endblock %}
+{% block finance_subtitle %}{{ month_labels[selected_month - 1] }} {{ year }} · income, expenses, and savings{% endblock %}
+
+{% block finance_content %}
+{% set base_path = '/finance/summary' %}
+{% include "partials/finance_month_pills.html" %}
+
+<div class="finance-kpi-grid">
+  <div class="finance-kpi finance-kpi--balance">
+    <div class="finance-kpi__label">Balance this month</div>
+    <div class="finance-kpi__value {{ month_balance|pl_class }}">{{ month_balance|pl_brl }}</div>
+    <div class="finance-kpi__sub">Year to date {{ year_balance|pl_brl }}</div>
+  </div>
+  <div class="finance-kpi finance-kpi--income">
+    <div class="finance-kpi__label">Income</div>
+    <div class="finance-kpi__value pl-positive">{{ month_income|pl_brl }}</div>
+    <div class="finance-kpi__sub">YTD {{ year_income|pl_brl }}</div>
+  </div>
+  <div class="finance-kpi finance-kpi--expense">
+    <div class="finance-kpi__label">Expenses</div>
+    <div class="finance-kpi__value pl-negative">{{ month_expenses|pl_brl }}</div>
+    <div class="finance-kpi__sub">YTD {{ year_expenses|pl_brl }}</div>
+  </div>
+  <div class="finance-kpi finance-kpi--expense">
+    <div class="finance-kpi__label">Expenses tab</div>
+    <div class="finance-kpi__value pl-negative">{{ expense_tab_total|pl_brl }}</div>
+    <div class="finance-kpi__sub">YTD {{ expense_tab_year_total|pl_brl }}</div>
+  </div>
+</div>
+
+{% include "partials/finance_monthly_chart.html" %}
+
+<div class="finance-summary-sections">
+{% for section in summary_sections %}
+<section class="finance-section panel">
+  <div class="panel__header">
+    <div>
+      <h2 class="panel__title">{{ section.title }}</h2>
+      <p class="panel__hint">{{ section.subtitle }}</p>
+    </div>
+    {% if section.id == 'income' %}
+    <a class="btn btn-secondary btn-small" href="/finance/income?year={{ year }}&month={{ selected_month }}">Manage income</a>
+    {% elif section.id in ['expenses-contas', 'expenses-regular'] %}
+    <a class="btn btn-secondary btn-small" href="/finance/expenses?year={{ year }}&month={{ selected_month }}">Manage expenses</a>
+    {% endif %}
+  </div>
+  <ul class="finance-line-list">
+    {% for row in section.rows %}
+    {% set value = row.amounts.get(selected_month) %}
+    {% if row.editable %}
+    {% include "partials/finance_summary_line.html" %}
+    {% else %}
+    <li class="finance-line">
+      <span class="finance-line__label">{{ row.label }}</span>
+      <div class="finance-line__value">
+        <span class="money {{ value|pl_class }}">{{ value|pl_brl }}</span>
+        {% if row.key == 'outros' %}
+        <span class="finance-line__hint">From Income tab</span>
+        {% elif row.key in ['debito', 'dinheiro', 'reembolsos'] %}
+        <span class="finance-line__hint">Auto-calculated</span>
+        {% endif %}
+      </div>
+    </li>
+    {% endif %}
+    {% endfor %}
+  </ul>
+</section>
+{% endfor %}
+</div>
+
+<details class="finance-year-panel panel">
+  <summary class="finance-year-panel__summary">
+    <span class="finance-year-panel__title">Full year table</span>
+    <span class="finance-year-panel__hint">All months side by side — click to expand</span>
+  </summary>
+  <div class="table-wrap table-wrap--flush finance-table-wrap">
+    <table class="data-table finance-matrix">
+      <thead>
+        <tr>
+          <th class="finance-matrix__label">Line</th>
+          {% for label in month_labels %}
+          <th class="num{% if loop.index == selected_month %} is-selected-month{% endif %}">{{ label[:3] }}</th>
+          {% endfor %}
+          <th class="num">Total</th>
+          <th class="num">Avg</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        {% if not row.is_section_header %}
+        <tr class="{% if row.is_total %}total-row{% endif %}{% if row.section %} finance-row--{{ row.section }}{% endif %}">
+          <td class="finance-matrix__label">
+            {% if row.is_total %}<strong>{{ row.label }}</strong>{% else %}{{ row.label }}{% endif %}
+          </td>
+          {% for month in range(1, 13) %}
+          <td class="num{% if month == selected_month %} is-selected-month{% endif %}">
+            {% set value = row.amounts.get(month) %}
+            <span class="money {{ value|pl_class }}">{{ value|pl_brl }}</span>
+          </td>
+          {% endfor %}
+          <td class="num">
+            <strong class="money {{ row.year_total|pl_class }}">{{ row.year_total|pl_brl }}</strong>
+          </td>
+          <td class="num">
+            {% set avg_so_far = row.year_total / active_months %}
+            <span class="money {{ avg_so_far|pl_class }}">{{ avg_so_far|pl_brl }}</span>
+          </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endblock %}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "partials/icons.html" import icon_refresh %}
+{% from "partials/icons.html" import icon_refresh, icon_delete %}
 
 {% block title %}Backups — Portfolio Manager{% endblock %}
 {% block topbar_title %}Backups{% endblock %}
@@ -18,6 +18,11 @@
 {% if restored %}
 <div class="panel panel--notice">
   <p>Portfolio restored from backup.</p>
+</div>
+{% endif %}
+{% if deleted %}
+<div class="panel panel--notice">
+  <p>Backup deleted from Google Drive.</p>
 </div>
 {% endif %}
 {% if connected %}
@@ -91,6 +96,10 @@
                     hx-post="/backups/{{ backup.file_id }}/restore"
                     hx-confirm="Restore this backup? This replaces all current portfolio data."
                     aria-label="Restore backup" title="Restore backup">{{ icon_refresh() }}</button>
+            <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-delete"
+                    hx-post="/backups/{{ backup.file_id }}/delete"
+                    hx-confirm="Delete this backup from Google Drive?"
+                    aria-label="Delete backup" title="Delete backup">{{ icon_delete() }}</button>
           </td>
         </tr>
         {% endfor %}

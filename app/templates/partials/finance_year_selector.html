@@ -1,0 +1,13 @@
+<form class="year-selector" method="get" action="{{ request.url.path }}">
+  <label class="year-selector__label" for="finance-year">Year</label>
+  <select id="finance-year" class="year-selector__control" name="year">
+    {% for option in year_options %}
+    <option value="{{ option }}"{% if option == year %} selected{% endif %}>{{ option }}</option>
+    {% endfor %}
+  </select>
+  {% if finance_tab == 'summary' %}
+  <input type="hidden" name="month" value="{{ selected_month }}">
+  {% elif filter_month is defined and filter_month %}
+  <input type="hidden" name="month" value="{{ filter_month }}">
+  {% endif %}
+</form>

@@ -32,6 +32,14 @@ NAV_SECTIONS = [
             NavItem("Backups", "/backups", "/backups"),
         ],
     ),
+    (
+        "Finance",
+        [
+            NavItem("Summary", "/finance/summary", "/finance/summary", "Finance"),
+            NavItem("Income", "/finance/income", "/finance/income", "Finance"),
+            NavItem("Expenses", "/finance/expenses", "/finance/expenses", "Finance"),
+        ],
+    ),
 ]
 
 LEGACY_REDIRECTS = {

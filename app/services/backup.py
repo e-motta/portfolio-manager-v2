@@ -5,8 +5,14 @@ from typing import Any
 
 from sqlmodel import Session, select
 
+from app.core.auth import get_current_user_id
 from app.models.asset_type import AssetType
 from app.models.dividend import Dividend
+from app.models.finance import (
+    FinanceExpenseEntry,
+    FinanceIncomeEntry,
+    FinanceSummaryAmount,
+)
 from app.models.investment import Investment
 from app.models.security import SecurityLot
 from app.models.snapshot import (
@@ -204,6 +210,71 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
             }
         )
 
+    user_id = get_current_user_id(session)
+
+    finance_income = [
+        {
+            "year": entry.year,
+            "month": entry.month,
+            "description": entry.description,
+            "amount": _serialize_decimal(entry.amount),
+            "created_at": _serialize_datetime(entry.created_at),
+            "updated_at": _serialize_datetime(entry.updated_at),
+        }
+        for entry in session.exec(
+            select(FinanceIncomeEntry)
+            .where(FinanceIncomeEntry.user_id == user_id)
+            .order_by(
+                FinanceIncomeEntry.year,
+                FinanceIncomeEntry.month,
+                FinanceIncomeEntry.description,
+            )
+        ).all()
+    ]
+
+    finance_expenses = [
+        {
+            "year": entry.year,
+            "month": entry.month,
+            "category": entry.category,
+            "vendor": entry.vendor,
+            "payment_account": entry.payment_account,
+            "amount": _serialize_decimal(entry.amount),
+            "created_at": _serialize_datetime(entry.created_at),
+            "updated_at": _serialize_datetime(entry.updated_at),
+        }
+        for entry in session.exec(
+            select(FinanceExpenseEntry)
+            .where(FinanceExpenseEntry.user_id == user_id)
+            .order_by(
+                FinanceExpenseEntry.year,
+                FinanceExpenseEntry.month,
+                FinanceExpenseEntry.category,
+                FinanceExpenseEntry.vendor,
+            )
+        ).all()
+    ]
+
+    finance_summary = [
+        {
+            "year": entry.year,
+            "month": entry.month,
+            "line_key": entry.line_key,
+            "amount": _serialize_decimal(entry.amount),
+            "created_at": _serialize_datetime(entry.created_at),
+            "updated_at": _serialize_datetime(entry.updated_at),
+        }
+        for entry in session.exec(
+            select(FinanceSummaryAmount)
+            .where(FinanceSummaryAmount.user_id == user_id)
+            .order_by(
+                FinanceSummaryAmount.year,
+                FinanceSummaryAmount.month,
+                FinanceSummaryAmount.line_key,
+            )
+        ).all()
+    ]
+
     exported_at = datetime.now(timezone.utc)
     return {
         "version": BACKUP_VERSION,
@@ -215,12 +286,32 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
         "dividends": dividends,
         "symbol_targets": symbol_targets,
         "snapshots": snapshot_rows,
+        "finance_income": finance_income,
+        "finance_expenses": finance_expenses,
+        "finance_summary": finance_summary,
     }
 
 
 def export_portfolio_json(session: Session) -> bytes:
     payload = export_portfolio_data(session)
     return json.dumps(payload, indent=2, sort_keys=True).encode("utf-8")
+
+
+def _clear_finance_data(session: Session) -> None:
+    user_id = get_current_user_id(session)
+
+    for entry in session.exec(
+        select(FinanceIncomeEntry).where(FinanceIncomeEntry.user_id == user_id)
+    ).all():
+        session.delete(entry)
+    for entry in session.exec(
+        select(FinanceExpenseEntry).where(FinanceExpenseEntry.user_id == user_id)
+    ).all():
+        session.delete(entry)
+    for entry in session.exec(
+        select(FinanceSummaryAmount).where(FinanceSummaryAmount.user_id == user_id)
+    ).all():
+        session.delete(entry)
 
 
 def _clear_portfolio_data(session: Session) -> None:
@@ -264,6 +355,7 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
 
     portfolio = get_portfolio(session)
     _clear_portfolio_data(session)
+    _clear_finance_data(session)
 
     portfolio_data = payload.get("portfolio") or {}
     portfolio.name = portfolio_data.get("name") or portfolio.name
@@ -392,6 +484,52 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
                     or Decimal("0"),
                 )
             )
+
+    user_id = get_current_user_id(session)
+
+    for row in payload.get("finance_income", []):
+        entry = FinanceIncomeEntry(
+            user_id=user_id,
+            year=row["year"],
+            month=row["month"],
+            description=row.get("description", ""),
+            amount=_parse_decimal(row.get("amount")) or Decimal("0"),
+        )
+        if row.get("created_at"):
+            entry.created_at = datetime.fromisoformat(row["created_at"])
+        if row.get("updated_at"):
+            entry.updated_at = datetime.fromisoformat(row["updated_at"])
+        session.add(entry)
+
+    for row in payload.get("finance_expenses", []):
+        entry = FinanceExpenseEntry(
+            user_id=user_id,
+            year=row["year"],
+            month=row["month"],
+            category=row["category"],
+            vendor=row.get("vendor", ""),
+            payment_account=row.get("payment_account", ""),
+            amount=_parse_decimal(row.get("amount")) or Decimal("0"),
+        )
+        if row.get("created_at"):
+            entry.created_at = datetime.fromisoformat(row["created_at"])
+        if row.get("updated_at"):
+            entry.updated_at = datetime.fromisoformat(row["updated_at"])
+        session.add(entry)
+
+    for row in payload.get("finance_summary", []):
+        entry = FinanceSummaryAmount(
+            user_id=user_id,
+            year=row["year"],
+            month=row["month"],
+            line_key=row["line_key"],
+            amount=_parse_decimal(row.get("amount")) or Decimal("0"),
+        )
+        if row.get("created_at"):
+            entry.created_at = datetime.fromisoformat(row["created_at"])
+        if row.get("updated_at"):
+            entry.updated_at = datetime.fromisoformat(row["updated_at"])
+        session.add(entry)
 
     session.commit()
 

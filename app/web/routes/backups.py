@@ -7,6 +7,7 @@ from app.core.db import SessionDep
 from app.services.backup import export_portfolio_json, restore_portfolio_json
 from app.services.google_drive import (
     backup_filename,
+    delete_backup,
     download_backup,
     drive_call,
     ensure_backup_folder,
@@ -69,6 +70,7 @@ def backups_page(
             "drive_error": drive_error,
             "saved": request.query_params.get("saved") == "1",
             "restored": request.query_params.get("restored") == "1",
+            "deleted": request.query_params.get("deleted") == "1",
             "connected": request.query_params.get("connected") == "1",
             "error_message": request.query_params.get("error"),
         },
@@ -134,3 +136,25 @@ def restore_backup(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return RedirectResponse(url="/backups?restored=1", status_code=303)
+
+
+@router.post("/{file_id}/delete")
+def delete_backup_route(
+    file_id: str,
+    session: SessionDep,
+    user: CurrentUserDep,
+) -> RedirectResponse:
+    if not _user_has_drive(user):
+        raise HTTPException(status_code=400, detail="Connect Google Drive first.")
+
+    access_token = _get_access_token(user)
+    folder_id = drive_call(
+        ensure_backup_folder, access_token, user.google_drive_folder_id
+    )
+    if folder_id != user.google_drive_folder_id:
+        user.google_drive_folder_id = folder_id
+        session.add(user)
+        session.commit()
+
+    drive_call(delete_backup, access_token, folder_id, file_id)
+    return RedirectResponse(url="/backups?deleted=1", status_code=303)

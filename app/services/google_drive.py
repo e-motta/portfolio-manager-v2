@@ -131,6 +131,29 @@ def download_backup(access_token: str, file_id: str) -> bytes:
         return response.content
 
 
+def delete_backup(access_token: str, folder_id: str, file_id: str) -> None:
+    with httpx.Client(timeout=30.0) as client:
+        response = client.get(
+            f"{DRIVE_FILES_URL}/{file_id}",
+            params={"fields": "parents,mimeType,trashed"},
+            headers=_auth_headers(access_token),
+        )
+        response.raise_for_status()
+        metadata = response.json()
+        if metadata.get("trashed"):
+            raise HTTPException(status_code=404, detail="Backup not found.")
+        if folder_id not in metadata.get("parents", []):
+            raise HTTPException(status_code=404, detail="Backup not found.")
+        if metadata.get("mimeType") != BACKUP_MIME_TYPE:
+            raise HTTPException(status_code=404, detail="Backup not found.")
+
+        response = client.delete(
+            f"{DRIVE_FILES_URL}/{file_id}",
+            headers=_auth_headers(access_token),
+        )
+        response.raise_for_status()
+
+
 def backup_filename(exported_at: datetime | None = None) -> str:
     timestamp = (exported_at or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
     return f"{BACKUP_FILE_PREFIX}{timestamp}.json"

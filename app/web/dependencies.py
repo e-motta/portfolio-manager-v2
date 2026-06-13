@@ -1,8 +1,11 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
+import json
 from pathlib import Path
 from typing import Annotated
 from zoneinfo import ZoneInfo
+
+from markupsafe import Markup
 
 from fastapi import Depends, Request
 from fastapi.templating import Jinja2Templates
@@ -85,6 +88,10 @@ def _pl_class(value) -> str:
     return "pl-neutral"
 
 
+def _tojson(value) -> Markup:
+    return Markup(json.dumps(value, default=str))
+
+
 def _build_templates() -> Jinja2Templates:
     jinja = Jinja2Templates(directory=str(BASE_DIR / "templates"))
     jinja.env.filters["brl"] = _format_brl
@@ -97,6 +104,7 @@ def _build_templates() -> Jinja2Templates:
     jinja.env.filters["action_label"] = _format_action
     jinja.env.filters["date_fmt"] = _format_date
     jinja.env.filters["datetime_fmt"] = _format_datetime
+    jinja.env.filters["tojson"] = _tojson
     jinja.env.globals["nav_sections"] = NAV_SECTIONS
     return jinja
 

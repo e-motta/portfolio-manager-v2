@@ -1,0 +1,48 @@
+{% from "partials/icons.html" import icon_edit, icon_save, icon_cancel, icon_delete %}
+<tr id="income-{{ entry.id }}" class="editable-row finance-entry-row">
+  <form hx-post="/finance/income/{{ entry.id }}"
+        hx-target="#income-{{ entry.id }}"
+        hx-swap="outerHTML"
+        class="row-form-table">
+    {% if show_month_column %}
+    <td>
+      <span class="view-mode">{{ month_labels[entry.month - 1] }}</span>
+      <select class="edit-mode" name="month" required>
+        {% for month in range(1, 13) %}
+        <option value="{{ month }}"{% if month == entry.month %} selected{% endif %}>
+          {{ month_labels[month - 1] }}
+        </option>
+        {% endfor %}
+      </select>
+    </td>
+    {% endif %}
+    <td>
+      <span class="view-mode cell-primary">{{ entry.description or "—" }}</span>
+      <input class="edit-mode" type="text" name="description" value="{{ entry.description }}" required>
+    </td>
+    <td class="num">
+      <span class="view-mode editable-value money pl-positive">{{ entry.amount|brl }}</span>
+      <input class="edit-mode input-md" type="number" name="amount"
+             value="{{ '%.2f'|format(entry.amount) }}"
+             step="0.01" min="0" inputmode="decimal" required>
+    </td>
+    <td class="actions-cell">
+      <div class="view-mode actions-inline">
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-edit"
+                aria-label="Edit" title="Edit">{{ icon_edit() }}</button>
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-delete"
+                hx-delete="/finance/income/{{ entry.id }}"
+                hx-target="#income-{{ entry.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Delete this income entry?"
+                aria-label="Delete" title="Delete">{{ icon_delete() }}</button>
+      </div>
+      <div class="edit-mode actions-inline">
+        <button type="submit" class="btn btn-secondary btn-small btn-icon-only"
+                aria-label="Save" title="Save">{{ icon_save() }}</button>
+        <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-cancel-edit"
+                aria-label="Cancel" title="Cancel">{{ icon_cancel() }}</button>
+      </div>
+    </td>
+  </form>
+</tr>

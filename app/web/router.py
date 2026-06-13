@@ -10,6 +10,7 @@ from app.web.routes import (
     auth,
     backups,
     dashboard,
+    finance,
     investments,
     securities,
     snapshots,
@@ -27,6 +28,7 @@ protected.include_router(securities.router)
 protected.include_router(snapshots.router)
 protected.include_router(backups.router)
 protected.include_router(suggestions.router)
+protected.include_router(finance.router)
 router.include_router(protected)
 
 

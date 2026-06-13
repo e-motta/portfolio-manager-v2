@@ -1,0 +1,114 @@
+{% extends "finance_base.html" %}
+{% from "partials/icons.html" import icon_add %}
+
+{% block title %}Income — Finance{% endblock %}
+{% block topbar_title %}Income{% endblock %}
+
+{% block finance_topbar_actions %}
+<button type="button" class="btn btn-secondary btn-small" data-form-modal-open="add-income-modal">
+  {{ icon_add() }} Add
+</button>
+{% endblock %}
+
+{% block finance_title %}Income{% endblock %}
+{% block finance_subtitle %}
+{% if filter_month %}{{ month_labels[filter_month - 1] }} {{ year }}{% else %}Full year {{ year }}{% endif %}
+· {{ all_entries|length }} entries
+{% endblock %}
+
+{% block finance_content %}
+{% set base_path = '/finance/income' %}
+{% set show_all_option = true %}
+{% set show_amounts = true %}
+{% include "partials/finance_month_pills.html" %}
+
+<div class="finance-kpi-grid finance-kpi-grid--compact">
+  <div class="finance-kpi finance-kpi--income">
+    <div class="finance-kpi__label">{% if filter_month %}This month{% else %}Year total{% endif %}</div>
+    <div class="finance-kpi__value pl-positive">
+      {% if filter_month %}{{ month_totals[filter_month]|pl_brl }}{% else %}{{ year_total|pl_brl }}{% endif %}
+    </div>
+  </div>
+  <div class="finance-kpi">
+    <div class="finance-kpi__label">Entries</div>
+    <div class="finance-kpi__value">{{ entries|length }}</div>
+  </div>
+</div>
+
+{% include "partials/finance_monthly_chart.html" %}
+
+<div class="panel finance-quick-panel">
+  <div class="panel__header">
+    <h2 class="panel__title">Quick add</h2>
+    <p class="panel__hint">Log income without leaving the page</p>
+  </div>
+  <div class="panel__body">
+    {% include "partials/finance_quick_income.html" %}
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel__header">
+    <h2 class="panel__title">{% if filter_month %}Entries in {{ month_labels[filter_month - 1] }}{% else %}All entries{% endif %}</h2>
+  </div>
+  {% if filter_month %}
+  <div class="table-wrap table-wrap--flush">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th class="num">Amount</th>
+          <th class="actions-cell">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="income-body">
+        {% set show_month_column = false %}
+        {% for entry in entries %}
+        {% include "partials/finance_income_row.html" %}
+        {% else %}
+        <tr><td colspan="3" class="empty-state">No income logged for this month yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="finance-entry-groups">
+    {% for month in range(1, 13) %}
+    {% set month_entries = entries_by_month[month] %}
+    {% if month_entries %}
+    <details class="finance-entry-group" open>
+      <summary class="finance-entry-group__summary">
+        <span class="finance-entry-group__title">{{ month_labels[month - 1] }}</span>
+        <span class="finance-entry-group__meta">{{ month_entries|length }} · {{ month_totals[month]|pl_brl }}</span>
+      </summary>
+      <div class="table-wrap table-wrap--flush">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th class="num">Amount</th>
+              <th class="actions-cell">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set show_month_column = false %}
+            {% for entry in month_entries %}
+            {% include "partials/finance_income_row.html" %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+    {% endfor %}
+    {% if not all_entries %}
+    <p class="empty-state finance-empty">No income entries yet. Use quick add above or the Add button.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block page_modals %}
+{% include "partials/add_finance_income_modal.html" %}
+{% endblock %}

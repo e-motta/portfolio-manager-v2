@@ -3,6 +3,7 @@ from sqlmodel import Session, select
 from app.models.asset_type import DEFAULT_ASSET_TYPES, AssetType
 from app.models.portfolio import Portfolio
 from app.models.user import User
+from app.services.finance_seed import seed_finance_data
 
 
 def find_or_create_user(
@@ -45,6 +46,8 @@ def find_or_create_user(
 
 
 def ensure_user_portfolio(session: Session, user: User) -> Portfolio:
+    seed_finance_data(session, user.id)
+
     portfolio = session.exec(
         select(Portfolio).where(Portfolio.user_id == user.id)
     ).first()
