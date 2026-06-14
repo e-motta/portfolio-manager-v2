@@ -691,3 +691,155 @@ def test_expenses_page_shows_reversal_link_controls(client, session):
     assert "Reversal" in response.text
     assert "Unify" in response.text
     assert "RESTAURANTE OUTBACK" in response.text
+
+
+def test_effective_expense_amount_subcategories():
+    from app.services.finance import (
+        BILLS_SUBCATEGORY_ALUGUEL,
+        BILLS_SUBCATEGORY_OUTRAS_CONTAS,
+        effective_expense_amount,
+        effective_expense_amount_for,
+    )
+
+    entry = FinanceExpenseEntry(
+        category=BILLS_CATEGORY,
+        amount=Decimal("-1000.00"),
+        subcategory=BILLS_SUBCATEGORY_ALUGUEL,
+    )
+    assert effective_expense_amount(entry) == Decimal("-614.00")
+    assert effective_expense_amount_for(
+        Decimal("-1000.00"), BILLS_SUBCATEGORY_OUTRAS_CONTAS
+    ) == Decimal("-500.00")
+
+    reversal = FinanceExpenseEntry(
+        category=BILLS_CATEGORY,
+        amount=Decimal("1000.00"),
+        subcategory=BILLS_SUBCATEGORY_ALUGUEL,
+    )
+    assert effective_expense_amount(reversal) == Decimal("614.00")
+
+
+def test_normalize_expense_subcategory():
+    from app.services.finance import (
+        BILLS_SUBCATEGORY_ALUGUEL,
+        normalize_expense_subcategory,
+    )
+
+    assert (
+        normalize_expense_subcategory(BILLS_CATEGORY, BILLS_SUBCATEGORY_ALUGUEL)
+        == BILLS_SUBCATEGORY_ALUGUEL
+    )
+    assert normalize_expense_subcategory(BILLS_CATEGORY, "") is None
+    assert normalize_expense_subcategory("Outros", None) is None
+
+    import pytest
+
+    with pytest.raises(ValueError):
+        normalize_expense_subcategory("Outros", BILLS_SUBCATEGORY_ALUGUEL)
+    with pytest.raises(ValueError):
+        normalize_expense_subcategory(BILLS_CATEGORY, "Invalid")
+
+
+def test_summary_uses_effective_bills_amount(session):
+    user = _test_user(session)
+    from app.services.finance import BILLS_SUBCATEGORY_ALUGUEL
+
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=1,
+            category=BILLS_CATEGORY,
+            vendor="Aluguel",
+            payment_account="Nuconta",
+            amount=Decimal("-1000.00"),
+            subcategory=BILLS_SUBCATEGORY_ALUGUEL,
+        )
+    )
+    session.commit()
+
+    context = build_summary_context(session, user.id, 2026, selected_month=1)
+    bills_card = next(card for card in context["summary_cards"] if card["id"] == "bills")
+    assert bills_card["total_amount"] == Decimal("-614.00")
+
+
+def test_expenses_context_uses_effective_amounts(session):
+    user = _test_user(session)
+    from app.services.finance import BILLS_SUBCATEGORY_OUTRAS_CONTAS
+
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=2,
+            category=BILLS_CATEGORY,
+            vendor="Internet",
+            payment_account="Nuconta",
+            amount=Decimal("-200.00"),
+            subcategory=BILLS_SUBCATEGORY_OUTRAS_CONTAS,
+        )
+    )
+    session.commit()
+
+    context = build_expenses_context(session, user.id, 2026)
+    assert context["month_totals"][2] == Decimal("-100.00")
+    assert context["category_year_totals"][BILLS_CATEGORY] == Decimal("-100.00")
+
+
+def test_create_bills_expense_with_subcategory(session, client):
+    response = client.post(
+        "/finance/expenses",
+        data={
+            "year": "2026",
+            "month": "3",
+            "category": BILLS_CATEGORY,
+            "vendor": "Aluguel",
+            "payment_account": "Nuconta",
+            "amount": "1000.00",
+            "subcategory": "Aluguel (/2+114)",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    entry = session.exec(
+        select(FinanceExpenseEntry).where(FinanceExpenseEntry.vendor == "Aluguel")
+    ).one()
+    assert entry.subcategory == "Aluguel (/2+114)"
+    assert entry.amount == Decimal("-1000.00")
+
+
+def test_vendor_subcategory_auto_assignment_on_create(session, client):
+    from app.services.finance import BILLS_SUBCATEGORY_ALUGUEL, save_vendor_category
+
+    user = _test_user(session)
+    save_vendor_category(
+        session,
+        user.id,
+        "Aluguel",
+        BILLS_CATEGORY,
+        subcategory=BILLS_SUBCATEGORY_ALUGUEL,
+    )
+    session.commit()
+
+    response = client.post(
+        "/finance/expenses",
+        data={
+            "year": "2026",
+            "month": "4",
+            "category": BILLS_CATEGORY,
+            "vendor": "Aluguel",
+            "payment_account": "Nuconta",
+            "amount": "800.00",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    entry = session.exec(
+        select(FinanceExpenseEntry).where(
+            FinanceExpenseEntry.vendor == "Aluguel",
+            FinanceExpenseEntry.month == 4,
+        )
+    ).one()
+    assert entry.subcategory == BILLS_SUBCATEGORY_ALUGUEL

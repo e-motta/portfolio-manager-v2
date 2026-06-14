@@ -27,7 +27,12 @@ from app.services.cumbuca_sync import (
     map_payment_account,
     _transaction_amount,
 )
-from app.services.finance import load_vendor_category_map, save_vendor_category
+from app.services.finance import (
+    BILLS_CATEGORY,
+    BILLS_SUBCATEGORY_ALUGUEL,
+    load_vendor_category_map,
+    save_vendor_category,
+)
 from app.services.cumbuca_mcp import (
     _extract_json_payload,
     _unwrap_collection,
@@ -246,6 +251,71 @@ def test_import_selected_expenses_saves_vendor_category(session):
 
     vendor_map = load_vendor_category_map(session, user.id)
     assert vendor_map[target.vendor.lower()] == "Assinaturas digitais"
+
+
+def test_import_prefills_bills_subcategory_from_vendor_rule(session):
+    user = session.exec(select(User)).one()
+    save_vendor_category(
+        session,
+        user.id,
+        "PIX ENVIADO - ALUGUEL",
+        BILLS_CATEGORY,
+        subcategory=BILLS_SUBCATEGORY_ALUGUEL,
+    )
+    session.commit()
+
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    target = next(row for row in rows if row.external_id == "tx-003")
+    assert target.category == BILLS_CATEGORY
+    assert target.subcategory == BILLS_SUBCATEGORY_ALUGUEL
+
+
+def test_import_selected_expenses_persists_subcategory(session):
+    user = session.exec(select(User)).one()
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    target = next(row for row in rows if row.external_id == "tx-003")
+
+    created = import_selected_expenses(
+        session,
+        user.id,
+        rows,
+        {target.row_key},
+        category_overrides={target.row_key: BILLS_CATEGORY},
+        subcategory_overrides={target.row_key: BILLS_SUBCATEGORY_ALUGUEL},
+    )
+    assert created == 1
+
+    entry = session.exec(
+        select(FinanceExpenseEntry).where(
+            FinanceExpenseEntry.external_id == target.external_id
+        )
+    ).one()
+    assert entry.category == BILLS_CATEGORY
+    assert entry.subcategory == BILLS_SUBCATEGORY_ALUGUEL
+
+
+def test_import_ignores_subcategory_when_category_not_bills(session):
+    user = session.exec(select(User)).one()
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    target = next(row for row in rows if row.external_id == "tx-003")
+
+    created = import_selected_expenses(
+        session,
+        user.id,
+        rows,
+        {target.row_key},
+        category_overrides={target.row_key: "Outros"},
+        subcategory_overrides={target.row_key: BILLS_SUBCATEGORY_ALUGUEL},
+    )
+    assert created == 1
+
+    entry = session.exec(
+        select(FinanceExpenseEntry).where(
+            FinanceExpenseEntry.external_id == target.external_id
+        )
+    ).one()
+    assert entry.category == "Outros"
+    assert entry.subcategory is None
 
 
 def test_vendor_category_suggested_on_future_import(session):

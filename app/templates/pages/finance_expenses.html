@@ -107,7 +107,7 @@
     <span class="finance-category__title">{{ category }}</span>
     <span class="finance-category__meta">
       {% if filter_month %}
-        {{ cat_entries|length }} items · {{ cat_entries|map(attribute='amount')|sum|brl }}
+        {{ cat_entries|length }} items · {{ cat_entries|sum_effective_expenses|brl }}
       {% else %}
         {{ all_categories[category]|length }} items · {{ category_year_totals[category]|brl }}
       {% endif %}
@@ -124,6 +124,7 @@
           {% if not filter_month %}<th>Month</th>{% endif %}
           <th>Date</th>
           <th>Vendor</th>
+          {% if category == bills_category %}<th class="col-subcategory">Subcategory</th>{% endif %}
           <th>Payment</th>
           <th>Source</th>
           <th class="num">Amount</th>
@@ -132,11 +133,12 @@
       </thead>
       <tbody>
         {% set show_month_column = not filter_month %}
+        {% set show_subcategory_column = category == bills_category %}
         {% for entry in cat_entries %}
         {% include "partials/finance_expense_row.html" %}
         {% else %}
         <tr>
-          <td colspan="{% if filter_month %}6{% else %}7{% endif %}" class="empty-state">
+          <td colspan="{% if category == bills_category %}{% if filter_month %}7{% else %}8{% endif %}{% else %}{% if filter_month %}6{% else %}7{% endif %}{% endif %}" class="empty-state">
             No transactions{% if filter_month %} this month{% endif %}.
           </td>
         </tr>

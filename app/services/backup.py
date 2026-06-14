@@ -255,6 +255,7 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
             "vendor": entry.vendor,
             "payment_account": entry.payment_account,
             "amount": _serialize_decimal(entry.amount),
+            "subcategory": entry.subcategory,
             "source": entry.source,
             "external_id": entry.external_id,
             "created_at": _serialize_datetime(entry.created_at),
@@ -296,6 +297,7 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
         {
             "vendor_key": entry.vendor_key,
             "category": entry.category,
+            "subcategory": entry.subcategory,
             "created_at": _serialize_datetime(entry.created_at),
             "updated_at": _serialize_datetime(entry.updated_at),
         }
@@ -552,6 +554,7 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
             vendor=row.get("vendor", ""),
             payment_account=row.get("payment_account", ""),
             amount=_parse_decimal(row.get("amount")) or Decimal("0"),
+            subcategory=row.get("subcategory"),
             source=row.get("source", "manual"),
             external_id=row.get("external_id"),
         )
@@ -580,6 +583,7 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
             user_id=user_id,
             vendor_key=row["vendor_key"],
             category=row["category"],
+            subcategory=row.get("subcategory"),
         )
         if row.get("created_at"):
             entry.created_at = datetime.fromisoformat(row["created_at"])

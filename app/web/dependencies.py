@@ -12,7 +12,10 @@ from fastapi.templating import Jinja2Templates
 
 from app.core.config import settings
 from app.services.finance import (
+    effective_expense_amount,
+    effective_expense_amount_for,
     expense_category_slug,
+    expense_subcategory_slug,
     format_finance_source,
     investment_broker_label,
 )
@@ -99,6 +102,13 @@ def _tojson(value) -> Markup:
     return Markup(json.dumps(value, default=str))
 
 
+def _sum_effective_expenses(entries) -> Decimal:
+    return sum(
+        (effective_expense_amount(entry) for entry in entries),
+        start=Decimal("0"),
+    )
+
+
 def _build_templates() -> Jinja2Templates:
     jinja = Jinja2Templates(directory=str(BASE_DIR / "templates"))
     jinja.env.filters["brl"] = _format_brl
@@ -114,6 +124,10 @@ def _build_templates() -> Jinja2Templates:
     jinja.env.filters["finance_source"] = format_finance_source
     jinja.env.filters["investment_broker_label"] = investment_broker_label
     jinja.env.filters["expense_category_slug"] = expense_category_slug
+    jinja.env.filters["expense_subcategory_slug"] = expense_subcategory_slug
+    jinja.env.filters["effective_expense_amount"] = effective_expense_amount
+    jinja.env.filters["effective_expense_amount_for"] = effective_expense_amount_for
+    jinja.env.filters["sum_effective_expenses"] = _sum_effective_expenses
     jinja.env.filters["tojson"] = _tojson
     jinja.env.globals["nav_sections"] = NAV_SECTIONS
     return jinja

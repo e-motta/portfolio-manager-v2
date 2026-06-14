@@ -1,3 +1,4 @@
+{% from "partials/open_finance_subcategory_select.html" import subcategory_picker with context %}
 <div id="add-expense-modal" class="form-modal" hidden>
   <div class="form-modal__backdrop" data-form-modal-dismiss tabindex="-1" aria-hidden="true"></div>
   <div class="form-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="add-expense-modal-title">
@@ -30,6 +31,10 @@
             <option value="{{ category }}">{{ category }}</option>
             {% endfor %}
           </select>
+        </div>
+        <div class="field" data-finance-bills-subcategory hidden>
+          <label for="add-expense-subcategory">Subcategory</label>
+          {{ subcategory_picker("subcategory", "", picker_id="add-expense-subcategory") }}
         </div>
         <div class="field">
           <label for="add-expense-date">Date</label>

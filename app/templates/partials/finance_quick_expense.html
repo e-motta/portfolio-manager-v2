@@ -1,4 +1,5 @@
 <form class="finance-quick-form" action="/finance/expenses" method="post">
+{% from "partials/open_finance_subcategory_select.html" import subcategory_picker with context %}
   <input type="hidden" name="year" value="{{ year }}">
   <div class="finance-quick-form__fields">
     <div class="field finance-quick-form__field">
@@ -32,6 +33,12 @@
       <input id="quick-expense-vendor" type="text" name="vendor"
              placeholder="Where did you spend?" required>
     </div>
+    {% if preset_category is defined and preset_category == bills_category %}
+    <div class="field finance-quick-form__field finance-quick-form__field--subcategory">
+      <label class="sr-only" for="quick-expense-subcategory">Subcategory</label>
+      {{ subcategory_picker("subcategory", "", picker_id="quick-expense-subcategory") }}
+    </div>
+    {% endif %}
     <div class="field finance-quick-form__field">
       <label class="sr-only" for="quick-expense-payment">Payment</label>
       <select id="quick-expense-payment" name="payment_account" required>

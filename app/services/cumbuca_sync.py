@@ -21,10 +21,12 @@ from app.services.cumbuca_mcp import (
 )
 from app.services.cumbuca_oauth import OPEN_FINANCE_SOURCE, refresh_access_token
 from app.services.finance import (
+    BILLS_CATEGORY,
     EXPENSE_CATEGORIES,
     PAYMENT_ACCOUNTS,
-    load_vendor_category_map,
+    load_vendor_rule_map,
     normalize_vendor_key,
+    resolve_expense_subcategory,
     save_vendor_category,
     suggest_expense_category,
 )
@@ -89,6 +91,7 @@ class ImportExpenseRow:
     already_exists: bool
     selected: bool
     is_reversal: bool = False
+    subcategory: str | None = None
 
 
 @dataclass
@@ -345,7 +348,7 @@ def _normalize_expense_transaction(
     account_lookup: dict[str, dict[str, Any]],
     *,
     source_kind: str,
-    vendor_categories: dict[str, str] | None = None,
+    vendor_rules: dict[str, tuple[str, str | None]] | None = None,
 ) -> ImportExpenseRow | None:
     if str(tx.get("_source_kind") or "bank") != source_kind:
         return None
@@ -384,7 +387,8 @@ def _normalize_expense_transaction(
 
     vendor = _transaction_vendor(tx)
     vendor_key = normalize_vendor_key(vendor)
-    saved_category = (vendor_categories or {}).get(vendor_key)
+    saved_rule = (vendor_rules or {}).get(vendor_key)
+    saved_category = saved_rule[0] if saved_rule else None
     if saved_category in EXPENSE_CATEGORIES:
         category = saved_category
     else:
@@ -410,6 +414,14 @@ def _normalize_expense_transaction(
                 int(statement_month),
             )
 
+    subcategory = None
+    if category == BILLS_CATEGORY:
+        subcategory = resolve_expense_subcategory(
+            category,
+            vendor,
+            vendor_rules or {},
+        )
+
     return ImportExpenseRow(
         row_key=external_id,
         external_id=external_id,
@@ -423,6 +435,7 @@ def _normalize_expense_transaction(
         already_exists=False,
         selected=True,
         is_reversal=is_reversal,
+        subcategory=subcategory,
     )
 
 
@@ -590,7 +603,7 @@ def build_credit_card_expense_import_rows(
     )
     account_lookup = _account_lookup(accounts, credit_cards)
     existing_ids = _existing_expense_ids(session, user.id)
-    vendor_categories = load_vendor_category_map(session, user.id)
+    vendor_rules = load_vendor_rule_map(session, user.id)
     rows: list[ImportExpenseRow] = []
 
     for tx in transactions:
@@ -598,7 +611,7 @@ def build_credit_card_expense_import_rows(
             tx,
             account_lookup,
             source_kind="credit_card",
-            vendor_categories=vendor_categories,
+            vendor_rules=vendor_rules,
         )
         if row is None:
             continue
@@ -627,7 +640,7 @@ def build_account_expense_import_rows(
     )
     account_lookup = _account_lookup(accounts, credit_cards)
     existing_ids = _existing_expense_ids(session, user.id)
-    vendor_categories = load_vendor_category_map(session, user.id)
+    vendor_rules = load_vendor_rule_map(session, user.id)
     rows: list[ImportExpenseRow] = []
 
     for tx in transactions:
@@ -635,7 +648,7 @@ def build_account_expense_import_rows(
             tx,
             account_lookup,
             source_kind="bank",
-            vendor_categories=vendor_categories,
+            vendor_rules=vendor_rules,
         )
         if row is None:
             continue
@@ -784,8 +797,11 @@ def import_selected_expenses(
     rows: list[ImportExpenseRow],
     selected_keys: set[str],
     category_overrides: dict[str, str] | None = None,
+    subcategory_overrides: dict[str, str | None] | None = None,
 ) -> int:
     overrides = category_overrides or {}
+    subcategory_overrides = subcategory_overrides or {}
+    vendor_rules = load_vendor_rule_map(session, user_id)
     created = 0
     for row in rows:
         if row.row_key not in selected_keys or row.already_exists:
@@ -793,6 +809,28 @@ def import_selected_expenses(
         category = overrides.get(row.row_key, row.category)
         if category not in EXPENSE_CATEGORIES:
             category = "Outros"
+
+        if row.row_key in subcategory_overrides:
+            explicit = subcategory_overrides[row.row_key] or ""
+            subcategory = (
+                resolve_expense_subcategory(
+                    category,
+                    row.vendor,
+                    vendor_rules,
+                    explicit_subcategory=explicit,
+                )
+                if category == BILLS_CATEGORY
+                else None
+            )
+        elif category == BILLS_CATEGORY:
+            subcategory = row.subcategory or resolve_expense_subcategory(
+                category,
+                row.vendor,
+                vendor_rules,
+            )
+        else:
+            subcategory = None
+
         session.add(
             FinanceExpenseEntry(
                 user_id=user_id,
@@ -803,11 +841,14 @@ def import_selected_expenses(
                 vendor=row.vendor,
                 payment_account=row.payment_account,
                 amount=row.amount,
+                subcategory=subcategory,
                 source=OPEN_FINANCE_SOURCE,
                 external_id=row.external_id,
             )
         )
-        save_vendor_category(session, user_id, row.vendor, category)
+        save_vendor_category(
+            session, user_id, row.vendor, category, subcategory=subcategory
+        )
         created += 1
     if created:
         session.commit()

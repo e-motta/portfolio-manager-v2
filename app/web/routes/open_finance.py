@@ -27,6 +27,8 @@ from app.services.cumbuca_sync import (
     stash_investment_import,
 )
 from app.services.finance import (
+    BILLS_CATEGORY,
+    BILLS_SUBCATEGORIES,
     EXPENSE_CATEGORIES,
     EXPENSE_CATEGORY_GROUPS,
     MONTH_LABELS,
@@ -171,6 +173,8 @@ def _preview_expense_import(
             "expense_mapping": expense_mapping,
             "expense_categories": EXPENSE_CATEGORIES,
             "expense_category_groups": EXPENSE_CATEGORY_GROUPS,
+            "bills_subcategories": BILLS_SUBCATEGORIES,
+            "bills_category": BILLS_CATEGORY,
             "confirm_action": request.url.path.replace("/preview", "/confirm"),
             "sync_tab": "open-finance",
         },
@@ -218,6 +222,14 @@ def _parse_expense_category_overrides(form) -> dict[str, str]:
     }
 
 
+def _parse_expense_subcategory_overrides(form) -> dict[str, str | None]:
+    return {
+        key.removeprefix("subcategory_"): (value or None)
+        for key, value in form.items()
+        if key.startswith("subcategory_")
+    }
+
+
 async def _confirm_expense_import(
     request: Request,
     session: SessionDep,
@@ -236,6 +248,7 @@ async def _confirm_expense_import(
         rows,
         set(selected_rows),
         category_overrides=_parse_expense_category_overrides(form),
+        subcategory_overrides=_parse_expense_subcategory_overrides(form),
     )
     return RedirectResponse(
         url=f"/finance/expenses?imported={created}",

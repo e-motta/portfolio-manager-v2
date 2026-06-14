@@ -1,4 +1,6 @@
 (function () {
+  const BILLS_CATEGORY = "Bills";
+
   function monthLabels(form) {
     return (form?.dataset.ofMonthLabels || "").split("|");
   }
@@ -88,6 +90,132 @@
     return select.selectedOptions[0]?.dataset.slug || "other";
   }
 
+  function subcategorySlug(select) {
+    return select?.selectedOptions[0]?.dataset.slug || "none";
+  }
+
+  function setSubcategorySelectEnabled(select, enabled) {
+    if (!select) {
+      return;
+    }
+
+    const storedName = select.dataset.subcategoryName;
+    select.disabled = !enabled;
+    if (enabled && storedName) {
+      select.setAttribute("name", storedName);
+    } else {
+      select.removeAttribute("name");
+      if (!enabled) {
+        select.value = "";
+      }
+    }
+  }
+
+  function updateSubcategoryPicker(picker) {
+    const select = picker?.querySelector("[data-of-subcategory-select]");
+    if (!select) {
+      return;
+    }
+
+    const slug = subcategorySlug(select);
+    const isToolbar = picker.classList.contains("of-category-picker--toolbar");
+    picker.className = isToolbar
+      ? `of-category-picker of-category-picker--toolbar of-category-picker--${slug}`
+      : `of-category-picker of-category-picker--${slug}`;
+    picker.dataset.subcategory = select.value;
+    select.setAttribute("aria-label", select.value || "No subcategory");
+  }
+
+  function updateRowSubcategoryVisibility(row) {
+    const isBills = row.dataset.rowCategory === BILLS_CATEGORY;
+    const slot = row.querySelector("[data-of-subcategory-slot]");
+    if (!slot) {
+      return;
+    }
+
+    slot.hidden = !isBills;
+    const select = slot.querySelector("[data-of-subcategory-select]");
+    const picker = slot.querySelector("[data-of-subcategory-picker]");
+    setSubcategorySelectEnabled(select, isBills);
+    if (picker) {
+      updateSubcategoryPicker(picker);
+    }
+    updateRowAmountPreview(row);
+  }
+
+  function effectiveAmountFor(amount, subcategory) {
+    const magnitude = Math.abs(amount);
+    let adjusted = magnitude;
+    if (subcategory === "Aluguel (/2+114)") {
+      adjusted = magnitude / 2 + 114;
+    } else if (subcategory === "Outras contas (/2)") {
+      adjusted = magnitude / 2;
+    }
+    adjusted = Math.round(adjusted * 100) / 100;
+    if (amount > 0) {
+      return adjusted;
+    }
+    if (amount < 0) {
+      return -adjusted;
+    }
+    return 0;
+  }
+
+  function formatSignedBrl(amount) {
+    const absolute = Math.abs(amount).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    if (amount > 0) {
+      return `+R$\u00a0${absolute}`;
+    }
+    return `R$\u00a0-${absolute}`;
+  }
+
+  function plClass(amount) {
+    if (amount > 0) {
+      return "pl-positive";
+    }
+    if (amount < 0) {
+      return "pl-negative";
+    }
+    return "pl-neutral";
+  }
+
+  function updateRowAmountPreview(row) {
+    const preview = row.querySelector("[data-of-amount-preview]");
+    if (!preview) {
+      return;
+    }
+
+    const rawAmount = Number(row.dataset.rowAmount || "0");
+    const isBills = row.dataset.rowCategory === BILLS_CATEGORY;
+    const subcategorySelect = row.querySelector("[data-of-subcategory-select]");
+    const subcategory = isBills ? (subcategorySelect?.value || "") : "";
+    const effective = effectiveAmountFor(rawAmount, subcategory);
+    const effectiveEl = preview.querySelector("[data-of-effective-amount]");
+    const originalEl = preview.querySelector("[data-of-original-amount]");
+
+    if (effectiveEl) {
+      effectiveEl.textContent = formatSignedBrl(effective);
+      effectiveEl.className = `money ${plClass(effective)}`;
+    }
+    if (originalEl) {
+      const showOriginal = Boolean(subcategory) && effective !== rawAmount;
+      originalEl.hidden = !showOriginal;
+      originalEl.textContent = showOriginal ? `Original ${formatSignedBrl(rawAmount)}` : "";
+    }
+  }
+
+  function updateBulkSubcategoryToolbar(form) {
+    const bulkCategory = form?.querySelector("[data-of-bulk-category]");
+    const bulkSubcategory = form?.querySelector("[data-of-bulk-subcategory-wrap]");
+    if (!bulkCategory || !bulkSubcategory) {
+      return;
+    }
+    bulkSubcategory.hidden = bulkCategory.value !== BILLS_CATEGORY;
+  }
+
   function updateCategoryPicker(picker) {
     const select = picker.querySelector("[data-of-category-select], [data-of-bulk-category]");
     if (!select) {
@@ -112,6 +240,8 @@
     }
 
     row.classList.toggle("import-row--needs-category", select.value === "Outros");
+    row.dataset.rowCategory = select.value;
+    updateRowSubcategoryVisibility(row);
     const status = row.querySelector(".status-pill");
     if (
       status
@@ -128,6 +258,24 @@
     }
   }
 
+  function bindSubcategoryPickers(scope) {
+    scope.querySelectorAll("[data-of-subcategory-picker]").forEach((picker) => {
+      const select = picker.querySelector("[data-of-subcategory-select]");
+      if (!select || picker.dataset.ofSubcategoryBound === "1") {
+        return;
+      }
+      picker.dataset.ofSubcategoryBound = "1";
+      select.addEventListener("change", () => {
+        updateSubcategoryPicker(picker);
+        const row = picker.closest("[data-import-row]");
+        if (row) {
+          updateRowAmountPreview(row);
+        }
+      });
+      updateSubcategoryPicker(picker);
+    });
+  }
+
   function bindCategoryPickers(scope) {
     scope.querySelectorAll("[data-of-category-picker], [data-of-bulk-picker]").forEach((picker) => {
       const select = picker.querySelector("[data-of-category-select], [data-of-bulk-category]");
@@ -135,38 +283,60 @@
         return;
       }
       picker.dataset.ofCategoryBound = "1";
-      select.addEventListener("change", () => updateCategoryPicker(picker));
+      select.addEventListener("change", () => {
+        updateCategoryPicker(picker);
+        const form = picker.closest("[data-import-preview-form]");
+        if (picker.hasAttribute("data-of-bulk-picker")) {
+          updateBulkSubcategoryToolbar(form);
+        }
+      });
       updateCategoryPicker(picker);
+      if (picker.hasAttribute("data-of-bulk-picker")) {
+        updateBulkSubcategoryToolbar(picker.closest("[data-import-preview-form]"));
+      }
     });
   }
 
-  function bindBulkCategoryApply(scope) {
-    scope.querySelectorAll("[data-of-apply-bulk-category]").forEach((button) => {
-      if (button.dataset.ofBulkBound === "1") {
+  function bindBulkSelectionApply(scope) {
+    scope.querySelectorAll("[data-of-apply-bulk-selection]").forEach((button) => {
+      if (button.dataset.ofBulkSelectionBound === "1") {
         return;
       }
-      button.dataset.ofBulkBound = "1";
+      button.dataset.ofBulkSelectionBound = "1";
 
       button.addEventListener("click", () => {
         const form = button.closest("[data-import-preview-form]");
-        const bulkSelect = form?.querySelector("[data-of-bulk-category]");
-        if (!form || !bulkSelect?.value) {
+        const bulkCategory = form?.querySelector("[data-of-bulk-category]");
+        const bulkSubcategory = form?.querySelector("[data-of-bulk-subcategory]");
+        if (!form || !bulkCategory?.value) {
           return;
         }
 
-        const category = bulkSelect.value;
+        const category = bulkCategory.value;
+        const subcategory = category === BILLS_CATEGORY ? (bulkSubcategory?.value || "") : "";
+
         form.querySelectorAll(".import-row--new").forEach((row) => {
           const checkbox = row.querySelector('input[name="selected_rows"]');
           if (!checkbox?.checked) {
             return;
           }
-          const select = row.querySelector("[data-of-category-select]");
-          const picker = row.querySelector("[data-of-category-picker]");
-          if (!select || !picker) {
-            return;
+
+          const categorySelect = row.querySelector("[data-of-category-select]");
+          const categoryPicker = row.querySelector("[data-of-category-picker]");
+          if (categorySelect && categoryPicker) {
+            categorySelect.value = category;
+            updateCategoryPicker(categoryPicker);
           }
-          select.value = category;
-          updateCategoryPicker(picker);
+
+          const subcategorySelect = row.querySelector("[data-of-subcategory-select]");
+          const subcategoryPicker = row.querySelector("[data-of-subcategory-picker]");
+          if (category === BILLS_CATEGORY && subcategorySelect) {
+            subcategorySelect.value = subcategory;
+            if (subcategoryPicker) {
+              updateSubcategoryPicker(subcategoryPicker);
+            }
+          }
+          updateRowSubcategoryVisibility(row);
         });
       });
     });
@@ -178,8 +348,14 @@
     bindDismissibleAlerts(scope);
     bindImportedToggle(scope);
     bindCategoryPickers(scope);
-    bindBulkCategoryApply(scope);
+    bindSubcategoryPickers(scope);
+    bindBulkSelectionApply(scope);
+    scope.querySelectorAll("[data-import-row]").forEach((row) => {
+      updateRowSubcategoryVisibility(row);
+      updateRowAmountPreview(row);
+    });
   }
 
   document.addEventListener("DOMContentLoaded", () => init(document));
+  document.body.addEventListener("htmx:afterSwap", () => init(document));
 })();

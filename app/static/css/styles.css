@@ -2656,6 +2656,38 @@ body.form-modal-open {
   --cat-dot: #f97316;
 }
 
+.of-category-picker--bills,
+.of-category-badge--bills {
+  --cat-bg: #eef2ff;
+  --cat-border: #a5b4fc;
+  --cat-text: #3730a3;
+  --cat-dot: #6366f1;
+}
+
+.of-category-picker--none,
+.of-category-badge--none {
+  --cat-bg: #f8fafc;
+  --cat-border: #e2e8f0;
+  --cat-text: #94a3b8;
+  --cat-dot: #cbd5e1;
+}
+
+.of-category-picker--bills-aluguel,
+.of-category-badge--bills-aluguel {
+  --cat-bg: #eff6ff;
+  --cat-border: #93c5fd;
+  --cat-text: #1d4ed8;
+  --cat-dot: #3b82f6;
+}
+
+.of-category-picker--bills-outras,
+.of-category-badge--bills-outras {
+  --cat-bg: #f0fdf4;
+  --cat-border: #86efac;
+  --cat-text: #166534;
+  --cat-dot: #22c55e;
+}
+
 .import-row--needs-category {
   background: #fffbeb;
 }
@@ -2671,7 +2703,47 @@ body.form-modal-open {
   margin-left: auto;
 }
 
+.open-finance-preview__bulk-apply {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-left: auto;
+  flex-wrap: nowrap;
+}
+
+.open-finance-preview__bulk-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+}
+
+.open-finance-preview__bulk-controls > .of-category-picker--toolbar,
+.open-finance-preview__bulk-controls .of-subcategory-slot .of-category-picker--toolbar {
+  width: 11rem;
+  min-width: 11rem;
+  max-width: 11rem;
+  flex: 0 0 11rem;
+}
+
+.open-finance-preview__bulk-controls .of-subcategory-slot {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.open-finance-preview__bulk-controls .btn {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.of-subcategory-slot[hidden] {
+  display: none !important;
+}
+
 .open-finance-preview__bulk-label {
+  flex: 0 0 auto;
+  line-height: 2rem;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--muted);
@@ -3824,6 +3896,42 @@ body.form-modal-open {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.finance-subcategory-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.finance-expense-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+}
+
+.finance-expense-amount__original {
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.col-subcategory {
+  width: 11rem;
+  min-width: 9rem;
+}
+
+.finance-quick-form__field--subcategory .of-category-picker {
+  min-width: 10rem;
 }
 
 .finance-reversal-actions {

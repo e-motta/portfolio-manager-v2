@@ -10,19 +10,25 @@ from app.core.auth import CurrentUserDep
 from app.core.db import SessionDep
 from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry, FinanceInvestmentEntry
 from app.services.finance import (
+    BILLS_CATEGORY,
+    BILLS_SUBCATEGORIES,
     EXPENSE_CATEGORIES,
     INCOME_CATEGORIES,
     INVESTMENT_BROKERS,
     MAX_EXPENSE_INSTALLMENTS,
     PAYMENT_ACCOUNTS,
+    _UNSET,
     build_expenses_context,
     build_income_context,
     build_investments_context,
     build_summary_context,
     create_expense_entries,
     link_expense_reversal,
+    load_vendor_rule_map,
+    resolve_expense_subcategory,
     resolve_month,
     resolve_year,
+    save_vendor_category,
     upsert_investment_entry,
     validate_income_category,
     validate_investment_broker,
@@ -136,6 +142,8 @@ def _expense_row_context(context: dict, entry: FinanceExpenseEntry) -> dict:
         "entry": entry,
         "month_labels": context["month_labels"],
         "expense_categories": EXPENSE_CATEGORIES,
+        "bills_subcategories": context.get("bills_subcategories", BILLS_SUBCATEGORIES),
+        "bills_category": context.get("bills_category", BILLS_CATEGORY),
         "payment_accounts": PAYMENT_ACCOUNTS,
         "link_targets": context.get("link_targets", {}),
         "show_month_column": context.get("show_month_column", True),
@@ -355,6 +363,7 @@ def create_expense_entry(
     transaction_date: Annotated[str, Form()] = "",
     installments: Annotated[str, Form()] = "",
     installments_enabled: Annotated[str, Form()] = "",
+    subcategory: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
     parsed_amount = _parse_expense_amount(amount)
     parsed_installments = (
@@ -374,7 +383,15 @@ def create_expense_entry(
             detail="Invalid payment account.",
         )
 
+    vendor_rules = load_vendor_rule_map(session, current_user.id)
     try:
+        explicit = subcategory.strip() if subcategory.strip() else _UNSET
+        resolved_subcategory = resolve_expense_subcategory(
+            category,
+            vendor,
+            vendor_rules,
+            explicit_subcategory=explicit,
+        )
         entries = create_expense_entries(
             session,
             user_id=current_user.id,
@@ -386,12 +403,21 @@ def create_expense_entry(
             amount=parsed_amount,
             installments=parsed_installments,
             transaction_date=_parse_optional_date(transaction_date),
+            subcategory=resolved_subcategory,
         )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
+
+    save_vendor_category(
+        session,
+        current_user.id,
+        vendor,
+        category,
+        subcategory=resolved_subcategory,
+    )
 
     session.commit()
     first_entry = entries[0]
@@ -414,6 +440,7 @@ def update_expense_entry(
     payment_account: str = Form(default=""),
     amount: str = Form(default=""),
     transaction_date: str = Form(default=""),
+    subcategory: str = Form(default=""),
 ) -> HTMLResponse:
     entry = session.get(FinanceExpenseEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
@@ -439,9 +466,34 @@ def update_expense_entry(
         entry.payment_account = payment_account
     if amount:
         entry.amount = _parse_expense_amount(amount)
+
+    vendor_rules = load_vendor_rule_map(session, current_user.id)
+    try:
+        if entry.category != BILLS_CATEGORY:
+            entry.subcategory = None
+        else:
+            entry.subcategory = resolve_expense_subcategory(
+                entry.category,
+                entry.vendor,
+                vendor_rules,
+                explicit_subcategory=subcategory,
+            )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
     entry.transaction_date = _parse_optional_date(transaction_date)
     entry.updated_at = datetime.utcnow()
     session.add(entry)
+    save_vendor_category(
+        session,
+        current_user.id,
+        entry.vendor,
+        entry.category,
+        subcategory=entry.subcategory,
+    )
     session.commit()
     session.refresh(entry)
 

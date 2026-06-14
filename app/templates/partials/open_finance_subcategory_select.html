@@ -1,0 +1,44 @@
+{% macro subcategory_options(selected) -%}
+  <option value=""
+          data-slug="none"
+          {% if not selected %}selected{% endif %}>
+    —
+  </option>
+  {% for subcategory in bills_subcategories %}
+  <option value="{{ subcategory }}"
+          data-slug="{{ subcategory|expense_subcategory_slug }}"
+          {% if subcategory == selected %}selected{% endif %}>
+    {{ subcategory }}
+  </option>
+  {% endfor %}
+{%- endmacro %}
+
+{% macro subcategory_picker(name, selected, row_key=None, picker_id=None, hidden=false, toolbar=false) -%}
+  {% set slug = selected|expense_subcategory_slug %}
+  {% set control_id = picker_id or ('subcategory-' ~ row_key) %}
+  <div class="of-category-picker{% if toolbar %} of-category-picker--toolbar{% endif %} of-category-picker--{{ slug }}"
+       data-of-subcategory-picker
+       data-subcategory="{{ selected or '' }}">
+    <span class="of-category-picker__dot" aria-hidden="true"></span>
+    <label class="sr-only" for="{{ control_id }}">
+      Subcategory{% if row_key %} for row{% endif %}
+    </label>
+    <select id="{{ control_id }}"
+            class="of-category-picker__select"
+            {% if name %}name="{{ name }}" data-subcategory-name="{{ name }}"{% endif %}
+            data-of-subcategory-select
+            {% if toolbar %}data-of-bulk-subcategory{% endif %}
+            {% if hidden %}disabled{% endif %}
+            aria-label="{{ selected or 'No subcategory' }}">
+      {{ subcategory_options(selected) }}
+    </select>
+  </div>
+{%- endmacro %}
+
+{% macro subcategory_badge(subcategory) -%}
+  {% if subcategory %}
+  <span class="of-category-badge of-category-badge--{{ subcategory|expense_subcategory_slug }}">
+    {{ subcategory }}
+  </span>
+  {% endif %}
+{%- endmacro %}

@@ -1,3 +1,73 @@
+function subcategorySlug(select) {
+  return select?.selectedOptions[0]?.dataset.slug || "none";
+}
+
+function updateSubcategoryPicker(picker) {
+  const select = picker?.querySelector("[data-of-subcategory-select]");
+  if (!select) {
+    return;
+  }
+
+  const slug = subcategorySlug(select);
+  const isToolbar = picker.classList.contains("of-category-picker--toolbar");
+  picker.className = isToolbar
+    ? `of-category-picker of-category-picker--toolbar of-category-picker--${slug}`
+    : `of-category-picker of-category-picker--${slug}`;
+  picker.dataset.subcategory = select.value;
+  select.setAttribute("aria-label", select.value || "No subcategory");
+}
+
+function bindFinanceSubcategoryPickers(scope) {
+  scope.querySelectorAll("[data-of-subcategory-picker]").forEach((picker) => {
+    if (picker.dataset.financeSubcategoryBound === "1") {
+      return;
+    }
+    picker.dataset.financeSubcategoryBound = "1";
+    const select = picker.querySelector("[data-of-subcategory-select]");
+    select?.addEventListener("change", () => updateSubcategoryPicker(picker));
+    updateSubcategoryPicker(picker);
+  });
+}
+
+function syncBillsSubcategoryField(container) {
+  const categorySelect = container.querySelector(
+    '#add-expense-category, [name="category"]'
+  );
+  const subcategoryField = container.querySelector("[data-finance-bills-subcategory]");
+  const picker = subcategoryField?.querySelector("[data-of-subcategory-picker]");
+  const select = picker?.querySelector("[data-of-subcategory-select]");
+  if (!categorySelect || !subcategoryField) {
+    return;
+  }
+
+  const isBills = categorySelect.value === "Bills";
+  subcategoryField.hidden = !isBills;
+  if (select) {
+    select.disabled = !isBills;
+    if (!isBills) {
+      select.value = "";
+      updateSubcategoryPicker(picker);
+    }
+  }
+}
+
+function bindFinanceBillsSubcategory() {
+  document.querySelectorAll("#add-expense-modal, .finance-quick-form").forEach((container) => {
+    if (container.dataset.financeBillsSubcategoryBound === "1") {
+      return;
+    }
+    container.dataset.financeBillsSubcategoryBound = "1";
+    const categorySelect = container.querySelector(
+      '#add-expense-category, [name="category"]'
+    );
+    if (!categorySelect) {
+      return;
+    }
+    categorySelect.addEventListener("change", () => syncBillsSubcategoryField(container));
+    syncBillsSubcategoryField(container);
+  });
+}
+
 function bindFinanceForms() {
   document.querySelectorAll(".year-selector__control").forEach((select) => {
     if (select.dataset.financeBound === "1") {
@@ -40,6 +110,8 @@ function bindFinanceInstallments() {
 function bindFinancePage() {
   bindFinanceForms();
   bindFinanceInstallments();
+  bindFinanceBillsSubcategory();
+  bindFinanceSubcategoryPickers(document);
 }
 
 document.addEventListener("DOMContentLoaded", bindFinancePage);

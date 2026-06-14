@@ -30,6 +30,19 @@ MONTH_LABELS = (
 
 BILLS_CATEGORY = "Bills"
 BILLS_PAYMENT_ACCOUNT = "Nuconta"
+BILLS_SUBCATEGORY_ALUGUEL = "Aluguel (/2+114)"
+BILLS_SUBCATEGORY_OUTRAS_CONTAS = "Outras contas (/2)"
+BILLS_SUBCATEGORIES = (
+    BILLS_SUBCATEGORY_ALUGUEL,
+    BILLS_SUBCATEGORY_OUTRAS_CONTAS,
+)
+
+EXPENSE_SUBCATEGORY_SLUGS: dict[str, str] = {
+    BILLS_SUBCATEGORY_ALUGUEL: "bills-aluguel",
+    BILLS_SUBCATEGORY_OUTRAS_CONTAS: "bills-outras",
+}
+
+_UNSET = object()
 
 EXPENSE_CATEGORIES = (
     BILLS_CATEGORY,
@@ -128,6 +141,12 @@ def format_finance_source(source: str | None) -> str:
 
 def expense_category_slug(category: str) -> str:
     return EXPENSE_CATEGORY_SLUGS.get(category, "other")
+
+
+def expense_subcategory_slug(subcategory: str | None) -> str:
+    if not subcategory:
+        return "none"
+    return EXPENSE_SUBCATEGORY_SLUGS.get(subcategory, "none")
 
 MAX_EXPENSE_INSTALLMENTS = 48
 
@@ -306,17 +325,104 @@ def load_vendor_category_map(session: Session, user_id: UUID) -> dict[str, str]:
     return {row.vendor_key: row.category for row in rows}
 
 
+def load_vendor_rule_map(
+    session: Session, user_id: UUID
+) -> dict[str, tuple[str, str | None]]:
+    rows = session.exec(
+        select(FinanceVendorCategory).where(FinanceVendorCategory.user_id == user_id)
+    ).all()
+    return {row.vendor_key: (row.category, row.subcategory) for row in rows}
+
+
+def normalize_expense_subcategory(category: str, subcategory: str | None) -> str | None:
+    if not subcategory or not subcategory.strip():
+        return None
+    cleaned = subcategory.strip()
+    if category != BILLS_CATEGORY:
+        if cleaned:
+            raise ValueError("Subcategory is only allowed for Bills.")
+        return None
+    if cleaned not in BILLS_SUBCATEGORIES:
+        raise ValueError("Invalid subcategory.")
+    return cleaned
+
+
+def resolve_expense_subcategory(
+    category: str,
+    vendor: str,
+    vendor_rules: dict[str, tuple[str, str | None]],
+    *,
+    explicit_subcategory: str | None | object = _UNSET,
+) -> str | None:
+    if explicit_subcategory is not _UNSET:
+        if not explicit_subcategory or not str(explicit_subcategory).strip():
+            return None
+        return normalize_expense_subcategory(category, str(explicit_subcategory))
+    if category != BILLS_CATEGORY:
+        return None
+    vendor_key = normalize_vendor_key(vendor)
+    rule = vendor_rules.get(vendor_key)
+    if rule is None:
+        return None
+    saved_subcategory = rule[1]
+    if saved_subcategory in BILLS_SUBCATEGORIES:
+        return saved_subcategory
+    return None
+
+
+def effective_expense_amount_for(
+    amount: Decimal,
+    subcategory: str | None,
+) -> Decimal:
+    if not subcategory:
+        return amount
+
+    magnitude = abs(amount)
+    if subcategory == BILLS_SUBCATEGORY_ALUGUEL:
+        adjusted = magnitude / Decimal("2") + Decimal("114")
+    elif subcategory == BILLS_SUBCATEGORY_OUTRAS_CONTAS:
+        adjusted = magnitude / Decimal("2")
+    else:
+        return amount
+
+    adjusted = adjusted.quantize(Decimal("0.01"))
+    if amount > 0:
+        return adjusted
+    if amount < 0:
+        return -adjusted
+    return Decimal("0")
+
+
+def effective_expense_amount(
+    entry: FinanceExpenseEntry,
+    *,
+    amount: Decimal | None = None,
+    subcategory: str | None = None,
+) -> Decimal:
+    raw_amount = entry.amount if amount is None else amount
+    effective_subcategory = entry.subcategory if subcategory is None else subcategory
+    return effective_expense_amount_for(raw_amount, effective_subcategory)
+
+
 def save_vendor_category(
     session: Session,
     user_id: UUID,
     vendor: str,
     category: str,
+    *,
+    subcategory: str | None = None,
 ) -> None:
     if category not in EXPENSE_CATEGORIES:
         return
     vendor_key = normalize_vendor_key(vendor)
     if not vendor_key or vendor_key == "unknown":
         return
+
+    normalized_subcategory: str | None
+    try:
+        normalized_subcategory = normalize_expense_subcategory(category, subcategory)
+    except ValueError:
+        normalized_subcategory = None
 
     existing = session.exec(
         select(FinanceVendorCategory)
@@ -329,12 +435,19 @@ def save_vendor_category(
                 user_id=user_id,
                 vendor_key=vendor_key,
                 category=category,
+                subcategory=normalized_subcategory,
             )
         )
         return
 
+    changed = False
     if existing.category != category:
         existing.category = category
+        changed = True
+    if existing.subcategory != normalized_subcategory:
+        existing.subcategory = normalized_subcategory
+        changed = True
+    if changed:
         existing.updated_at = datetime.utcnow()
         session.add(existing)
 
@@ -746,7 +859,7 @@ def _sum_expenses_excluding_bills(
             continue
         account = entry.payment_account if entry.payment_account in totals else "Manual"
         totals.setdefault(account, _empty_month_map())
-        totals[account][entry.month] += entry.amount
+        totals[account][entry.month] += effective_expense_amount(entry)
     return totals
 
 
@@ -759,7 +872,7 @@ def _sum_bills_by_vendor(
             continue
         vendor = entry.vendor or "Bills"
         totals.setdefault(vendor, _empty_month_map())
-        totals[vendor][entry.month] += entry.amount
+        totals[vendor][entry.month] += effective_expense_amount(entry)
     return totals
 
 
@@ -767,7 +880,7 @@ def _sum_bills_by_month(entries: list[FinanceExpenseEntry]) -> dict[int, Decimal
     totals = _empty_month_map()
     for entry in entries:
         if entry.category == BILLS_CATEGORY:
-            totals[entry.month] += entry.amount
+            totals[entry.month] += effective_expense_amount(entry)
     return totals
 
 
@@ -775,7 +888,7 @@ def _sum_day_to_day_by_month(entries: list[FinanceExpenseEntry]) -> dict[int, De
     totals = _empty_month_map()
     for entry in entries:
         if entry.category != BILLS_CATEGORY:
-            totals[entry.month] += entry.amount
+            totals[entry.month] += effective_expense_amount(entry)
     return totals
 
 
@@ -799,6 +912,13 @@ def _sum_by_month(
     totals = _empty_month_map()
     for entry in entries:
         totals[entry.month] += entry.amount
+    return totals
+
+
+def _sum_expenses_by_month(entries: list[FinanceExpenseEntry]) -> dict[int, Decimal]:
+    totals = _empty_month_map()
+    for entry in entries:
+        totals[entry.month] += effective_expense_amount(entry)
     return totals
 
 
@@ -949,14 +1069,16 @@ def build_expenses_context(
     session: Session, user_id: UUID, year: int, *, selected_month: int | None = None
 ) -> dict:
     entries = _load_expense_entries(session, user_id, year)
-    month_totals = _sum_by_month(entries)
+    month_totals = _sum_expenses_by_month(entries)
     payment_totals: dict[str, MonthAmounts] = {
         account: MonthAmounts() for account in PAYMENT_ACCOUNTS
     }
     for entry in entries:
         if entry.payment_account in payment_totals:
             current = payment_totals[entry.payment_account].get(entry.month)
-            payment_totals[entry.payment_account].set(entry.month, current + entry.amount)
+            payment_totals[entry.payment_account].set(
+                entry.month, current + effective_expense_amount(entry)
+            )
 
     categories: dict[str, list[FinanceExpenseEntry]] = {cat: [] for cat in EXPENSE_CATEGORIES}
     for entry in entries:
@@ -965,7 +1087,7 @@ def build_expenses_context(
     category_month_totals: dict[str, dict[int, Decimal]] = {}
     category_year_totals: dict[str, Decimal] = {}
     for category, category_entries in categories.items():
-        month_map = _sum_by_month(category_entries)
+        month_map = _sum_expenses_by_month(category_entries)
         category_month_totals[category] = month_map
         category_year_totals[category] = sum(month_map.values(), start=Decimal("0"))
 
@@ -1010,6 +1132,8 @@ def build_expenses_context(
             selected_month=selected_month,
         ),
         "expense_categories": EXPENSE_CATEGORIES,
+        "bills_subcategories": BILLS_SUBCATEGORIES,
+        "bills_category": BILLS_CATEGORY,
         "payment_accounts": PAYMENT_ACCOUNTS,
         "payment_totals": payment_totals,
         "month_payment_totals": month_payment_totals,
@@ -1041,7 +1165,7 @@ def build_summary_context(
     expense_entries = _load_expense_entries(session, user_id, year)
 
     income_by_month = _sum_by_month(income_entries)
-    expense_by_month = _sum_by_month(expense_entries)
+    expense_by_month = _sum_expenses_by_month(expense_entries)
     income_by_category = _sum_income_by_category(income_entries)
     bills_by_vendor = _sum_bills_by_vendor(expense_entries)
     bills_by_month = _sum_bills_by_month(expense_entries)
@@ -1306,6 +1430,7 @@ def build_expense_entries(
     amount: Decimal,
     installments: int = 1,
     transaction_date: date | None = None,
+    subcategory: str | None = None,
 ) -> list[FinanceExpenseEntry]:
     if installments < 1 or installments > MAX_EXPENSE_INSTALLMENTS:
         raise ValueError(
@@ -1326,6 +1451,7 @@ def build_expense_entries(
                 vendor=installment_vendor_label(vendor, index, installments),
                 payment_account=payment_account,
                 amount=installment_amount,
+                subcategory=subcategory,
             )
         )
         entry_year, entry_month = advance_finance_month(entry_year, entry_month)
@@ -1344,6 +1470,7 @@ def create_expense_entries(
     amount: Decimal,
     installments: int = 1,
     transaction_date: date | None = None,
+    subcategory: str | None = None,
 ) -> list[FinanceExpenseEntry]:
     entries = build_expense_entries(
         user_id=user_id,
@@ -1355,6 +1482,7 @@ def create_expense_entries(
         amount=amount,
         installments=installments,
         transaction_date=transaction_date,
+        subcategory=subcategory,
     )
     for entry in entries:
         session.add(entry)

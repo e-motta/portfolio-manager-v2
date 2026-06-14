@@ -1,6 +1,10 @@
 {% from "partials/icons.html" import icon_edit, icon_save, icon_cancel, icon_delete %}
+{% from "partials/open_finance_subcategory_select.html" import subcategory_picker, subcategory_badge with context %}
 {% set is_reversal = entry.amount > 0 %}
+{% set effective_amount = entry|effective_expense_amount %}
+{% set show_original_amount = effective_amount != entry.amount %}
 {% set link_candidates = link_targets.get(entry.id, []) if link_targets is defined else [] %}
+{% set show_subcategory_column = show_subcategory_column if show_subcategory_column is defined else false %}
 <tr id="expense-{{ entry.id }}"
     class="editable-row finance-entry-row{% if is_reversal %} finance-entry-row--reversal{% endif %}"
     {% if oob %}hx-swap-oob="outerHTML"{% endif %}>
@@ -19,6 +23,9 @@
       <span class="status-pill status-pill--reversal">Reversal</span>
     </div>
   </td>
+  {% if show_subcategory_column %}
+  <td class="col-subcategory"></td>
+  {% endif %}
   <td>
     <span class="finance-payment-badge">{{ entry.payment_account }}</span>
   </td>
@@ -90,6 +97,16 @@
       <span class="view-mode cell-primary">{{ entry.vendor or "—" }}</span>
       <input class="edit-mode" type="text" name="vendor" value="{{ entry.vendor }}" required>
     </td>
+    {% if show_subcategory_column %}
+    <td class="col-subcategory">
+      <span class="view-mode">{{ subcategory_badge(entry.subcategory) }}</span>
+      <div class="edit-mode">
+        {{ subcategory_picker("subcategory", entry.subcategory, picker_id="subcategory-" ~ entry.id) }}
+      </div>
+    </td>
+    {% else %}
+    <input type="hidden" class="edit-mode" name="subcategory" value="">
+    {% endif %}
     <td>
       <span class="view-mode">
         <span class="finance-payment-badge">{{ entry.payment_account }}</span>
@@ -108,7 +125,14 @@
       </span>
     </td>
     <td class="num">
-      <span class="view-mode editable-value money pl-negative">{{ entry.amount|pl_brl }}</span>
+      <div class="view-mode finance-expense-amount">
+        <span class="editable-value money {{ effective_amount|pl_class }}">{{ effective_amount|pl_brl }}</span>
+        {% if show_original_amount %}
+        <span class="finance-expense-amount__original muted">
+          Original {{ entry.amount|pl_brl }}
+        </span>
+        {% endif %}
+      </div>
       <input class="edit-mode input-md" type="number" name="amount"
              value="{{ '%.2f'|format(-entry.amount) }}"
              step="0.01" min="0" inputmode="decimal" required>
