@@ -1,7 +1,7 @@
 {% from "partials/icons.html" import icon_edit, icon_save, icon_cancel, icon_delete %}
-<tr id="income-{{ entry.id }}" class="editable-row finance-entry-row">
-  <form hx-post="/finance/income/{{ entry.id }}"
-        hx-target="#income-{{ entry.id }}"
+<tr id="investment-{{ entry.id }}" class="editable-row finance-entry-row">
+  <form hx-post="/finance/investments/{{ entry.id }}"
+        hx-target="#investment-{{ entry.id }}"
         hx-swap="outerHTML"
         class="row-form-table">
     {% if show_month_column %}
@@ -17,23 +17,12 @@
     </td>
     {% endif %}
     <td>
-      <span class="view-mode">
-        <span class="of-category-badge">{{ entry.category }}</span>
-      </span>
-      <select class="edit-mode" name="category" required>
-        {% for category in income_categories %}
-        <option value="{{ category }}"{% if category == entry.category %} selected{% endif %}>{{ category }}</option>
+      <span class="view-mode cell-primary">{{ entry.broker|investment_broker_label }}</span>
+      <select class="edit-mode" name="broker" required>
+        {% for broker_key, broker_label in investment_brokers %}
+        <option value="{{ broker_key }}"{% if broker_key == entry.broker %} selected{% endif %}>{{ broker_label }}</option>
         {% endfor %}
       </select>
-    </td>
-    <td>
-      <span class="view-mode cell-primary">{{ entry.description or "—" }}</span>
-      <input class="edit-mode" type="text" name="description" value="{{ entry.description }}" required>
-    </td>
-    <td>
-      <span class="view-mode">
-        <span class="finance-source-badge">{{ entry.source|finance_source }}</span>
-      </span>
     </td>
     <td class="num">
       <span class="view-mode editable-value money pl-positive">{{ entry.amount|brl }}</span>
@@ -46,10 +35,10 @@
         <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-edit"
                 aria-label="Edit" title="Edit">{{ icon_edit() }}</button>
         <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-delete"
-                hx-delete="/finance/income/{{ entry.id }}"
-                hx-target="#income-{{ entry.id }}"
+                hx-delete="/finance/investments/{{ entry.id }}"
+                hx-target="#investment-{{ entry.id }}"
                 hx-swap="outerHTML"
-                hx-confirm="Delete this income entry?"
+                hx-confirm="Delete this contribution?"
                 aria-label="Delete" title="Delete">{{ icon_delete() }}</button>
       </div>
       <div class="edit-mode actions-inline">

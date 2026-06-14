@@ -1,0 +1,38 @@
+{% from "partials/icons.html" import icon_expenses, icon_income, icon_card %}
+<article class="finance-summary-card finance-summary-card--{{ card.variant }}">
+  <div class="finance-summary-card__head">
+    <div class="finance-summary-card__icon" aria-hidden="true">
+      {% if card.variant == 'income' %}{{ icon_income() }}
+      {% elif card.variant == 'bills' %}{{ icon_card() }}
+      {% else %}{{ icon_expenses() }}
+      {% endif %}
+    </div>
+    <div>
+      <h2 class="finance-summary-card__title">{{ card.title }}</h2>
+      <p class="finance-summary-card__desc">{{ card.subtitle }}</p>
+    </div>
+  </div>
+
+  <div class="finance-summary-card__body">
+    {% if card.lines %}
+    <ul class="finance-summary-card__lines">
+      {% for line in card.lines %}
+      <li class="finance-summary-card__line">
+        <span class="finance-summary-card__line-label">{{ line.label }}</span>
+        <span class="money {{ line.amount|pl_class }}">{{ line.amount|pl_brl }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="finance-summary-card__empty">No activity this month</p>
+    {% endif %}
+  </div>
+
+  <footer class="finance-summary-card__footer">
+    <div class="finance-summary-card__total">
+      <span class="finance-summary-card__total-label">{{ card.total_label }}</span>
+      <span class="money {{ card.total_amount|pl_class }}">{{ card.total_amount|pl_brl }}</span>
+    </div>
+    <a class="btn btn-secondary btn-small" href="{{ card.manage_href }}">{{ card.manage_label }}</a>
+  </footer>
+</article>

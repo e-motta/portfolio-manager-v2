@@ -8,6 +8,7 @@ const FINANCE_CHART_COLORS = {
     negative: { default: "#dc2626", selected: "#991b1b" },
     zero: "#e5e7eb",
   },
+  balanceLine: { default: "#2563eb", selected: "#1d4ed8" },
 };
 
 function formatSignedBrl(value) {
@@ -53,19 +54,25 @@ function chartBarColor(point, config) {
   return FINANCE_CHART_COLORS.balance.zero;
 }
 
-function buildHitboxSeries(config, maxValue) {
+function summaryBarColor(kind, month, selectedMonth) {
+  const selected = month === selectedMonth;
+  const palette = FINANCE_CHART_COLORS[kind];
+  return selected ? palette.selected : palette.default;
+}
+
+function buildHitboxSeries(config, yMax, yMin = 0) {
   return {
     id: "hitbox",
     type: "custom",
     data: config.points.map((point) => ({
       month: point.month,
-      rawValue: point.value,
+      rawValue: point.value ?? point.balance,
     })),
     renderItem(params, api) {
       const categoryIndex = params.dataIndex;
       const bandWidth = api.size([1, 0])[0];
-      const top = api.coord([categoryIndex, maxValue]);
-      const bottom = api.coord([categoryIndex, 0]);
+      const top = api.coord([categoryIndex, yMax]);
+      const bottom = api.coord([categoryIndex, yMin]);
       const width = bandWidth * 0.92;
       const height = bottom[1] - top[1];
       const x = top[0] - width / 2;
@@ -94,7 +101,148 @@ function buildHitboxSeries(config, maxValue) {
   };
 }
 
+function paddedAxisBounds(minValue, maxValue) {
+  const span = Math.max(maxValue - minValue, 1);
+  const padding = span * 0.12;
+  return {
+    yMax: maxValue + padding,
+    yMin: minValue - padding,
+  };
+}
+
+function buildSummaryChartOption(config) {
+  const labels = config.points.map((point) => point.label);
+  const incomeData = config.points.map((point) => ({
+    value: Math.max(point.income, 0),
+    month: point.month,
+    rawValue: point.income,
+    itemStyle: {
+      color: summaryBarColor("income", point.month, config.selectedMonth),
+      borderRadius: [6, 6, 0, 0],
+    },
+  }));
+  const expenseData = config.points.map((point) => ({
+    value: Math.min(point.expense, 0),
+    month: point.month,
+    rawValue: point.expense,
+    itemStyle: {
+      color: summaryBarColor("expense", point.month, config.selectedMonth),
+      borderRadius: [0, 0, 6, 6],
+    },
+  }));
+  const balanceData = config.points.map((point) => ({
+    value: point.balance,
+    month: point.month,
+    rawValue: point.balance,
+  }));
+
+  const values = [
+    ...incomeData.map((point) => point.value),
+    ...expenseData.map((point) => point.value),
+    ...balanceData.map((point) => point.value),
+  ];
+  const { yMax, yMin } = paddedAxisBounds(Math.min(...values, 0), Math.max(...values, 0));
+
+  return {
+    aria: {
+      enabled: true,
+      label: { description: config.ariaLabel },
+    },
+    animationDuration: 350,
+    grid: {
+      left: 0,
+      right: 0,
+      top: 16,
+      bottom: 28,
+      containLabel: false,
+    },
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      formatter(params) {
+        const monthLabel = params[0]?.axisValue ?? "";
+        const lines = [monthLabel];
+        for (const seriesId of ["income", "expense", "balance"]) {
+          const item = params.find((entry) => entry.seriesId === seriesId);
+          if (!item) {
+            continue;
+          }
+          lines.push(
+            `${item.marker}${item.seriesName}: ${formatSignedBrl(item.data.rawValue)}`,
+          );
+        }
+        return lines.join("<br>");
+      },
+    },
+    xAxis: {
+      type: "category",
+      data: labels,
+      boundaryGap: true,
+      axisTick: { alignWithLabel: true },
+      axisLine: { lineStyle: { color: "#d1d5db" } },
+      axisLabel: {
+        color: "#6b7280",
+        fontSize: 11,
+        fontWeight: 600,
+      },
+    },
+    yAxis: {
+      type: "value",
+      show: false,
+      min: yMin,
+      max: yMax,
+    },
+    series: [
+      {
+        id: "income",
+        name: "Income",
+        type: "bar",
+        color: FINANCE_CHART_COLORS.income.default,
+        data: incomeData,
+        barMaxWidth: 24,
+        z: 2,
+      },
+      {
+        id: "expense",
+        name: "Expenses",
+        type: "bar",
+        color: FINANCE_CHART_COLORS.expense.default,
+        data: expenseData,
+        barMaxWidth: 24,
+        barGap: "-100%",
+        z: 2,
+      },
+      {
+        id: "balance",
+        name: "Balance",
+        type: "line",
+        color: FINANCE_CHART_COLORS.balanceLine.default,
+        data: balanceData,
+        symbol: "circle",
+        symbolSize: (value, params) =>
+          params.data.month === config.selectedMonth ? 8 : 5,
+        lineStyle: {
+          color: FINANCE_CHART_COLORS.balanceLine.default,
+          width: 2,
+        },
+        itemStyle: {
+          color: (params) =>
+            params.data.month === config.selectedMonth
+              ? FINANCE_CHART_COLORS.balanceLine.selected
+              : FINANCE_CHART_COLORS.balanceLine.default,
+        },
+        z: 3,
+      },
+      buildHitboxSeries(config, yMax, yMin),
+    ],
+  };
+}
+
 function buildFinanceChartOption(config) {
+  if (config.variant === "summary") {
+    return buildSummaryChartOption(config);
+  }
+
   const labels = config.points.map((point) => point.label);
   const seriesData = config.points.map((point) => ({
     value: chartBarValue(point, config.variant),

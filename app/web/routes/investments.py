@@ -55,6 +55,7 @@ def _investments_context(session) -> dict:
         "asset_types": get_investable_asset_types(session),
         "total_current": total_current,
         "investment_count": len(investments),
+        "portfolio_tab": "investments",
     }
 
 

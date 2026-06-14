@@ -24,6 +24,14 @@
           </select>
         </div>
         <div class="field">
+          <label for="add-income-category">Category</label>
+          <select id="add-income-category" name="category" required>
+            {% for category in income_categories %}
+            <option value="{{ category }}"{% if category == 'Outros' %} selected{% endif %}>{{ category }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
           <label for="add-income-description">Description</label>
           <input id="add-income-description" type="text" name="description"
                  placeholder="Salary, freelance, reimbursement…" required>

@@ -1,5 +1,6 @@
 {% extends "finance_base.html" %}
 {% from "partials/icons.html" import icon_add %}
+{% from "partials/finance_kpi.html" import finance_stats_open, finance_stats_close, finance_stat %}
 
 {% block title %}Income — Finance{% endblock %}
 {% block topbar_title %}Income{% endblock %}
@@ -23,18 +24,23 @@
 {% set show_amounts = true %}
 {% include "partials/finance_month_pills.html" %}
 
-<div class="finance-kpi-grid finance-kpi-grid--compact">
-  <div class="finance-kpi finance-kpi--income">
-    <div class="finance-kpi__label">{% if filter_month %}This month{% else %}Year total{% endif %}</div>
-    <div class="finance-kpi__value pl-positive">
-      {% if filter_month %}{{ month_totals[filter_month]|pl_brl }}{% else %}{{ year_total|pl_brl }}{% endif %}
-    </div>
-  </div>
-  <div class="finance-kpi">
-    <div class="finance-kpi__label">Entries</div>
-    <div class="finance-kpi__value">{{ entries|length }}</div>
-  </div>
-</div>
+{% if filter_month %}
+  {% set period_total = month_totals[filter_month]|pl_brl %}
+  {% set pj_total = category_month_totals['PJ'][filter_month]|pl_brl %}
+  {% set outros_total = category_month_totals['Outros'][filter_month]|pl_brl %}
+  {% set period_label = "This month" %}
+{% else %}
+  {% set period_total = year_total|pl_brl %}
+  {% set pj_total = category_year_totals['PJ']|pl_brl %}
+  {% set outros_total = category_year_totals['Outros']|pl_brl %}
+  {% set period_label = "Year total" %}
+{% endif %}
+
+{{ finance_stats_open() }}
+  {{ finance_stat(period_label, period_total, tone="income", value_class="pl-positive", highlight=true) }}
+  {{ finance_stat("PJ", pj_total, tone="income", value_class="pl-positive") }}
+  {{ finance_stat("Outros", outros_total, tone="neutral", value_class="pl-positive") }}
+{{ finance_stats_close() }}
 
 {% include "partials/finance_monthly_chart.html" %}
 
@@ -57,6 +63,7 @@
     <table class="data-table">
       <thead>
         <tr>
+          <th>Category</th>
           <th>Description</th>
           <th>Source</th>
           <th class="num">Amount</th>
@@ -68,7 +75,7 @@
         {% for entry in entries %}
         {% include "partials/finance_income_row.html" %}
         {% else %}
-        <tr><td colspan="4" class="empty-state">No income logged for this month yet.</td></tr>
+        <tr><td colspan="5" class="empty-state">No income logged for this month yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -87,6 +94,7 @@
         <table class="data-table">
           <thead>
             <tr>
+              <th>Category</th>
               <th>Description</th>
               <th class="num">Amount</th>
               <th class="actions-cell">Actions</th>

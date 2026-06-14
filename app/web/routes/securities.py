@@ -106,6 +106,7 @@ def _securities_context(session, exchange_type):
         "dividend_net_usd": return_totals.dividend_net_usd,
         "last_prices_at": get_last_prices_updated_at(session),
         "provisional_fx_count": count_provisional_fx_lots(session),
+        "portfolio_tab": "holdings",
         **target_context,
     }
 

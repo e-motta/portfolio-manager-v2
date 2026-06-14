@@ -8,7 +8,7 @@ from app.models.asset_type import AssetType
 from app.models.finance import (
     FinanceExpenseEntry,
     FinanceIncomeEntry,
-    FinanceSummaryAmount,
+    FinanceInvestmentEntry,
 )
 from app.models.investment import Investment
 from app.models.security import SecurityLot
@@ -110,12 +110,12 @@ def test_export_includes_finance_data(session):
         )
     )
     session.add(
-        FinanceSummaryAmount(
+        FinanceInvestmentEntry(
             user_id=user.id,
             year=2026,
             month=1,
-            line_key="aluguel",
-            amount=Decimal("2500"),
+            broker="nubank",
+            amount=Decimal("3300"),
         )
     )
     session.commit()
@@ -126,8 +126,8 @@ def test_export_includes_finance_data(session):
     assert len(payload["finance_expenses"]) == 1
     assert payload["finance_expenses"][0]["category"] == "Transporte"
     assert payload["finance_expenses"][0]["transaction_date"] is None
-    assert len(payload["finance_summary"]) == 1
-    assert payload["finance_summary"][0]["line_key"] == "aluguel"
+    assert len(payload["finance_investments"]) == 1
+    assert payload["finance_investments"][0]["broker"] == "nubank"
 
 
 def test_restore_replaces_finance_data(session):

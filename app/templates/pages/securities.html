@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "portfolio_base.html" %}
 {% from "partials/icons.html" import icon_refresh, icon_add %}
 {% from "partials/pl_value.html" import pl_kpi %}
 
@@ -33,12 +33,10 @@
 </div>
 {% endblock %}
 
-{% block content %}
-<section class="page-intro">
-  <h1>Securities</h1>
-  <p>{{ symbol_count }} tickers · {{ lot_count }} tax lots · {{ dividend_count }} dividends</p>
-</section>
+{% block portfolio_title %}Securities{% endblock %}
+{% block portfolio_subtitle %}{{ symbol_count }} tickers · {{ lot_count }} tax lots · {{ dividend_count }} dividends{% endblock %}
 
+{% block portfolio_content %}
 <div class="kpi-grid">
   <div class="kpi kpi--featured">
     <div class="kpi__label">Sleeve value</div>
@@ -227,7 +225,7 @@
     </table>
   </div>
 </div>
-{% endblock %}
+{% endblock portfolio_content %}
 
 {% block page_modals %}
 {% include "partials/add_trade_modal.html" %}

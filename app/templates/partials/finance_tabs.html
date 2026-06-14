@@ -6,7 +6,7 @@
   <nav class="finance-tabs" aria-label="Finance sections">
     <a href="/finance/summary?year={{ year }}&month={{ selected_month }}"
        class="finance-tabs__link{% if finance_tab == 'summary' %} is-active{% endif %}">
-      Summary
+      Dashboard
     </a>
     <a href="/finance/income?year={{ year }}{% if filter_month is defined and filter_month %}&month={{ filter_month }}{% endif %}"
        class="finance-tabs__link{% if finance_tab == 'income' %} is-active{% endif %}">
@@ -15,6 +15,10 @@
     <a href="/finance/expenses?year={{ year }}{% if filter_month is defined and filter_month %}&month={{ filter_month }}{% endif %}"
        class="finance-tabs__link{% if finance_tab == 'expenses' %} is-active{% endif %}">
       Expenses
+    </a>
+    <a href="/finance/investments?year={{ year }}{% if filter_month is defined and filter_month %}&month={{ filter_month }}{% endif %}"
+       class="finance-tabs__link{% if finance_tab == 'investments' %} is-active{% endif %}">
+      Investments
     </a>
   </nav>
 </header>

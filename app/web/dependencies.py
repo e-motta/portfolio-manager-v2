@@ -11,7 +11,11 @@ from fastapi import Depends, Request
 from fastapi.templating import Jinja2Templates
 
 from app.core.config import settings
-from app.services.finance import expense_category_slug, format_finance_source
+from app.services.finance import (
+    expense_category_slug,
+    format_finance_source,
+    investment_broker_label,
+)
 from app.web.navigation import NAV_SECTIONS
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -108,6 +112,7 @@ def _build_templates() -> Jinja2Templates:
     jinja.env.filters["date_fmt"] = _format_date
     jinja.env.filters["datetime_fmt"] = _format_datetime
     jinja.env.filters["finance_source"] = format_finance_source
+    jinja.env.filters["investment_broker_label"] = investment_broker_label
     jinja.env.filters["expense_category_slug"] = expense_category_slug
     jinja.env.filters["tojson"] = _tojson
     jinja.env.globals["nav_sections"] = NAV_SECTIONS

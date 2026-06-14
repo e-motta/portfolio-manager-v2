@@ -3,15 +3,17 @@ from decimal import Decimal
 
 from sqlmodel import select
 
-from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry, FinanceSummaryAmount
+from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry
 from app.models.user import User
 from app.services.finance import (
+    BILLS_CATEGORY,
     build_expenses_context,
     build_income_context,
+    build_investments_context,
     build_summary_context,
     format_finance_source,
     migrate_pro_labore_lucro_to_pj,
-    upsert_summary_amount,
+    upsert_investment_entry,
 )
 
 
@@ -301,104 +303,102 @@ def test_expense_installments_span_into_next_year(session, client):
     ]
 
 
-def test_summary_bill_stored_negative(session, client):
-    response = client.post(
-        "/finance/summary/cell",
-        data={
-            "year": "2026",
-            "month": "1",
-            "line_key": "aluguel",
-            "amount": "1500.00",
-        },
-        follow_redirects=False,
-    )
-    assert response.status_code == 303
-
-    from app.models.finance import FinanceSummaryAmount
-
-    entry = session.exec(
-        select(FinanceSummaryAmount).where(FinanceSummaryAmount.line_key == "aluguel")
-    ).one()
-    assert entry.amount == Decimal("-1500.00")
-
-
-def test_summary_section_save_returns_partial(client):
-    response = client.post(
-        "/finance/summary/section",
-        data={
-            "year": "2026",
-            "month": "1",
-            "section_id": "income",
-            "line_key": ["pj"],
-            "amount": ["500.00"],
-        },
-        headers={"HX-Request": "true"},
-    )
-    assert response.status_code == 200
-    assert 'id="summary-section-income"' in response.text
-    assert "btn-save-section" in response.text
-    assert "btn-edit-section" in response.text
-    assert 'aria-label="Confirm' not in response.text
-
-
-def test_migrate_pro_labore_lucro_to_pj(session):
+def test_summary_bills_from_expense_entries(session, client):
     user = _test_user(session)
     session.add(
-        FinanceSummaryAmount(
+        FinanceExpenseEntry(
             user_id=user.id,
             year=2026,
             month=1,
-            line_key="pro_labore",
-            amount=Decimal("100"),
-        )
-    )
-    session.add(
-        FinanceSummaryAmount(
-            user_id=user.id,
-            year=2026,
-            month=1,
-            line_key="lucro",
-            amount=Decimal("250"),
+            category=BILLS_CATEGORY,
+            vendor="Aluguel",
+            payment_account="Nuconta",
+            amount=Decimal("-1500.00"),
         )
     )
     session.commit()
 
-    merged = migrate_pro_labore_lucro_to_pj(session)
-    assert merged == 1
-
-    rows = session.exec(
-        select(FinanceSummaryAmount).where(FinanceSummaryAmount.user_id == user.id)
-    ).all()
-    assert len(rows) == 1
-    assert rows[0].line_key == "pj"
-    assert rows[0].amount == Decimal("350")
+    context = build_summary_context(session, user.id, 2026, selected_month=1)
+    bills_card = next(card for card in context["summary_cards"] if card["id"] == "bills")
+    assert bills_card["total_amount"] == Decimal("-1500.00")
 
 
-def test_summary_section_save_persists_values(session, client):
-    response = client.post(
-        "/finance/summary/section",
-        data={
-            "year": "2026",
-            "month": "1",
-            "section_id": "income",
-            "line_key": ["pj"],
-            "amount": ["500.00"],
-        },
-        follow_redirects=False,
+def test_income_category_pj_and_outros(session, client):
+    user = _test_user(session)
+    session.add(
+        FinanceIncomeEntry(
+            user_id=user.id,
+            year=2026,
+            month=1,
+            category="PJ",
+            description="Pro labore",
+            amount=Decimal("500"),
+        )
     )
-    assert response.status_code == 303
+    session.add(
+        FinanceIncomeEntry(
+            user_id=user.id,
+            year=2026,
+            month=1,
+            category="Outros",
+            description="Reimbursement",
+            amount=Decimal("50"),
+        )
+    )
+    session.commit()
 
-    pj = session.exec(
-        select(FinanceSummaryAmount).where(FinanceSummaryAmount.line_key == "pj")
-    ).one()
-    assert pj.amount == Decimal("500.00")
+    context = build_summary_context(session, user.id, 2026, selected_month=1)
+    income_card = next(card for card in context["summary_cards"] if card["id"] == "income")
+    assert income_card["total_amount"] == Decimal("550")
+    labels = {line["label"] for line in income_card["lines"]}
+    assert "PJ" in labels
+    assert "Outros" in labels
 
 
-def test_summary_page_has_section_edit_buttons(client):
+def test_migrate_pro_labore_lucro_to_pj_noop_without_summary_table(session):
+    merged = migrate_pro_labore_lucro_to_pj(session)
+    assert merged == 0
+
+
+def test_summary_page_has_read_only_cards(client):
     response = client.get("/finance/summary?year=2026&month=1")
     assert response.status_code == 200
-    assert "btn-edit-section" in response.text
-    assert 'aria-label="Edit Income"' in response.text
+    assert "finance-summary-card" in response.text
+    assert "btn-edit-section" not in response.text
+
+
+def test_investments_annual_target(session):
+    user = _test_user(session)
+    session.add(
+        FinanceIncomeEntry(
+            user_id=user.id,
+            year=2026,
+            month=1,
+            category="PJ",
+            description="Salary",
+            amount=Decimal("10000"),
+        )
+    )
+    session.add(
+        FinanceIncomeEntry(
+            user_id=user.id,
+            year=2026,
+            month=2,
+            category="PJ",
+            description="Salary",
+            amount=Decimal("10000"),
+        )
+    )
+    upsert_investment_entry(
+        session, user.id, 2026, 1, "xp", Decimal("1000")
+    )
+    upsert_investment_entry(
+        session, user.id, 2026, 2, "nubank", Decimal("500")
+    )
+
+    context = build_investments_context(session, user.id, 2026, selected_month=2)
+    assert context["annual_target"] == Decimal("6000.00")
+    assert context["ytd_invested"] == Decimal("1500.00")
 
 
 def test_monthly_chart_payload_has_twelve_points():
@@ -419,7 +419,32 @@ def test_monthly_chart_payload_has_twelve_points():
     assert chart["points"][0]["label"] == MONTH_LABELS[0][:3]
 
 
-def test_summary_tab_totals_vary_by_month(session):
+def test_summary_monthly_chart_payload():
+    from app.services.finance import build_summary_monthly_chart
+
+    chart = build_summary_monthly_chart(
+        {3: Decimal("1400")},
+        {3: Decimal("-50"), 6: Decimal("-100")},
+        {3: Decimal("1350"), 6: Decimal("-100")},
+        year=2026,
+        selected_month=3,
+        link_base="/finance/summary",
+        aria_label="Income, expenses, and balance by month",
+    )
+    assert chart["variant"] == "summary"
+    assert len(chart["points"]) == 12
+    assert chart["points"][2] == {
+        "month": 3,
+        "label": "Mar",
+        "income": 1400.0,
+        "expense": -50.0,
+        "balance": 1350.0,
+    }
+    assert chart["points"][5]["expense"] == -100.0
+    assert chart["selectedMonth"] == 3
+
+
+def test_summary_totals_vary_by_month(session):
     user = _test_user(session)
 
     session.add(
@@ -427,6 +452,7 @@ def test_summary_tab_totals_vary_by_month(session):
             user_id=user.id,
             year=2026,
             month=3,
+            category="Outros",
             description="Client payment",
             amount=Decimal("1000"),
         )
@@ -436,6 +462,7 @@ def test_summary_tab_totals_vary_by_month(session):
             user_id=user.id,
             year=2026,
             month=6,
+            category="Outros",
             description="Bonus",
             amount=Decimal("200"),
         )
@@ -445,12 +472,12 @@ def test_summary_tab_totals_vary_by_month(session):
     march = build_summary_context(session, user.id, 2026, selected_month=3)
     june = build_summary_context(session, user.id, 2026, selected_month=6)
 
-    assert march["income_tab_total"] == Decimal("1000")
-    assert june["income_tab_total"] == Decimal("200")
-    assert march["income_tab_year_total"] == Decimal("1200")
+    assert march["month_income"] == Decimal("1000")
+    assert june["month_income"] == Decimal("200")
+    assert march["year_income"] == Decimal("1200")
 
 
-def test_summary_computes_outros_and_debit(session):
+def test_summary_aggregates_income_and_day_to_day(session):
     user = _test_user(session)
 
     session.add(
@@ -458,8 +485,19 @@ def test_summary_computes_outros_and_debit(session):
             user_id=user.id,
             year=2026,
             month=3,
+            category="Outros",
             description="Client payment",
             amount=Decimal("1000"),
+        )
+    )
+    session.add(
+        FinanceIncomeEntry(
+            user_id=user.id,
+            year=2026,
+            month=3,
+            category="PJ",
+            description="Salary",
+            amount=Decimal("400"),
         )
     )
     session.add(
@@ -473,19 +511,17 @@ def test_summary_computes_outros_and_debit(session):
             amount=Decimal("-50"),
         )
     )
-    upsert_summary_amount(
-        session, user.id, 2026, 3, "pj", Decimal("400")
-    )
     session.commit()
 
-    context = build_summary_context(session, user.id, 2026)
-    rows = {row.key: row for row in context["rows"]}
-
-    assert rows["outros"].amounts.get(3) == Decimal("1000")
-    assert rows["debito"].amounts.get(3) == Decimal("-50")
-    assert rows["balance"].amounts.get(3) == (
-        rows["income_total"].amounts.get(3) + rows["expenses_total"].amounts.get(3)
+    context = build_summary_context(session, user.id, 2026, selected_month=3)
+    income_card = next(card for card in context["summary_cards"] if card["id"] == "income")
+    day_to_day_card = next(
+        card for card in context["summary_cards"] if card["id"] == "day-to-day"
     )
+
+    assert income_card["total_amount"] == Decimal("1400")
+    assert day_to_day_card["total_amount"] == Decimal("-50")
+    assert context["month_balance"] == Decimal("1350")
 
 
 def test_summary_outros_includes_reimbursements_from_income_tab(session):
@@ -495,26 +531,53 @@ def test_summary_outros_includes_reimbursements_from_income_tab(session):
             user_id=user.id,
             year=2026,
             month=6,
+            category="Outros",
             description="Travel reimbursement",
             amount=Decimal("50"),
         )
     )
     session.commit()
 
-    context = build_summary_context(session, user.id, 2026)
-    rows = {row.key: row for row in context["rows"]}
+    context = build_summary_context(session, user.id, 2026, selected_month=6)
+    income_card = next(card for card in context["summary_cards"] if card["id"] == "income")
 
-    assert rows["outros"].amounts.get(6) == Decimal("50")
+    assert income_card["total_amount"] == Decimal("50")
+    assert any(line["label"] == "Outros" for line in income_card["lines"])
 
 
 def test_summary_page_loads(client):
     response = client.get("/finance/summary")
     assert response.status_code == 200
-    assert "Balance this month" in response.text
+    assert "Balance" in response.text
+    assert "finance-stats" in response.text
     assert "Monthly trend" in response.text
     assert 'class="finance-echart"' in response.text
     assert "echarts.min.js" in response.text
-    assert "Full year table" in response.text
+    assert "finance-summary-cards" in response.text
+
+
+def test_income_create_with_category(session, client):
+    response = client.post(
+        "/finance/income",
+        data={
+            "year": "2026",
+            "month": "3",
+            "category": "PJ",
+            "description": "Pro labore",
+            "amount": "5000",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    entry = session.exec(select(FinanceIncomeEntry)).one()
+    assert entry.category == "PJ"
+
+
+def test_investments_page_loads(client):
+    response = client.get("/finance/investments")
+    assert response.status_code == 200
+    assert "Annual target" in response.text
 
 
 def test_link_expense_reversal_unifies_amounts(session):

@@ -45,5 +45,6 @@ def dashboard(
             "allocation_target_sum": allocation_target_sum,
             "overweight": overweight,
             "underweight": underweight,
+            "portfolio_tab": "dashboard",
         },
     )

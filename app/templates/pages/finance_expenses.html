@@ -1,5 +1,6 @@
 {% extends "finance_base.html" %}
 {% from "partials/icons.html" import icon_add %}
+{% from "partials/finance_kpi.html" import finance_stats_open, finance_stats_close, finance_stat %}
 
 {% block title %}Expenses — Finance{% endblock %}
 {% block topbar_title %}Expenses{% endblock %}
@@ -22,18 +23,18 @@
 {% set show_all_option = true %}
 {% include "partials/finance_month_pills.html" %}
 
-<div class="finance-kpi-grid finance-kpi-grid--compact">
-  <div class="finance-kpi finance-kpi--expense">
-    <div class="finance-kpi__label">{% if filter_month %}This month{% else %}Year total{% endif %}</div>
-    <div class="finance-kpi__value pl-negative">
-      {% if filter_month %}{{ month_totals[filter_month]|pl_brl }}{% else %}{{ year_total|pl_brl }}{% endif %}
-    </div>
-  </div>
-  <div class="finance-kpi">
-    <div class="finance-kpi__label">Transactions</div>
-    <div class="finance-kpi__value">{{ entries|length }}</div>
-  </div>
-</div>
+{% if filter_month %}
+  {% set period_total = month_totals[filter_month]|pl_brl %}
+  {% set period_label = "This month" %}
+{% else %}
+  {% set period_total = year_total|pl_brl %}
+  {% set period_label = "Year total" %}
+{% endif %}
+
+{{ finance_stats_open("finance-stats--2") }}
+  {{ finance_stat(period_label, period_total, tone="expense", value_class="pl-negative", highlight=true) }}
+  {{ finance_stat("Transactions", entries|length, meta="In current view", tone="neutral") }}
+{{ finance_stats_close() }}
 
 {% include "partials/finance_monthly_chart.html" %}
 

@@ -1,16 +1,14 @@
-{% extends "base.html" %}
+{% extends "portfolio_base.html" %}
 {% from "partials/weight_column_hints.html" import weight_label_total, weight_label_alloc %}
 {% from "partials/allocation_column_hints.html" import allocation_column_head %}
 
 {% block title %}Dashboard — Portfolio Manager{% endblock %}
 {% block topbar_title %}Dashboard{% endblock %}
 
-{% block content %}
-<section class="page-intro">
-  <h1>Portfolio overview</h1>
-  <p>Weights as % of total portfolio and % of the allocation sleeve · BRL</p>
-</section>
+{% block portfolio_title %}Portfolio overview{% endblock %}
+{% block portfolio_subtitle %}Weights as % of total portfolio and % of the allocation sleeve · BRL{% endblock %}
 
+{% block portfolio_content %}
 <div class="kpi-grid">
   <div class="kpi kpi--featured">
     <div class="kpi__label">Total value</div>
@@ -143,4 +141,4 @@
     </table>
   </div>
 </div>
-{% endblock %}
+{% endblock portfolio_content %}

@@ -3,7 +3,7 @@ from app.models.dividend import Dividend
 from app.models.finance import (
     FinanceExpenseEntry,
     FinanceIncomeEntry,
-    FinanceSummaryAmount,
+    FinanceInvestmentEntry,
     FinanceVendorCategory,
 )
 from app.models.investment import Investment
@@ -23,7 +23,7 @@ __all__ = [
     "AssetType",
     "FinanceIncomeEntry",
     "FinanceExpenseEntry",
-    "FinanceSummaryAmount",
+    "FinanceInvestmentEntry",
     "FinanceVendorCategory",
     "Investment",
     "PortfolioSnapshot",

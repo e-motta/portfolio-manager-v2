@@ -9,7 +9,7 @@ from sqlalchemy import nulls_last
 from app.models.finance import (
     FinanceExpenseEntry,
     FinanceIncomeEntry,
-    FinanceSummaryAmount,
+    FinanceInvestmentEntry,
     FinanceVendorCategory,
 )
 
@@ -28,7 +28,11 @@ MONTH_LABELS = (
     "December",
 )
 
+BILLS_CATEGORY = "Bills"
+BILLS_PAYMENT_ACCOUNT = "Nuconta"
+
 EXPENSE_CATEGORIES = (
+    BILLS_CATEGORY,
     "Alimentação fora",
     "Supermercado",
     "Suplementos",
@@ -49,6 +53,7 @@ EXPENSE_CATEGORIES = (
 )
 
 EXPENSE_CATEGORY_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Bills", (BILLS_CATEGORY,)),
     ("Alimentação", ("Alimentação fora", "Supermercado")),
     ("Esporte", ("Suplementos", "Corrida", "Academia e treino")),
     ("Assinaturas", ("Assinaturas digitais", "Telecom", "Seguros", "Contabilidade / PJ")),
@@ -68,6 +73,7 @@ EXPENSE_CATEGORY_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 EXPENSE_CATEGORY_SLUGS: dict[str, str] = {
+    BILLS_CATEGORY: "bills",
     "Alimentação fora": "food-out",
     "Supermercado": "grocery",
     "Suplementos": "supplements",
@@ -105,6 +111,7 @@ PAYMENT_ACCOUNTS = (
     "BB Débito",
     "Wise",
     "Dinheiro",
+    "Manual",
 )
 
 FINANCE_SOURCE_LABELS = {
@@ -124,58 +131,44 @@ def expense_category_slug(category: str) -> str:
 
 MAX_EXPENSE_INSTALLMENTS = 48
 
-DEBIT_PAYMENT_ACCOUNTS = frozenset({"BB Débito", "Nuconta", "Wise"})
+INCOME_CATEGORIES = ("PJ", "Outros")
 
-INCOME_SUMMARY_LINES = (
-    ("pj", "PJ"),
-    ("outros", "Outros"),
+INVESTMENT_BROKERS = (
+    ("xp", "XP"),
+    ("ib", "IB"),
+    ("nubank", "Nubank"),
+    ("mb", "MB"),
 )
 
-EXPENSE_CONTAS_LINES = (
-    ("aluguel", "Aluguel"),
-    ("internet", "Internet"),
-    ("luz", "Luz"),
-    ("gas", "Gás"),
-)
+INVESTMENT_TARGET_RATE = Decimal("0.30")
 
-EXPENSE_REGULAR_LINES = (
-    ("regular_outros", "Outros"),
-    ("cc_ourocard", "CC (Ourocard)"),
-    ("cc_nubank", "CC (Nubank)"),
-    ("cc_xp", "CC (XP)"),
-    ("debito", "Débito (BB + Nuconta + Wise)"),
-    ("dinheiro", "Dinheiro"),
-)
+MIGRATED_SUMMARY_SOURCE = "migrated_summary"
 
-INVESTMENT_LINES = (
-    ("inv_xp", "XP"),
-    ("inv_ib", "IB"),
-    ("inv_nubank", "Nubank"),
-    ("inv_mb", "MB"),
-)
+SUMMARY_BILL_LINE_LABELS = {
+    "aluguel": "Aluguel",
+    "internet": "Internet",
+    "luz": "Luz",
+    "gas": "Gás",
+}
 
-MANUAL_SUMMARY_KEYS = frozenset(
-    key
-    for key, _ in (
-        *INCOME_SUMMARY_LINES,
-        *EXPENSE_CONTAS_LINES,
-        *EXPENSE_REGULAR_LINES,
-        *INVESTMENT_LINES,
-    )
-    if key not in {"outros", "debito", "dinheiro"}
-)
+SUMMARY_CC_LINE_ACCOUNTS = {
+    "cc_ourocard": "BB Crédito",
+    "cc_nubank": "Nubank",
+    "cc_xp": "XP Crédito",
+    "regular_outros": "Manual",
+}
 
-BILL_SUMMARY_KEYS = frozenset(key for key, _ in EXPENSE_CONTAS_LINES)
+SUMMARY_INVESTMENT_BROKERS = {
+    "inv_xp": "xp",
+    "inv_ib": "ib",
+    "inv_nubank": "nubank",
+    "inv_mb": "mb",
+}
 
-SUMMARY_SECTION_LINE_KEYS: dict[str, tuple[str, ...]] = {
-    "income": tuple(
-        key for key, _ in INCOME_SUMMARY_LINES if key in MANUAL_SUMMARY_KEYS
-    ),
-    "expenses-contas": tuple(key for key, _ in EXPENSE_CONTAS_LINES),
-    "expenses-regular": tuple(
-        key for key, _ in EXPENSE_REGULAR_LINES if key in MANUAL_SUMMARY_KEYS
-    ),
-    "investments": tuple(key for key, _ in INVESTMENT_LINES),
+SUMMARY_INCOME_LINE_CATEGORIES = {
+    "pj": "PJ",
+    "pro_labore": "PJ",
+    "lucro": "PJ",
 }
 
 
@@ -373,12 +366,222 @@ def build_monthly_chart(
     }
 
 
-def normalize_summary_amount(line_key: str, amount: Decimal) -> Decimal:
-    if line_key in BILL_SUMMARY_KEYS:
-        if amount == 0:
-            return Decimal("0")
-        return -abs(amount)
-    return amount
+def build_summary_monthly_chart(
+    income_by_month: dict[int, Decimal],
+    expense_by_month: dict[int, Decimal],
+    balance_by_month: dict[int, Decimal],
+    *,
+    year: int,
+    selected_month: int | None,
+    link_base: str,
+    aria_label: str,
+) -> dict:
+    highlight_month = resolve_month(selected_month, year)
+    return {
+        "ariaLabel": aria_label,
+        "variant": "summary",
+        "year": year,
+        "selectedMonth": highlight_month,
+        "linkBase": link_base,
+        "points": [
+            {
+                "month": month,
+                "label": MONTH_LABELS[month - 1][:3],
+                "income": float(income_by_month.get(month, Decimal("0"))),
+                "expense": float(expense_by_month.get(month, Decimal("0"))),
+                "balance": float(balance_by_month.get(month, Decimal("0"))),
+            }
+            for month in range(1, 13)
+        ],
+    }
+
+
+def validate_income_category(category: str) -> str:
+    if category not in INCOME_CATEGORIES:
+        raise ValueError(f"Invalid income category: {category}")
+    return category
+
+
+def validate_investment_broker(broker: str) -> str:
+    allowed = {key for key, _ in INVESTMENT_BROKERS}
+    if broker not in allowed:
+        raise ValueError(f"Invalid broker: {broker}")
+    return broker
+
+
+def investment_broker_label(broker: str) -> str:
+    for key, label in INVESTMENT_BROKERS:
+        if key == broker:
+            return label
+    return broker
+
+
+def _summary_external_id(line_key: str, year: int, month: int) -> str:
+    return f"summary:{line_key}:{year}:{month}"
+
+
+class FinanceSummaryAmountLegacy:
+    """Runtime-only row shape for migration before table drop."""
+
+    __slots__ = ("user_id", "year", "month", "line_key", "amount")
+
+    def __init__(
+        self,
+        user_id: UUID,
+        year: int,
+        month: int,
+        line_key: str,
+        amount: Decimal,
+    ) -> None:
+        self.user_id = user_id
+        self.year = year
+        self.month = month
+        self.line_key = line_key
+        self.amount = amount
+
+
+def _load_legacy_summary_rows(session: Session) -> list[FinanceSummaryAmountLegacy]:
+    from sqlalchemy import inspect, text
+
+    bind = session.get_bind()
+    inspector = inspect(bind)
+    if "finance_summary_amounts" not in inspector.get_table_names():
+        return []
+
+    result = bind.execute(
+        text(
+            "SELECT user_id, year, month, line_key, amount "
+            "FROM finance_summary_amounts"
+        )
+    )
+    return [
+        FinanceSummaryAmountLegacy(
+            user_id=UUID(str(row.user_id)),
+            year=row.year,
+            month=row.month,
+            line_key=row.line_key,
+            amount=Decimal(str(row.amount)),
+        )
+        for row in result
+    ]
+
+
+def migrate_finance_summary_to_entries(session: Session) -> int:
+    rows = _load_legacy_summary_rows(session)
+    if not rows:
+        return 0
+
+    inserted = 0
+    for row in rows:
+        external_id = _summary_external_id(row.line_key, row.year, row.month)
+        if row.line_key in SUMMARY_INCOME_LINE_CATEGORIES:
+            category = SUMMARY_INCOME_LINE_CATEGORIES[row.line_key]
+            existing = session.exec(
+                select(FinanceIncomeEntry)
+                .where(FinanceIncomeEntry.user_id == row.user_id)
+                .where(FinanceIncomeEntry.external_id == external_id)
+            ).first()
+            if existing:
+                continue
+            amount = abs(row.amount)
+            if amount == 0:
+                continue
+            session.add(
+                FinanceIncomeEntry(
+                    user_id=row.user_id,
+                    year=row.year,
+                    month=row.month,
+                    category=category,
+                    description=category,
+                    amount=amount,
+                    source=MIGRATED_SUMMARY_SOURCE,
+                    external_id=external_id,
+                )
+            )
+            inserted += 1
+        elif row.line_key in SUMMARY_BILL_LINE_LABELS:
+            existing = session.exec(
+                select(FinanceExpenseEntry)
+                .where(FinanceExpenseEntry.user_id == row.user_id)
+                .where(FinanceExpenseEntry.external_id == external_id)
+            ).first()
+            if existing:
+                continue
+            amount = row.amount
+            if amount == 0:
+                continue
+            if amount > 0:
+                amount = -abs(amount)
+            session.add(
+                FinanceExpenseEntry(
+                    user_id=row.user_id,
+                    year=row.year,
+                    month=row.month,
+                    category=BILLS_CATEGORY,
+                    vendor=SUMMARY_BILL_LINE_LABELS[row.line_key],
+                    payment_account=BILLS_PAYMENT_ACCOUNT,
+                    amount=amount,
+                    source=MIGRATED_SUMMARY_SOURCE,
+                    external_id=external_id,
+                )
+            )
+            inserted += 1
+        elif row.line_key in SUMMARY_CC_LINE_ACCOUNTS:
+            existing = session.exec(
+                select(FinanceExpenseEntry)
+                .where(FinanceExpenseEntry.user_id == row.user_id)
+                .where(FinanceExpenseEntry.external_id == external_id)
+            ).first()
+            if existing:
+                continue
+            amount = row.amount
+            if amount == 0:
+                continue
+            if amount > 0:
+                amount = -abs(amount)
+            session.add(
+                FinanceExpenseEntry(
+                    user_id=row.user_id,
+                    year=row.year,
+                    month=row.month,
+                    category="Outros",
+                    vendor=row.line_key.replace("_", " ").title(),
+                    payment_account=SUMMARY_CC_LINE_ACCOUNTS[row.line_key],
+                    amount=amount,
+                    source=MIGRATED_SUMMARY_SOURCE,
+                    external_id=external_id,
+                )
+            )
+            inserted += 1
+        elif row.line_key in SUMMARY_INVESTMENT_BROKERS:
+            broker = SUMMARY_INVESTMENT_BROKERS[row.line_key]
+            existing = session.exec(
+                select(FinanceInvestmentEntry)
+                .where(FinanceInvestmentEntry.user_id == row.user_id)
+                .where(FinanceInvestmentEntry.year == row.year)
+                .where(FinanceInvestmentEntry.month == row.month)
+                .where(FinanceInvestmentEntry.broker == broker)
+            ).first()
+            amount = abs(row.amount)
+            if amount == 0:
+                continue
+            if existing:
+                existing.amount = amount
+                session.add(existing)
+            else:
+                session.add(
+                    FinanceInvestmentEntry(
+                        user_id=row.user_id,
+                        year=row.year,
+                        month=row.month,
+                        broker=broker,
+                        amount=amount,
+                    )
+                )
+            inserted += 1
+
+    session.commit()
+    return inserted
 
 
 @dataclass
@@ -398,25 +601,6 @@ class MonthAmounts:
         if active_months <= 0:
             return Decimal("0")
         return self.total() / Decimal(active_months)
-
-
-@dataclass
-class SummaryRow:
-    key: str
-    label: str
-    amounts: MonthAmounts
-    editable: bool = False
-    section: str = ""
-    is_total: bool = False
-    is_section_header: bool = False
-
-    @property
-    def year_total(self) -> Decimal:
-        return self.amounts.total()
-
-    @property
-    def year_average(self) -> Decimal:
-        return self.amounts.total() / Decimal("12")
 
 
 def resolve_year(year: int | None) -> int:
@@ -527,15 +711,86 @@ def link_expense_reversal(
     return target
 
 
-def _load_summary_amounts(
+def _load_investment_entries(
     session: Session, user_id: UUID, year: int
-) -> dict[tuple[str, int], Decimal]:
-    rows = session.exec(
-        select(FinanceSummaryAmount)
-        .where(FinanceSummaryAmount.user_id == user_id)
-        .where(FinanceSummaryAmount.year == year)
-    ).all()
-    return {(row.line_key, row.month): row.amount for row in rows}
+) -> list[FinanceInvestmentEntry]:
+    return list(
+        session.exec(
+            select(FinanceInvestmentEntry)
+            .where(FinanceInvestmentEntry.user_id == user_id)
+            .where(FinanceInvestmentEntry.year == year)
+            .order_by(
+                FinanceInvestmentEntry.month,
+                FinanceInvestmentEntry.broker,
+            )
+        ).all()
+    )
+
+
+def _sum_income_by_category(
+    entries: list[FinanceIncomeEntry],
+) -> dict[str, dict[int, Decimal]]:
+    totals = {category: _empty_month_map() for category in INCOME_CATEGORIES}
+    for entry in entries:
+        category = entry.category if entry.category in INCOME_CATEGORIES else "Outros"
+        totals[category][entry.month] += entry.amount
+    return totals
+
+
+def _sum_expenses_excluding_bills(
+    entries: list[FinanceExpenseEntry],
+) -> dict[str, dict[int, Decimal]]:
+    totals = {account: _empty_month_map() for account in PAYMENT_ACCOUNTS}
+    for entry in entries:
+        if entry.category == BILLS_CATEGORY:
+            continue
+        account = entry.payment_account if entry.payment_account in totals else "Manual"
+        totals.setdefault(account, _empty_month_map())
+        totals[account][entry.month] += entry.amount
+    return totals
+
+
+def _sum_bills_by_vendor(
+    entries: list[FinanceExpenseEntry],
+) -> dict[str, dict[int, Decimal]]:
+    totals: dict[str, dict[int, Decimal]] = {}
+    for entry in entries:
+        if entry.category != BILLS_CATEGORY:
+            continue
+        vendor = entry.vendor or "Bills"
+        totals.setdefault(vendor, _empty_month_map())
+        totals[vendor][entry.month] += entry.amount
+    return totals
+
+
+def _sum_bills_by_month(entries: list[FinanceExpenseEntry]) -> dict[int, Decimal]:
+    totals = _empty_month_map()
+    for entry in entries:
+        if entry.category == BILLS_CATEGORY:
+            totals[entry.month] += entry.amount
+    return totals
+
+
+def _sum_day_to_day_by_month(entries: list[FinanceExpenseEntry]) -> dict[int, Decimal]:
+    totals = _empty_month_map()
+    for entry in entries:
+        if entry.category != BILLS_CATEGORY:
+            totals[entry.month] += entry.amount
+    return totals
+
+
+def _active_month_count_from_entries(
+    year: int,
+    income_by_month: dict[int, Decimal],
+    expense_by_month: dict[int, Decimal],
+) -> int:
+    active = set()
+    for month in range(1, 13):
+        if income_by_month[month] != 0 or expense_by_month[month] != 0:
+            active.add(month)
+    if year == date.today().year:
+        active = {m for m in active if m <= date.today().month}
+    return max(len(active), 1)
 
 
 def _sum_by_month(
@@ -547,41 +802,19 @@ def _sum_by_month(
     return totals
 
 
-def _sum_expenses_by_payment(
-    entries: list[FinanceExpenseEntry], accounts: frozenset[str]
-) -> dict[int, Decimal]:
-    totals = _empty_month_map()
-    for entry in entries:
-        if entry.payment_account in accounts:
-            totals[entry.month] += entry.amount
-    return totals
-
-
-def _manual_amounts(
-    summary_values: dict[tuple[str, int], Decimal], line_key: str
-) -> MonthAmounts:
-    amounts = MonthAmounts()
-    for month in range(1, 13):
-        amounts.set(month, summary_values.get((line_key, month), Decimal("0")))
-    return amounts
-
-
-def _active_month_count(
-    year: int,
-    income_by_month: dict[int, Decimal],
-    expense_by_month: dict[int, Decimal],
-    summary_values: dict[tuple[str, int], Decimal],
-) -> int:
-    active = set()
-    for month in range(1, 13):
-        if income_by_month[month] != 0 or expense_by_month[month] != 0:
-            active.add(month)
-        for (_, month_key), amount in summary_values.items():
-            if month_key == month and amount != 0:
-                active.add(month)
-    if year == date.today().year:
-        active = {m for m in active if m <= date.today().month}
-    return max(len(active), 1)
+def _card_lines_for_month(
+    line_totals: dict[str, dict[int, Decimal]],
+    month: int,
+    *,
+    ordered_keys: tuple[str, ...] | None = None,
+) -> list[dict[str, object]]:
+    keys = ordered_keys or tuple(line_totals.keys())
+    lines: list[dict[str, object]] = []
+    for key in keys:
+        total = line_totals.get(key, {}).get(month, Decimal("0"))
+        if total != 0:
+            lines.append({"label": key, "amount": total})
+    return lines
 
 
 def build_income_context(
@@ -589,9 +822,20 @@ def build_income_context(
 ) -> dict:
     entries = _load_income_entries(session, user_id, year)
     month_totals = _sum_by_month(entries)
+    income_by_category = _sum_income_by_category(entries)
+    category_month_totals = income_by_category
+    category_year_totals = {
+        category: sum(month_map.values(), start=Decimal("0"))
+        for category, month_map in income_by_category.items()
+    }
     entries_by_month: dict[int, list[FinanceIncomeEntry]] = {m: [] for m in range(1, 13)}
+    entries_by_category: dict[str, list[FinanceIncomeEntry]] = {
+        cat: [] for cat in INCOME_CATEGORIES
+    }
     for entry in entries:
         entries_by_month[entry.month].append(entry)
+        category = entry.category if entry.category in INCOME_CATEGORIES else "Outros"
+        entries_by_category.setdefault(category, []).append(entry)
 
     visible_entries = entries
     if selected_month is not None:
@@ -603,6 +847,10 @@ def build_income_context(
         "entries": visible_entries,
         "all_entries": entries,
         "entries_by_month": entries_by_month,
+        "entries_by_category": entries_by_category,
+        "income_categories": INCOME_CATEGORIES,
+        "category_month_totals": category_month_totals,
+        "category_year_totals": category_year_totals,
         "month_labels": MONTH_LABELS,
         "month_totals": month_totals,
         "monthly_chart": build_monthly_chart(
@@ -791,333 +1039,80 @@ def build_summary_context(
 ) -> dict:
     income_entries = _load_income_entries(session, user_id, year)
     expense_entries = _load_expense_entries(session, user_id, year)
-    summary_values = _load_summary_amounts(session, user_id, year)
 
     income_by_month = _sum_by_month(income_entries)
     expense_by_month = _sum_by_month(expense_entries)
-    debit_by_month = _sum_expenses_by_payment(expense_entries, DEBIT_PAYMENT_ACCOUNTS)
-    cash_by_month = _sum_expenses_by_payment(expense_entries, frozenset({"Dinheiro"}))
+    income_by_category = _sum_income_by_category(income_entries)
+    bills_by_vendor = _sum_bills_by_vendor(expense_entries)
+    bills_by_month = _sum_bills_by_month(expense_entries)
+    day_to_day_by_account = _sum_expenses_excluding_bills(expense_entries)
+    day_to_day_by_month = _sum_day_to_day_by_month(expense_entries)
 
-    active_months = _active_month_count(
-        year, income_by_month, expense_by_month, summary_values
+    active_months = _active_month_count_from_entries(
+        year, income_by_month, expense_by_month
     )
+    month = resolve_month(selected_month, year)
 
-    rows: list[SummaryRow] = []
+    month_income = income_by_month[month]
+    month_bills = bills_by_month[month]
+    month_day_to_day = day_to_day_by_month[month]
+    month_expenses = month_bills + month_day_to_day
+    month_balance = month_income + month_expenses
 
-    income_lines: dict[str, MonthAmounts] = {}
-    for key, label in INCOME_SUMMARY_LINES:
-        if key == "outros":
-            amounts = MonthAmounts()
-            for month in range(1, 13):
-                amounts.set(month, income_by_month[month])
-            income_lines[key] = amounts
-            rows.append(
-                SummaryRow(
-                    key=key,
-                    label=label,
-                    amounts=amounts,
-                    editable=False,
-                    section="income",
-                )
-            )
-        else:
-            amounts = _manual_amounts(summary_values, key)
-            income_lines[key] = amounts
-            rows.append(
-                SummaryRow(
-                    key=key,
-                    label=label,
-                    amounts=amounts,
-                    editable=True,
-                    section="income",
-                )
-            )
+    year_income = sum(income_by_month.values(), start=Decimal("0"))
+    year_expenses = sum(expense_by_month.values(), start=Decimal("0"))
+    year_balance = year_income + year_expenses
 
-    income_total = MonthAmounts()
-    for month in range(1, 13):
-        income_total.set(
-            month,
-            sum(income_lines[key].get(month) for key, _ in INCOME_SUMMARY_LINES),
-        )
-    rows.insert(
-        0,
-        SummaryRow(
-            key="income_total",
-            label="INCOME",
-            amounts=income_total,
-            section="income",
-            is_total=True,
-        ),
-    )
-
-    expense_contas_lines: dict[str, MonthAmounts] = {}
-    rows.append(
-        SummaryRow(
-            key="expenses_header",
-            label="EXPENSES",
-            amounts=MonthAmounts(),
-            section="expenses",
-            is_section_header=True,
-        )
-    )
-    rows.append(
-        SummaryRow(
-            key="contas_header",
-            label="Contas",
-            amounts=MonthAmounts(),
-            section="expenses",
-            is_section_header=True,
-        )
-    )
-    for key, label in EXPENSE_CONTAS_LINES:
-        amounts = _manual_amounts(summary_values, key)
-        expense_contas_lines[key] = amounts
-        rows.append(
-            SummaryRow(
-                key=key,
-                label=label,
-                amounts=amounts,
-                editable=True,
-                section="expenses_contas",
-            )
-        )
-
-    contas_total = MonthAmounts()
-    for month in range(1, 13):
-        contas_total.set(
-            month,
-            sum(line.get(month) for line in expense_contas_lines.values()),
-        )
-    rows.append(
-        SummaryRow(
-            key="contas_total",
-            label="Contas",
-            amounts=contas_total,
-            section="expenses_contas",
-            is_total=True,
-        )
-    )
-
-    rows.append(
-        SummaryRow(
-            key="regular_header",
-            label="Regular",
-            amounts=MonthAmounts(),
-            section="expenses",
-            is_section_header=True,
-        )
-    )
-
-    expense_regular_lines: dict[str, MonthAmounts] = {}
-    for key, label in EXPENSE_REGULAR_LINES:
-        if key == "debito":
-            amounts = MonthAmounts()
-            for month in range(1, 13):
-                amounts.set(month, debit_by_month[month])
-            editable = False
-        elif key == "dinheiro":
-            amounts = MonthAmounts()
-            for month in range(1, 13):
-                amounts.set(month, cash_by_month[month])
-            editable = False
-        else:
-            amounts = _manual_amounts(summary_values, key)
-            editable = True
-        expense_regular_lines[key] = amounts
-        rows.append(
-            SummaryRow(
-                key=key,
-                label=label,
-                amounts=amounts,
-                editable=editable,
-                section="expenses_regular",
-            )
-        )
-
-    regular_total = MonthAmounts()
-    for month in range(1, 13):
-        regular_total.set(
-            month,
-            sum(line.get(month) for line in expense_regular_lines.values()),
-        )
-    rows.append(
-        SummaryRow(
-            key="regular_total",
-            label="Regular",
-            amounts=regular_total,
-            section="expenses_regular",
-            is_total=True,
-        )
-    )
-
-    expenses_total = MonthAmounts()
-    for month in range(1, 13):
-        expenses_total.set(month, contas_total.get(month) + regular_total.get(month))
-    rows.append(
-        SummaryRow(
-            key="expenses_total",
-            label="EXPENSES",
-            amounts=expenses_total,
-            section="expenses",
-            is_total=True,
-        )
-    )
-
-    balance = MonthAmounts()
-    for month in range(1, 13):
-        balance.set(month, income_total.get(month) + expenses_total.get(month))
-    rows.append(
-        SummaryRow(
-            key="balance",
-            label="SALDO",
-            amounts=balance,
-            section="balance",
-            is_total=True,
-        )
-    )
-
-    rows.append(
-        SummaryRow(
-            key="investments_header",
-            label="INVESTMENTS",
-            amounts=MonthAmounts(),
-            section="investments",
-            is_section_header=True,
-        )
-    )
-
-    investment_target = MonthAmounts()
-    for month in range(1, 13):
-        investment_target.set(month, income_total.get(month) * Decimal("0.30"))
-
-    invested_total = MonthAmounts()
-    broker_rows: list[SummaryRow] = []
-    for key, label in INVESTMENT_LINES:
-        amounts = _manual_amounts(summary_values, key)
-        broker_rows.append(
-            SummaryRow(
-                key=key,
-                label=label,
-                amounts=amounts,
-                editable=True,
-                section="investments",
-            )
-        )
-        for month in range(1, 13):
-            invested_total.set(
-                month, invested_total.get(month) + amounts.get(month)
-            )
-
-    investment_gap = MonthAmounts()
-    cumulative_gap = Decimal("0")
-    for month in range(1, 13):
-        month_gap = investment_target.get(month) - invested_total.get(month)
-        cumulative_gap += month_gap
-        investment_gap.set(month, cumulative_gap)
-
-    rows.extend(
-        [
-            SummaryRow(
-                key="investment_gap",
-                label="INVESTMENTS",
-                amounts=investment_gap,
-                section="investments",
-                is_total=True,
-            ),
-            SummaryRow(
-                key="investment_target",
-                label="Meta = 30% INCOME",
-                amounts=investment_target,
-                section="investments",
-            ),
-            SummaryRow(
-                key="invested_total",
-                label="Investido",
-                amounts=invested_total,
-                section="investments",
-                is_total=True,
-            ),
-            *broker_rows,
-        ]
-    )
-
-    rows_by_key = {row.key: row for row in rows}
     balance_by_month = {
-        month_index: rows_by_key["balance"].amounts.get(month_index)
+        month_index: income_by_month[month_index] + expense_by_month[month_index]
         for month_index in range(1, 13)
     }
-    month = resolve_month(selected_month, year)
-    month_income = rows_by_key["income_total"].amounts.get(month)
-    month_expenses = rows_by_key["expenses_total"].amounts.get(month)
-    month_balance = rows_by_key["balance"].amounts.get(month)
-    year_income = rows_by_key["income_total"].year_total
-    year_expenses = rows_by_key["expenses_total"].year_total
-    year_balance = rows_by_key["balance"].year_total
 
-    investment_target_month = investment_target.get(month)
-    invested_total_month = invested_total.get(month)
-    contas_total_month = contas_total.get(month)
-    regular_total_month = regular_total.get(month)
-    summary_sections = [
+    income_lines = _card_lines_for_month(
+        income_by_category,
+        month,
+        ordered_keys=INCOME_CATEGORIES,
+    )
+    bills_lines = _card_lines_for_month(bills_by_vendor, month)
+    day_to_day_lines = _card_lines_for_month(
+        day_to_day_by_account,
+        month,
+        ordered_keys=PAYMENT_ACCOUNTS,
+    )
+
+    summary_cards = [
         {
             "id": "income",
+            "variant": "income",
             "title": "Income",
-            "subtitle": "Salary, profit, and other inflows",
+            "subtitle": "PJ and other inflows",
             "total_label": "Total income",
             "total_amount": month_income,
+            "lines": income_lines,
             "manage_href": f"/finance/income?year={year}&month={month}",
             "manage_label": "Manage income",
-            "rows": [
-                row
-                for row in rows
-                if row.section == "income" and not row.is_total and not row.is_section_header
-            ],
         },
         {
-            "id": "expenses-contas",
+            "id": "bills",
+            "variant": "bills",
             "title": "Bills",
             "subtitle": "Rent, utilities, and fixed household costs",
             "total_label": "Total bills",
-            "total_amount": contas_total_month,
+            "total_amount": month_bills,
+            "lines": bills_lines,
             "manage_href": f"/finance/expenses?year={year}&month={month}",
             "manage_label": "Manage expenses",
-            "rows": [
-                row
-                for row in rows
-                if row.section == "expenses_contas" and not row.is_total
-            ],
         },
         {
-            "id": "expenses-regular",
+            "id": "day-to-day",
+            "variant": "day-to-day",
             "title": "Day-to-day",
             "subtitle": "Cards, debit, and cash",
             "total_label": "Total day-to-day",
-            "total_amount": regular_total_month,
+            "total_amount": month_day_to_day,
+            "lines": day_to_day_lines,
             "manage_href": f"/finance/expenses?year={year}&month={month}",
             "manage_label": "Manage expenses",
-            "rows": [
-                row
-                for row in rows
-                if row.section == "expenses_regular" and not row.is_total
-            ],
-        },
-        {
-            "id": "investments",
-            "title": "Investments",
-            "subtitle": "30% income target and broker allocations",
-            "total_label": "Invested this month",
-            "total_amount": invested_total_month,
-            "manage_href": "/portfolio/investments",
-            "manage_label": "Manage portfolio",
-            "progress_target": investment_target_month,
-            "progress_invested": invested_total_month,
-            "rows": [
-                row
-                for row in rows
-                if row.section == "investments"
-                and not row.is_section_header
-                and row.key not in {"investment_gap"}
-            ],
         },
     ]
 
@@ -1125,14 +1120,8 @@ def build_summary_context(
         "year": year,
         "selected_month": month,
         "month_labels": MONTH_LABELS,
-        "rows": rows,
-        "rows_by_key": rows_by_key,
-        "summary_sections": summary_sections,
+        "summary_cards": summary_cards,
         "active_months": active_months,
-        "income_tab_total": income_by_month[month],
-        "expense_tab_total": expense_by_month[month],
-        "income_tab_year_total": sum(income_by_month.values(), start=Decimal("0")),
-        "expense_tab_year_total": sum(expense_by_month.values(), start=Decimal("0")),
         "month_income": month_income,
         "month_expenses": month_expenses,
         "month_balance": month_balance,
@@ -1145,15 +1134,139 @@ def build_summary_context(
             for month_index in range(1, 13)
         },
         "balance_by_month": balance_by_month,
-        "monthly_chart": build_monthly_chart(
+        "monthly_chart": build_summary_monthly_chart(
+            income_by_month,
+            expense_by_month,
             balance_by_month,
             year=year,
             selected_month=month,
             link_base="/finance/summary",
-            variant="balance",
-            aria_label="Balance by month",
+            aria_label="Income, expenses, and balance by month",
         ),
     }
+
+
+def _sum_investments_by_broker(
+    entries: list[FinanceInvestmentEntry],
+) -> dict[str, dict[int, Decimal]]:
+    totals = {broker: _empty_month_map() for broker, _ in INVESTMENT_BROKERS}
+    for entry in entries:
+        if entry.broker in totals:
+            totals[entry.broker][entry.month] += entry.amount
+    return totals
+
+
+def build_investments_context(
+    session: Session, user_id: UUID, year: int, *, selected_month: int | None = None
+) -> dict:
+    income_entries = _load_income_entries(session, user_id, year)
+    investment_entries = _load_investment_entries(session, user_id, year)
+    investments_by_broker = _sum_investments_by_broker(investment_entries)
+
+    month_invested_map = _empty_month_map()
+    for entry in investment_entries:
+        month_invested_map[entry.month] += entry.amount
+
+    month = resolve_month(selected_month, year)
+    year_income = sum((entry.amount for entry in income_entries), start=Decimal("0"))
+    annual_target = year_income * INVESTMENT_TARGET_RATE
+    ytd_invested = sum(
+        (
+            entry.amount
+            for entry in investment_entries
+            if entry.month <= month
+        ),
+        start=Decimal("0"),
+    )
+    month_invested = month_invested_map[month]
+    year_invested = sum(month_invested_map.values(), start=Decimal("0"))
+
+    broker_lines: list[dict[str, object]] = []
+    for broker_key, broker_label in INVESTMENT_BROKERS:
+        amount = investments_by_broker[broker_key].get(month, Decimal("0"))
+        if amount != 0:
+            broker_lines.append({"broker": broker_key, "label": broker_label, "amount": amount})
+
+    entries_by_month: dict[int, list[FinanceInvestmentEntry]] = {m: [] for m in range(1, 13)}
+    for entry in investment_entries:
+        entries_by_month[entry.month].append(entry)
+
+    visible_entries = investment_entries
+    if selected_month is not None:
+        visible_entries = entries_by_month.get(month, [])
+
+    return {
+        "year": year,
+        "selected_month": selected_month if selected_month is not None else month,
+        "month_labels": MONTH_LABELS,
+        "entries": visible_entries,
+        "all_entries": investment_entries,
+        "entries_by_month": entries_by_month,
+        "investment_brokers": INVESTMENT_BROKERS,
+        "broker_lines": broker_lines,
+        "investments_by_broker": investments_by_broker,
+        "annual_target": annual_target,
+        "ytd_invested": ytd_invested,
+        "month_invested": month_invested,
+        "year_invested": year_invested,
+        "year_income": year_income,
+        "month_totals": month_invested_map,
+        "monthly_chart": build_monthly_chart(
+            month_invested_map,
+            year=year,
+            selected_month=selected_month,
+            link_base="/finance/investments",
+            variant="income",
+            aria_label="Investments by month",
+        ),
+    }
+
+
+def upsert_investment_entry(
+    session: Session,
+    user_id: UUID,
+    year: int,
+    month: int,
+    broker: str,
+    amount: Decimal,
+) -> FinanceInvestmentEntry | None:
+    validate_investment_broker(broker)
+    if amount < 0:
+        raise ValueError("Amount cannot be negative.")
+
+    existing = session.exec(
+        select(FinanceInvestmentEntry)
+        .where(FinanceInvestmentEntry.user_id == user_id)
+        .where(FinanceInvestmentEntry.year == year)
+        .where(FinanceInvestmentEntry.month == month)
+        .where(FinanceInvestmentEntry.broker == broker)
+    ).first()
+
+    if amount == 0:
+        if existing:
+            session.delete(existing)
+            session.commit()
+        return None
+
+    if existing:
+        existing.amount = amount
+        existing.updated_at = datetime.utcnow()
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        return existing
+
+    entry = FinanceInvestmentEntry(
+        user_id=user_id,
+        year=year,
+        month=month,
+        broker=broker,
+        amount=amount,
+    )
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+    return entry
 
 
 def advance_finance_month(year: int, month: int) -> tuple[int, int]:
@@ -1248,130 +1361,78 @@ def create_expense_entries(
     return entries
 
 
-def _apply_summary_amount(
-    session: Session,
-    user_id: UUID,
-    year: int,
-    month: int,
-    line_key: str,
-    amount: Decimal,
-) -> None:
-    existing = session.exec(
-        select(FinanceSummaryAmount)
-        .where(FinanceSummaryAmount.user_id == user_id)
-        .where(FinanceSummaryAmount.year == year)
-        .where(FinanceSummaryAmount.month == month)
-        .where(FinanceSummaryAmount.line_key == line_key)
-    ).first()
-
-    if existing:
-        existing.amount = amount
-        session.add(existing)
-    else:
-        session.add(
-            FinanceSummaryAmount(
-                user_id=user_id,
-                year=year,
-                month=month,
-                line_key=line_key,
-                amount=amount,
-            )
-        )
-
-
 LEGACY_PJ_SUMMARY_KEYS = frozenset({"pro_labore", "lucro"})
 PJ_SUMMARY_KEY = "pj"
 LEGACY_POUANCA_SUMMARY_KEY = "poupanca"
 
 
 def migrate_pro_labore_lucro_to_pj(session: Session) -> int:
-    legacy_rows = session.exec(
-        select(FinanceSummaryAmount).where(
-            FinanceSummaryAmount.line_key.in_(LEGACY_PJ_SUMMARY_KEYS)
-        )
-    ).all()
+    """Legacy migration helper for alembic 026 (pre-refactor summary table)."""
+    from uuid import uuid4
+
+    from sqlalchemy import text
+
+    rows = _load_legacy_summary_rows(session)
+    legacy_rows = [row for row in rows if row.line_key in LEGACY_PJ_SUMMARY_KEYS]
     if not legacy_rows:
         return 0
 
+    bind = session.get_bind()
     merged: dict[tuple[UUID, int, int], Decimal] = {}
     for row in legacy_rows:
         key = (row.user_id, row.year, row.month)
         merged[key] = merged.get(key, Decimal("0")) + row.amount
 
-    for row in legacy_rows:
-        session.delete(row)
+    bind.execute(
+        text(
+            "DELETE FROM finance_summary_amounts "
+            "WHERE line_key IN ('pro_labore', 'lucro')"
+        )
+    )
 
     for (user_id, year, month), amount in merged.items():
-        existing = session.exec(
-            select(FinanceSummaryAmount)
-            .where(FinanceSummaryAmount.user_id == user_id)
-            .where(FinanceSummaryAmount.year == year)
-            .where(FinanceSummaryAmount.month == month)
-            .where(FinanceSummaryAmount.line_key == PJ_SUMMARY_KEY)
-        ).first()
-        if existing:
-            existing.amount = amount
-            session.add(existing)
-        else:
-            session.add(
-                FinanceSummaryAmount(
-                    user_id=user_id,
-                    year=year,
-                    month=month,
-                    line_key=PJ_SUMMARY_KEY,
-                    amount=amount,
-                )
-            )
+        bind.execute(
+            text(
+                "DELETE FROM finance_summary_amounts "
+                "WHERE user_id = :user_id AND year = :year AND month = :month "
+                "AND line_key = :line_key"
+            ),
+            {
+                "user_id": user_id,
+                "year": year,
+                "month": month,
+                "line_key": PJ_SUMMARY_KEY,
+            },
+        )
+        bind.execute(
+            text(
+                "INSERT INTO finance_summary_amounts "
+                "(id, user_id, year, month, line_key, amount, created_at, updated_at) "
+                "VALUES (:id, :user_id, :year, :month, :line_key, :amount, "
+                "datetime('now'), datetime('now'))"
+            ),
+            {
+                "id": uuid4(),
+                "user_id": user_id,
+                "year": year,
+                "month": month,
+                "line_key": PJ_SUMMARY_KEY,
+                "amount": amount,
+            },
+        )
 
     session.commit()
     return len(merged)
 
 
 def remove_poupanca_summary_lines(session: Session) -> int:
-    rows = session.exec(
-        select(FinanceSummaryAmount).where(
-            FinanceSummaryAmount.line_key == LEGACY_POUANCA_SUMMARY_KEY
-        )
-    ).all()
-    for row in rows:
-        session.delete(row)
-    if rows:
-        session.commit()
-    return len(rows)
+    """Legacy migration helper for alembic 027 (pre-refactor summary table)."""
+    from sqlalchemy import text
 
-
-def upsert_summary_amount(
-    session: Session,
-    user_id: UUID,
-    year: int,
-    month: int,
-    line_key: str,
-    amount: Decimal,
-) -> None:
-    if line_key not in MANUAL_SUMMARY_KEYS:
-        raise ValueError(f"Line {line_key} is not editable")
-
-    amount = normalize_summary_amount(line_key, amount)
-    _apply_summary_amount(session, user_id, year, month, line_key, amount)
+    bind = session.get_bind()
+    result = bind.execute(
+        text("DELETE FROM finance_summary_amounts WHERE line_key = :line_key"),
+        {"line_key": LEGACY_POUANCA_SUMMARY_KEY},
+    )
     session.commit()
-
-
-def upsert_summary_section(
-    session: Session,
-    user_id: UUID,
-    year: int,
-    month: int,
-    section_id: str,
-    updates: dict[str, Decimal],
-) -> None:
-    allowed_keys = SUMMARY_SECTION_LINE_KEYS.get(section_id)
-    if allowed_keys is None:
-        raise ValueError(f"Section {section_id} is not editable")
-
-    for line_key, raw_amount in updates.items():
-        if line_key not in allowed_keys:
-            raise ValueError(f"Line {line_key} is not in section {section_id}.")
-        amount = normalize_summary_amount(line_key, raw_amount)
-        _apply_summary_amount(session, user_id, year, month, line_key, amount)
-
-    session.commit()
+    return result.rowcount or 0

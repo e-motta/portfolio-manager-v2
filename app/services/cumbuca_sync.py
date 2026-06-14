@@ -829,6 +829,7 @@ def import_selected_income(
                 user_id=user_id,
                 year=row.year,
                 month=row.month,
+                category="Outros",
                 description=row.description,
                 amount=row.amount,
                 source=OPEN_FINANCE_SOURCE,

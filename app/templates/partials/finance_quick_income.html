@@ -11,6 +11,14 @@
         {% endfor %}
       </select>
     </div>
+    <div class="field finance-quick-form__field">
+      <label class="sr-only" for="quick-income-category">Category</label>
+      <select id="quick-income-category" name="category" required>
+        {% for category in income_categories %}
+        <option value="{{ category }}"{% if category == 'Outros' %} selected{% endif %}>{{ category }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <div class="field finance-quick-form__field finance-quick-form__field--grow">
       <label class="sr-only" for="quick-income-description">Description</label>
       <input id="quick-income-description" type="text" name="description"

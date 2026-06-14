@@ -11,7 +11,7 @@ from app.models.dividend import Dividend
 from app.models.finance import (
     FinanceExpenseEntry,
     FinanceIncomeEntry,
-    FinanceSummaryAmount,
+    FinanceInvestmentEntry,
     FinanceVendorCategory,
 )
 from app.models.investment import Investment
@@ -225,6 +225,7 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
         {
             "year": entry.year,
             "month": entry.month,
+            "category": entry.category,
             "description": entry.description,
             "amount": _serialize_decimal(entry.amount),
             "source": entry.source,
@@ -271,22 +272,22 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
         ).all()
     ]
 
-    finance_summary = [
+    finance_investments = [
         {
             "year": entry.year,
             "month": entry.month,
-            "line_key": entry.line_key,
+            "broker": entry.broker,
             "amount": _serialize_decimal(entry.amount),
             "created_at": _serialize_datetime(entry.created_at),
             "updated_at": _serialize_datetime(entry.updated_at),
         }
         for entry in session.exec(
-            select(FinanceSummaryAmount)
-            .where(FinanceSummaryAmount.user_id == user_id)
+            select(FinanceInvestmentEntry)
+            .where(FinanceInvestmentEntry.user_id == user_id)
             .order_by(
-                FinanceSummaryAmount.year,
-                FinanceSummaryAmount.month,
-                FinanceSummaryAmount.line_key,
+                FinanceInvestmentEntry.year,
+                FinanceInvestmentEntry.month,
+                FinanceInvestmentEntry.broker,
             )
         ).all()
     ]
@@ -318,7 +319,7 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
         "snapshots": snapshot_rows,
         "finance_income": finance_income,
         "finance_expenses": finance_expenses,
-        "finance_summary": finance_summary,
+        "finance_investments": finance_investments,
         "finance_vendor_categories": finance_vendor_categories,
     }
 
@@ -340,7 +341,7 @@ def _clear_finance_data(session: Session) -> None:
     ).all():
         session.delete(entry)
     for entry in session.exec(
-        select(FinanceSummaryAmount).where(FinanceSummaryAmount.user_id == user_id)
+        select(FinanceInvestmentEntry).where(FinanceInvestmentEntry.user_id == user_id)
     ).all():
         session.delete(entry)
     for entry in session.exec(
@@ -529,6 +530,7 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
             user_id=user_id,
             year=row["year"],
             month=row["month"],
+            category=row.get("category", "Outros"),
             description=row.get("description", ""),
             amount=_parse_decimal(row.get("amount")) or Decimal("0"),
             source=row.get("source", "manual"),
@@ -559,12 +561,12 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
             entry.updated_at = datetime.fromisoformat(row["updated_at"])
         session.add(entry)
 
-    for row in payload.get("finance_summary", []):
-        entry = FinanceSummaryAmount(
+    for row in payload.get("finance_investments", []):
+        entry = FinanceInvestmentEntry(
             user_id=user_id,
             year=row["year"],
             month=row["month"],
-            line_key=row["line_key"],
+            broker=row["broker"],
             amount=_parse_decimal(row.get("amount")) or Decimal("0"),
         )
         if row.get("created_at"):

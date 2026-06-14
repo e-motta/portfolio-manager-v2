@@ -8,23 +8,26 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.auth import CurrentUserDep
 from app.core.db import SessionDep
-from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry
+from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry, FinanceInvestmentEntry
 from app.services.finance import (
     EXPENSE_CATEGORIES,
+    INCOME_CATEGORIES,
+    INVESTMENT_BROKERS,
     MAX_EXPENSE_INSTALLMENTS,
     PAYMENT_ACCOUNTS,
     build_expenses_context,
     build_income_context,
+    build_investments_context,
     build_summary_context,
     create_expense_entries,
     link_expense_reversal,
-    normalize_summary_amount,
     resolve_month,
     resolve_year,
-    upsert_summary_amount,
-    upsert_summary_section,
+    upsert_investment_entry,
+    validate_income_category,
+    validate_investment_broker,
 )
-from app.web.dependencies import TemplatesDep, is_htmx
+from app.web.dependencies import TemplatesDep
 
 router = APIRouter(prefix="/finance", tags=["finance"])
 
@@ -183,165 +186,6 @@ def summary_page(
     )
 
 
-def _summary_section_context(
-    session: SessionDep,
-    user_id: UUID,
-    year: int,
-    month: int,
-    section_id: str,
-) -> dict | None:
-    context = build_summary_context(session, user_id, year, selected_month=month)
-    for section in context["summary_sections"]:
-        if section["id"] == section_id:
-            return {
-                "section": section,
-                "year": year,
-                "selected_month": month,
-            }
-    return None
-
-
-def _summary_line_context(
-    session: SessionDep,
-    user_id: UUID,
-    year: int,
-    month: int,
-    line_key: str,
-    amount: Decimal,
-) -> dict | None:
-    context = build_summary_context(session, user_id, year, selected_month=month)
-    for section in context["summary_sections"]:
-        for row in section["rows"]:
-            if row.key == line_key:
-                return {
-                    "row": row,
-                    "value": amount,
-                    "year": year,
-                    "selected_month": month,
-                }
-    return None
-
-
-@router.post("/summary/cell", response_model=None)
-def update_summary_cell(
-    request: Request,
-    session: SessionDep,
-    templates: TemplatesDep,
-    current_user: CurrentUserDep,
-    year: Annotated[str, Form()],
-    month: Annotated[str, Form()],
-    line_key: Annotated[str, Form()],
-    amount: Annotated[str, Form()],
-) -> HTMLResponse | RedirectResponse:
-    parsed_year = _parse_year(year)
-    parsed_month = _parse_month(month)
-    line_key = line_key.strip()
-    parsed_amount = normalize_summary_amount(
-        line_key, _parse_amount(amount, "amount", allow_negative=True)
-    )
-    try:
-        upsert_summary_amount(
-            session,
-            current_user.id,
-            parsed_year,
-            parsed_month,
-            line_key,
-            parsed_amount,
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
-
-    line_context = _summary_line_context(
-        session,
-        current_user.id,
-        parsed_year,
-        parsed_month,
-        line_key,
-        parsed_amount,
-    )
-    if line_context is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-
-    if is_htmx(request):
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/finance_summary_line.html",
-            context=line_context,
-        )
-
-    return RedirectResponse(
-        url=f"/finance/summary?{_finance_query(parsed_year, parsed_month)}",
-        status_code=303,
-    )
-
-
-@router.post("/summary/section", response_model=None)
-def update_summary_section(
-    request: Request,
-    session: SessionDep,
-    templates: TemplatesDep,
-    current_user: CurrentUserDep,
-    year: Annotated[str, Form()],
-    month: Annotated[str, Form()],
-    section_id: Annotated[str, Form()],
-    line_key: Annotated[list[str], Form()],
-    amount: Annotated[list[str], Form()],
-) -> HTMLResponse | RedirectResponse:
-    parsed_year = _parse_year(year)
-    parsed_month = _parse_month(month)
-    section_id = section_id.strip()
-
-    if len(line_key) != len(amount):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Mismatched summary line updates.",
-        )
-
-    updates = {
-        key.strip(): _parse_amount(raw, "amount", allow_negative=True)
-        for key, raw in zip(line_key, amount, strict=True)
-    }
-    try:
-        upsert_summary_section(
-            session,
-            current_user.id,
-            parsed_year,
-            parsed_month,
-            section_id,
-            updates,
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
-
-    section_context = _summary_section_context(
-        session,
-        current_user.id,
-        parsed_year,
-        parsed_month,
-        section_id,
-    )
-    if section_context is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-
-    if is_htmx(request):
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/finance_summary_section.html",
-            context=section_context,
-        )
-
-    return RedirectResponse(
-        url=f"/finance/summary?{_finance_query(parsed_year, parsed_month)}",
-        status_code=303,
-    )
-
-
 @router.get("/income", response_class=HTMLResponse)
 def income_page(
     request: Request,
@@ -380,11 +224,21 @@ def create_income_entry(
     month: Annotated[str, Form()],
     description: Annotated[str, Form()],
     amount: Annotated[str, Form()],
+    category: Annotated[str, Form()] = "Outros",
 ) -> RedirectResponse:
+    try:
+        parsed_category = validate_income_category(category.strip())
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
     entry = FinanceIncomeEntry(
         user_id=current_user.id,
         year=_parse_year(year),
         month=_parse_month(month),
+        category=parsed_category,
         description=description.strip(),
         amount=_parse_amount(amount, "amount"),
     )
@@ -404,6 +258,7 @@ def update_income_entry(
     current_user: CurrentUserDep,
     entry_id: UUID,
     month: str = Form(default=""),
+    category: str = Form(default=""),
     description: str = Form(default=""),
     amount: str = Form(default=""),
 ) -> HTMLResponse:
@@ -413,6 +268,14 @@ def update_income_entry(
 
     if month:
         entry.month = _parse_month(month)
+    if category:
+        try:
+            entry.category = validate_income_category(category.strip())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
     if description:
         entry.description = description.strip()
     if amount:
@@ -429,6 +292,8 @@ def update_income_entry(
         context={
             "entry": entry,
             "month_labels": context["month_labels"],
+            "income_categories": INCOME_CATEGORIES,
+            "show_month_column": context.get("selected_month") is None,
         },
     )
 
@@ -642,6 +507,165 @@ def delete_expense_entry(
     entry_id: UUID,
 ) -> HTMLResponse:
     entry = session.get(FinanceExpenseEntry, entry_id)
+    if not entry or entry.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    session.delete(entry)
+    session.commit()
+    return HTMLResponse("")
+
+
+@router.get("/investments", response_class=HTMLResponse)
+def investments_page(
+    request: Request,
+    session: SessionDep,
+    templates: TemplatesDep,
+    current_user: CurrentUserDep,
+    year: Annotated[int | None, Query()] = None,
+    month: Annotated[int | None, Query()] = None,
+) -> HTMLResponse:
+    selected_year = resolve_year(year)
+    filter_month = month if month is not None else None
+    if filter_month is not None:
+        filter_month = _parse_month(str(filter_month))
+    context = build_investments_context(
+        session, current_user.id, selected_year, selected_month=filter_month
+    )
+    _page_shell(
+        context,
+        tab="investments",
+        year=selected_year,
+        selected_month=resolve_month(filter_month, selected_year),
+        filter_month=filter_month,
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="pages/finance_investments.html",
+        context=context,
+    )
+
+
+@router.post("/investments", response_class=HTMLResponse)
+def create_investment_entry(
+    session: SessionDep,
+    current_user: CurrentUserDep,
+    year: Annotated[str, Form()],
+    month: Annotated[str, Form()],
+    broker: Annotated[str, Form()],
+    amount: Annotated[str, Form()],
+) -> RedirectResponse:
+    parsed_year = _parse_year(year)
+    parsed_month = _parse_month(month)
+    try:
+        parsed_broker = validate_investment_broker(broker.strip())
+        upsert_investment_entry(
+            session,
+            current_user.id,
+            parsed_year,
+            parsed_month,
+            parsed_broker,
+            _parse_amount(amount, "amount"),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    return RedirectResponse(
+        url=f"/finance/investments?{_finance_query(parsed_year, parsed_month)}",
+        status_code=303,
+    )
+
+
+@router.post("/investments/{entry_id}", response_class=HTMLResponse)
+def update_investment_entry(
+    request: Request,
+    session: SessionDep,
+    templates: TemplatesDep,
+    current_user: CurrentUserDep,
+    entry_id: UUID,
+    month: str = Form(default=""),
+    broker: str = Form(default=""),
+    amount: str = Form(default=""),
+) -> HTMLResponse:
+    entry = session.get(FinanceInvestmentEntry, entry_id)
+    if not entry or entry.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    parsed_year = entry.year
+    parsed_month = entry.month
+    parsed_broker = entry.broker
+
+    if month:
+        parsed_month = _parse_month(month)
+    if broker:
+        try:
+            parsed_broker = validate_investment_broker(broker.strip())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
+    parsed_amount = _parse_amount(amount, "amount") if amount else entry.amount
+
+    if parsed_broker != entry.broker or parsed_month != entry.month:
+        session.delete(entry)
+        session.commit()
+        try:
+            entry = upsert_investment_entry(
+                session,
+                current_user.id,
+                parsed_year,
+                parsed_month,
+                parsed_broker,
+                parsed_amount,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+        if entry is None:
+            return HTMLResponse("")
+    else:
+        try:
+            entry = upsert_investment_entry(
+                session,
+                current_user.id,
+                parsed_year,
+                parsed_month,
+                parsed_broker,
+                parsed_amount,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+        if entry is None:
+            return HTMLResponse("")
+
+    context = build_investments_context(session, current_user.id, parsed_year)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/finance_investment_row.html",
+        context={
+            "entry": entry,
+            "month_labels": context["month_labels"],
+            "investment_brokers": INVESTMENT_BROKERS,
+            "show_month_column": context.get("selected_month") is None,
+        },
+    )
+
+
+@router.delete("/investments/{entry_id}", response_class=HTMLResponse)
+def delete_investment_entry(
+    session: SessionDep,
+    current_user: CurrentUserDep,
+    entry_id: UUID,
+) -> HTMLResponse:
+    entry = session.get(FinanceInvestmentEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     session.delete(entry)

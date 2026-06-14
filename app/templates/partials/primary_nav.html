@@ -4,7 +4,7 @@
 <nav class="{{ nav_class|default('sidebar__nav') }}">
   {% for section_name, items in nav_sections %}
   <div class="{{ group_cls }}">
-    {% if section_name != "Overview" and show_labels|default(true) %}
+    {% if show_labels|default(true) %}
     <div class="{{ label_cls }}">{{ section_name }}</div>
     {% endif %}
     {% for item in items %}

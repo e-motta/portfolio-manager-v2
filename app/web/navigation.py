@@ -10,10 +10,10 @@ class NavItem:
 
 
 NAV_SECTIONS = [
-    ("Overview", [NavItem("Dashboard", "/", "/")]),
     (
         "Portfolio",
         [
+            NavItem("Dashboard", "/", "/", "Portfolio"),
             NavItem("Securities", "/portfolio/holdings", "/portfolio/holdings", "Portfolio"),
             NavItem("Other", "/portfolio/investments", "/portfolio/investments", "Portfolio"),
         ],
@@ -26,19 +26,20 @@ NAV_SECTIONS = [
         ],
     ),
     (
-        "History",
+        "Finance",
+        [
+            NavItem("Dashboard", "/finance/summary", "/finance/summary", "Finance"),
+            NavItem("Income", "/finance/income", "/finance/income", "Finance"),
+            NavItem("Expenses", "/finance/expenses", "/finance/expenses", "Finance"),
+            NavItem("Investments", "/finance/investments", "/finance/investments", "Finance"),
+        ],
+    ),
+    (
+        "Data & sync",
         [
             NavItem("Snapshots", "/history", "/history"),
             NavItem("Backups", "/backups", "/backups"),
             NavItem("Open Finance", "/open-finance", "/open-finance"),
-        ],
-    ),
-    (
-        "Finance",
-        [
-            NavItem("Summary", "/finance/summary", "/finance/summary", "Finance"),
-            NavItem("Income", "/finance/income", "/finance/income", "Finance"),
-            NavItem("Expenses", "/finance/expenses", "/finance/expenses", "Finance"),
         ],
     ),
 ]

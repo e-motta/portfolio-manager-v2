@@ -13,6 +13,7 @@ class FinanceIncomeEntry(SQLModel, table=True):
     user_id: UUID = Field(foreign_key="users.id", ondelete="CASCADE", index=True)
     year: int = Field(index=True)
     month: int = Field(ge=1, le=12)
+    category: str = Field(default="Outros", index=True)
     description: str = Field(default="")
     amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=2)
     source: str = Field(default="manual", index=True)
@@ -39,6 +40,20 @@ class FinanceExpenseEntry(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class FinanceInvestmentEntry(SQLModel, table=True):
+    __tablename__ = "finance_investment_entries"
+    __table_args__ = (UniqueConstraint("user_id", "year", "month", "broker"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(foreign_key="users.id", ondelete="CASCADE", index=True)
+    year: int = Field(index=True)
+    month: int = Field(ge=1, le=12)
+    broker: str = Field(index=True)
+    amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=2)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class FinanceVendorCategory(SQLModel, table=True):
     __tablename__ = "finance_vendor_categories"
     __table_args__ = (UniqueConstraint("user_id", "vendor_key"),)
@@ -47,18 +62,5 @@ class FinanceVendorCategory(SQLModel, table=True):
     user_id: UUID = Field(foreign_key="users.id", ondelete="CASCADE", index=True)
     vendor_key: str = Field(index=True)
     category: str = Field(index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class FinanceSummaryAmount(SQLModel, table=True):
-    __tablename__ = "finance_summary_amounts"
-
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    user_id: UUID = Field(foreign_key="users.id", ondelete="CASCADE", index=True)
-    year: int = Field(index=True)
-    month: int = Field(ge=1, le=12)
-    line_key: str = Field(index=True)
-    amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=2)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
