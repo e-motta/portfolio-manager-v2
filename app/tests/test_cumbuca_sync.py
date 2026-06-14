@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from sqlmodel import select
 
-from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry
+from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry, FinanceTransferEntry
 from app.models.investment import Investment
 from app.models.user import User
 from app.services.cumbuca_oauth import (
@@ -20,12 +20,15 @@ from app.services.cumbuca_sync import (
     build_credit_card_expense_import_rows,
     build_expense_import_rows,
     build_investment_import_rows,
+    import_selected_account_debits,
     import_selected_expenses,
     import_selected_income,
     import_selected_investments,
     map_category,
     map_payment_account,
     resolve_import_period,
+    suggest_account_debit_import_kind,
+    suggest_transfer_to_account,
     _transaction_amount,
 )
 from app.services.finance import (
@@ -160,8 +163,26 @@ def test_credit_card_uses_brazilian_amount_for_usd(session):
 def test_bank_transactions_use_import_month(session):
     user = session.exec(select(User)).one()
     rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
-    assert len(rows) == 2
+    assert len(rows) == 3
     assert all(row.month == 6 for row in rows)
+
+
+def test_account_debit_transfer_suggestions():
+    tx = {
+        "type": "TRANSFERENCIA",
+        "transactionName": "Transferencia enviada para Nubank",
+    }
+    assert suggest_account_debit_import_kind(tx, tx["transactionName"]) == "transfer"
+    assert suggest_transfer_to_account(tx["transactionName"], "Nuconta", tx) == "Nubank"
+
+
+def test_account_debit_import_marks_transfer_rows(session):
+    user = session.exec(select(User)).one()
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    transfer = next(row for row in rows if row.external_id == "tx-006")
+    assert transfer.import_kind == "transfer"
+    assert transfer.to_account == "Nubank"
+    assert transfer.payment_account == "Nuconta"
 
 
 def test_account_deposits_import_credits(session):
@@ -180,8 +201,8 @@ def test_build_expense_import_rows_from_fixtures(session):
     rows, warnings = build_expense_import_rows(session, user, year=2026, month=6)
     assert not warnings
     assert len(cc_rows) == 4
-    assert len(bank_rows) == 2
-    assert len(rows) == 6
+    assert len(bank_rows) == 3
+    assert len(rows) == 7
     charges = [row for row in rows if not row.is_reversal]
     assert all(row.amount < 0 for row in charges)
     reversals = [row for row in rows if row.is_reversal]
@@ -230,10 +251,55 @@ def test_import_selected_expenses(session):
         rows,
         {row.row_key for row in rows if not row.already_exists},
     )
-    assert created == 2
+    assert created == 3
 
     again, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
     assert all(row.already_exists for row in again)
+
+
+def test_import_selected_account_debits_as_transfer(session):
+    user = session.exec(select(User)).one()
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    transfer = next(row for row in rows if row.external_id == "tx-006")
+
+    expense_created, transfer_created = import_selected_account_debits(
+        session,
+        user.id,
+        rows,
+        {transfer.row_key},
+        kind_overrides={transfer.row_key: "transfer"},
+    )
+    assert expense_created == 0
+    assert transfer_created == 1
+
+    entry = session.exec(
+        select(FinanceTransferEntry).where(FinanceTransferEntry.external_id == "tx-006")
+    ).one()
+    assert entry.from_account == "Nuconta"
+    assert entry.to_account == "Nubank"
+    assert entry.amount == Decimal("500")
+    assert entry.source == OPEN_FINANCE_SOURCE
+
+    again, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    matched = next(row for row in again if row.external_id == "tx-006")
+    assert matched.already_exists
+
+
+def test_import_selected_account_debits_mixed(session):
+    user = session.exec(select(User)).one()
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    expense_row = next(row for row in rows if row.external_id == "tx-003")
+    transfer_row = next(row for row in rows if row.external_id == "tx-006")
+
+    expense_created, transfer_created = import_selected_account_debits(
+        session,
+        user.id,
+        rows,
+        {expense_row.row_key, transfer_row.row_key},
+        kind_overrides={transfer_row.row_key: "transfer"},
+    )
+    assert expense_created == 1
+    assert transfer_created == 1
 
 
 def test_import_selected_expenses_saves_vendor_category(session):

@@ -8,7 +8,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.auth import CurrentUserDep
 from app.core.db import SessionDep
-from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry, FinanceInvestmentEntry
+from app.models.finance import (
+    FinanceExpenseEntry,
+    FinanceIncomeEntry,
+    FinanceInvestmentEntry,
+    FinanceTransferEntry,
+)
 from app.services.finance import (
     BILLS_CATEGORY,
     BILLS_SUBCATEGORIES,
@@ -17,11 +22,13 @@ from app.services.finance import (
     INVESTMENT_BROKERS,
     MAX_EXPENSE_INSTALLMENTS,
     PAYMENT_ACCOUNTS,
+    TRANSFER_ACCOUNTS,
     _UNSET,
     build_expenses_context,
     build_income_context,
     build_investments_context,
     build_summary_context,
+    build_transfers_context,
     create_expense_entries,
     link_expense_reversal,
     load_vendor_rule_map,
@@ -32,6 +39,7 @@ from app.services.finance import (
     upsert_investment_entry,
     validate_income_category,
     validate_investment_broker,
+    validate_transfer_accounts,
 )
 from app.web.dependencies import TemplatesDep
 
@@ -718,6 +726,164 @@ def delete_investment_entry(
     entry_id: UUID,
 ) -> HTMLResponse:
     entry = session.get(FinanceInvestmentEntry, entry_id)
+    if not entry or entry.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    session.delete(entry)
+    session.commit()
+    return HTMLResponse("")
+
+
+@router.get("/transfers", response_class=HTMLResponse)
+def transfers_page(
+    request: Request,
+    session: SessionDep,
+    templates: TemplatesDep,
+    current_user: CurrentUserDep,
+    year: Annotated[int | None, Query()] = None,
+    month: Annotated[int | None, Query()] = None,
+) -> HTMLResponse:
+    selected_year = resolve_year(year)
+    filter_month = month if month is not None else None
+    if filter_month is not None:
+        filter_month = _parse_month(str(filter_month))
+    context = build_transfers_context(
+        session, current_user.id, selected_year, selected_month=filter_month
+    )
+    _page_shell(
+        context,
+        tab="transfers",
+        year=selected_year,
+        selected_month=resolve_month(None, selected_year),
+        filter_month=filter_month,
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="pages/finance_transfers.html",
+        context=context,
+    )
+
+
+@router.post("/transfers", response_class=HTMLResponse)
+def create_transfer_entry(
+    session: SessionDep,
+    current_user: CurrentUserDep,
+    year: Annotated[str, Form()],
+    month: Annotated[str, Form()],
+    from_account: Annotated[str, Form()],
+    to_account: Annotated[str, Form()],
+    amount: Annotated[str, Form()],
+    description: Annotated[str, Form()] = "",
+    transaction_date: Annotated[str, Form()] = "",
+) -> RedirectResponse:
+    try:
+        parsed_from, parsed_to = validate_transfer_accounts(
+            from_account.strip(),
+            to_account.strip(),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    parsed_amount = _parse_amount(amount, "amount")
+    if parsed_amount <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Amount must be greater than zero.",
+        )
+
+    entry = FinanceTransferEntry(
+        user_id=current_user.id,
+        year=_parse_year(year),
+        month=_parse_month(month),
+        from_account=parsed_from,
+        to_account=parsed_to,
+        amount=parsed_amount,
+        description=description.strip(),
+        transaction_date=_parse_optional_date(transaction_date),
+    )
+    session.add(entry)
+    session.commit()
+    return RedirectResponse(
+        url=f"/finance/transfers?{_finance_query(entry.year, entry.month)}",
+        status_code=303,
+    )
+
+
+@router.post("/transfers/{entry_id}", response_class=HTMLResponse)
+def update_transfer_entry(
+    request: Request,
+    session: SessionDep,
+    templates: TemplatesDep,
+    current_user: CurrentUserDep,
+    entry_id: UUID,
+    month: str = Form(default=""),
+    from_account: str = Form(default=""),
+    to_account: str = Form(default=""),
+    amount: str = Form(default=""),
+    description: str = Form(default=""),
+    transaction_date: str = Form(default=""),
+) -> HTMLResponse:
+    entry = session.get(FinanceTransferEntry, entry_id)
+    if not entry or entry.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    parsed_from = entry.from_account
+    parsed_to = entry.to_account
+    if from_account:
+        parsed_from = from_account.strip()
+    if to_account:
+        parsed_to = to_account.strip()
+    try:
+        parsed_from, parsed_to = validate_transfer_accounts(parsed_from, parsed_to)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    if month:
+        entry.month = _parse_month(month)
+    entry.from_account = parsed_from
+    entry.to_account = parsed_to
+    if description:
+        entry.description = description.strip()
+    if amount:
+        parsed_amount = _parse_amount(amount, "amount")
+        if parsed_amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Amount must be greater than zero.",
+            )
+        entry.amount = parsed_amount
+    entry.description = description.strip()
+    entry.transaction_date = _parse_optional_date(transaction_date)
+    entry.updated_at = datetime.utcnow()
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+
+    context = build_transfers_context(session, current_user.id, entry.year)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/finance_transfer_row.html",
+        context={
+            "entry": entry,
+            "month_labels": context["month_labels"],
+            "transfer_accounts": TRANSFER_ACCOUNTS,
+            "show_month_column": context.get("selected_month") is None,
+        },
+    )
+
+
+@router.delete("/transfers/{entry_id}", response_class=HTMLResponse)
+def delete_transfer_entry(
+    session: SessionDep,
+    current_user: CurrentUserDep,
+    entry_id: UUID,
+) -> HTMLResponse:
+    entry = session.get(FinanceTransferEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     session.delete(entry)

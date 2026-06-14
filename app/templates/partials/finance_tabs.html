@@ -11,6 +11,10 @@
      class="finance-tabs__link{% if finance_tab == 'expenses' %} is-active{% endif %}">
     Expenses
   </a>
+  <a href="/finance/transfers?year={{ year }}{% if filter_month is defined and filter_month %}&month={{ filter_month }}{% endif %}"
+     class="finance-tabs__link{% if finance_tab == 'transfers' %} is-active{% endif %}">
+    Transfers
+  </a>
   <a href="/finance/investments?year={{ year }}{% if filter_month is defined and filter_month %}&month={{ filter_month }}{% endif %}"
      class="finance-tabs__link{% if finance_tab == 'investments' %} is-active{% endif %}">
     Investments

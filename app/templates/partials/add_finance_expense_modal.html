@@ -1,4 +1,3 @@
-{% from "partials/open_finance_subcategory_select.html" import subcategory_picker with context %}
 <div id="add-expense-modal" class="form-modal" hidden>
   <div class="form-modal__backdrop" data-form-modal-dismiss tabindex="-1" aria-hidden="true"></div>
   <div class="form-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="add-expense-modal-title">
@@ -12,7 +11,7 @@
       </button>
     </div>
     <div class="form-modal__body">
-      <form class="inline-form form-grid" action="/finance/expenses" method="post">
+      <form class="inline-form form-grid form-grid--expense-modal" action="/finance/expenses" method="post">
         <input type="hidden" name="year" value="{{ year }}">
         <div class="field">
           <label for="add-expense-month">Month</label>
@@ -34,7 +33,12 @@
         </div>
         <div class="field" data-finance-bills-subcategory hidden>
           <label for="add-expense-subcategory">Subcategory</label>
-          {{ subcategory_picker("subcategory", "", picker_id="add-expense-subcategory") }}
+          <select id="add-expense-subcategory" name="subcategory">
+            <option value="">—</option>
+            {% for subcategory in bills_subcategories %}
+            <option value="{{ subcategory }}">{{ subcategory }}</option>
+            {% endfor %}
+          </select>
         </div>
         <div class="field">
           <label for="add-expense-date">Date</label>
@@ -55,15 +59,18 @@
         </div>
         <div class="field">
           <label for="add-expense-amount">Amount (BRL)</label>
-          <input id="add-expense-amount" class="input-md" type="number" name="amount"
+          <input id="add-expense-amount" type="number" name="amount"
                  placeholder="0.00" step="0.01" min="0" inputmode="decimal" required>
-          <p class="field-hint">Amount is always stored as an expense (positive or negative input).</p>
+          <p class="field-hint">Stored as an expense regardless of sign.</p>
         </div>
-        <div class="field finance-installments-field" data-finance-installments>
-          <label class="finance-installments-toggle">
-            <input type="checkbox" name="installments_enabled" value="1" data-finance-installments-toggle>
-            Split into installments
-          </label>
+        <div class="form-grid--expense-modal__footer" data-finance-installments>
+          <div class="form-grid--expense-modal__footer-actions">
+            <label class="finance-installments-toggle">
+              <input type="checkbox" name="installments_enabled" value="1" data-finance-installments-toggle>
+              Split into installments
+            </label>
+            <button type="submit" class="btn btn-primary">Add expense</button>
+          </div>
           <div class="finance-installments-control" data-finance-installments-panel hidden>
             <label for="add-expense-installments">Number of installments</label>
             <input id="add-expense-installments" class="input-sm" type="number" name="installments"
@@ -71,7 +78,6 @@
             <p class="field-hint">Total amount is divided equally across the selected month and the following months.</p>
           </div>
         </div>
-        <button type="submit" class="btn btn-primary">Add expense</button>
       </form>
     </div>
   </div>

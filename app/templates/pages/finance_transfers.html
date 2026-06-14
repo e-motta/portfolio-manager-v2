@@ -1,0 +1,121 @@
+{% extends "finance_base.html" %}
+{% from "partials/icons.html" import icon_add %}
+{% from "partials/finance_kpi.html" import finance_stats_open, finance_stats_close, finance_stat %}
+
+{% block title %}Transfers — Finance{% endblock %}
+{% block topbar_title %}Transfers{% endblock %}
+
+{% block finance_topbar_actions %}
+<button type="button" class="btn btn-secondary btn-small" data-form-modal-open="add-transfer-modal">
+  {{ icon_add() }} Add
+</button>
+{% endblock %}
+
+{% block finance_title %}Transfers{% endblock %}
+{% block finance_subtitle %}
+{% if filter_month %}{{ month_labels[filter_month - 1] }} {{ year }}{% else %}Full year {{ year }}{% endif %}
+· {{ all_entries|length }} transfers
+{% endblock %}
+
+{% block finance_content %}
+{% set base_path = '/finance/transfers' %}
+{% set show_all_option = true %}
+{% set show_amounts = true %}
+{% include "partials/finance_month_pills.html" %}
+
+{% if filter_month %}
+  {% set period_total = month_totals[filter_month]|pl_brl %}
+  {% set period_label = "This month" %}
+{% else %}
+  {% set period_total = year_total|pl_brl %}
+  {% set period_label = "Year total" %}
+{% endif %}
+
+{{ finance_stats_open() }}
+  {{ finance_stat(period_label, period_total, tone="neutral", value_class="pl-positive", highlight=true) }}
+  {{ finance_stat("Entries", all_entries|length|string, meta="Selected period", tone="neutral") }}
+{{ finance_stats_close() }}
+
+{% include "partials/finance_monthly_chart.html" %}
+
+<div class="panel finance-quick-panel">
+  <div class="panel__header">
+    <h2 class="panel__title">Quick add</h2>
+    <p class="panel__hint">Move money between accounts without leaving the page</p>
+  </div>
+  <div class="panel__body">
+    {% include "partials/finance_quick_transfer.html" %}
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel__header">
+    <h2 class="panel__title">{% if filter_month %}Transfers in {{ month_labels[filter_month - 1] }}{% else %}All transfers{% endif %}</h2>
+  </div>
+  {% if filter_month %}
+  <div class="table-wrap table-wrap--flush">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>From</th>
+          <th>To</th>
+          <th>Description</th>
+          <th>Date</th>
+          <th class="num">Amount</th>
+          <th class="actions-cell">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="transfers-body">
+        {% set show_month_column = false %}
+        {% for entry in entries %}
+        {% include "partials/finance_transfer_row.html" %}
+        {% else %}
+        <tr><td colspan="6" class="empty-state">No transfers logged for this month yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="finance-entry-groups">
+    {% for month in range(1, 13) %}
+    {% set month_entries = entries_by_month[month] %}
+    {% if month_entries %}
+    <details class="finance-entry-group" open>
+      <summary class="finance-entry-group__summary">
+        <span class="finance-entry-group__title">{{ month_labels[month - 1] }}</span>
+        <span class="finance-entry-group__meta">{{ month_entries|length }} · {{ month_totals[month]|pl_brl }}</span>
+      </summary>
+      <div class="table-wrap table-wrap--flush">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>From</th>
+              <th>To</th>
+              <th>Description</th>
+              <th>Date</th>
+              <th class="num">Amount</th>
+              <th class="actions-cell">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set show_month_column = false %}
+            {% for entry in month_entries %}
+            {% include "partials/finance_transfer_row.html" %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+    {% endfor %}
+    {% if not all_entries %}
+    <p class="empty-state finance-empty">No transfers yet. Use quick add above or the Add button.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block page_modals %}
+{% include "partials/add_finance_transfer_modal.html" %}
+{% endblock %}

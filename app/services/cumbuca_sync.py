@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 
 from fastapi import HTTPException
 
-from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry
+from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry, FinanceTransferEntry
 from app.models.investment import Investment
 from app.models.user import User
 from app.services.cumbuca_mcp import (
@@ -24,11 +24,13 @@ from app.services.finance import (
     BILLS_CATEGORY,
     EXPENSE_CATEGORIES,
     PAYMENT_ACCOUNTS,
+    TRANSFER_ACCOUNTS,
     load_vendor_rule_map,
     normalize_vendor_key,
     resolve_expense_subcategory,
     save_vendor_category,
     suggest_expense_category,
+    validate_transfer_accounts,
 )
 from app.web.helpers import get_investable_asset_types, get_investments
 
@@ -69,6 +71,28 @@ INVESTMENT_TRANSACTION_TYPES = frozenset(
     }
 )
 
+TRANSFER_TRANSACTION_TYPES = frozenset(
+    {
+        "TRANSFERENCIA",
+        "TRANSFERENCIA_MESMA_TITULARIDADE",
+        "INTERNAL_TRANSFER",
+        "TED",
+        "DOC",
+    }
+)
+
+TRANSFER_VENDOR_KEYWORDS = (
+    "transferencia",
+    "transferência",
+    "transf ",
+    "ted ",
+    "doc ",
+    "pagamento fatura",
+    "pagamento cartao",
+    "pagamento cartão",
+    "entre contas",
+)
+
 ASSET_TYPE_KEYWORDS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("poupança", "poupanca", "savings", "cash"), "cash"),
     (("cdb", "lci", "lca", "tesouro", "debenture", "debênture", "fixed"), "bonds"),
@@ -92,6 +116,8 @@ class ImportExpenseRow:
     selected: bool
     is_reversal: bool = False
     subcategory: str | None = None
+    import_kind: str = "expense"
+    to_account: str | None = None
 
 
 @dataclass
@@ -203,6 +229,55 @@ def map_payment_account_from_brand(brand: str, default: str) -> str:
     return default
 
 
+def suggest_account_debit_import_kind(tx: dict[str, Any], vendor: str) -> str:
+    tx_type = str(tx.get("type") or "").upper()
+    if tx_type in TRANSFER_TRANSACTION_TYPES:
+        return "transfer"
+    haystack = vendor.lower()
+    if any(keyword in haystack for keyword in TRANSFER_VENDOR_KEYWORDS):
+        return "transfer"
+    return "expense"
+
+
+def suggest_transfer_to_account(
+    vendor: str,
+    from_account: str,
+    tx: dict[str, Any] | None = None,
+) -> str | None:
+    haystacks = [vendor.lower()]
+    if tx is not None:
+        haystacks.append(str(tx.get("type") or "").lower())
+        haystacks.append(str(tx.get("transactionType") or "").lower())
+
+    matches: list[str] = []
+    for haystack in haystacks:
+        for keywords, payment_account in PAYMENT_ACCOUNT_RULES:
+            if payment_account == from_account:
+                continue
+            if payment_account not in TRANSFER_ACCOUNTS:
+                continue
+            if any(keyword in haystack for keyword in keywords):
+                if payment_account not in matches:
+                    matches.append(payment_account)
+
+    if len(matches) == 1:
+        return matches[0]
+
+    defaults = {
+        "Nuconta": "Nubank",
+        "Nubank": "Nuconta",
+        "BB Débito": "Nuconta",
+        "Wise": "Nuconta",
+    }
+    suggested = defaults.get(from_account)
+    if suggested and suggested != from_account:
+        return suggested
+    for account in TRANSFER_ACCOUNTS:
+        if account != from_account:
+            return account
+    return None
+
+
 def map_category(raw_category: str | None, description: str) -> str:
     normalized = (raw_category or "").strip().lower()
     if normalized in CATEGORY_MAP:
@@ -277,6 +352,22 @@ def _existing_expense_ids(session: Session, user_id: UUID) -> set[str]:
         .where(FinanceExpenseEntry.external_id.is_not(None))  # type: ignore[union-attr]
     ).all()
     return {row for row in rows if row}
+
+
+def _existing_transfer_ids(session: Session, user_id: UUID) -> set[str]:
+    rows = session.exec(
+        select(FinanceTransferEntry.external_id)
+        .where(FinanceTransferEntry.user_id == user_id)
+        .where(FinanceTransferEntry.source == OPEN_FINANCE_SOURCE)
+        .where(FinanceTransferEntry.external_id.is_not(None))  # type: ignore[union-attr]
+    ).all()
+    return {row for row in rows if row}
+
+
+def _existing_open_finance_debit_ids(session: Session, user_id: UUID) -> set[str]:
+    return _existing_expense_ids(session, user_id) | _existing_transfer_ids(
+        session, user_id
+    )
 
 
 def _existing_income_ids(session: Session, user_id: UUID) -> set[str]:
@@ -639,7 +730,7 @@ def build_account_expense_import_rows(
         month=month,
     )
     account_lookup = _account_lookup(accounts, credit_cards)
-    existing_ids = _existing_expense_ids(session, user.id)
+    existing_ids = _existing_open_finance_debit_ids(session, user.id)
     vendor_rules = load_vendor_rule_map(session, user.id)
     rows: list[ImportExpenseRow] = []
 
@@ -654,6 +745,13 @@ def build_account_expense_import_rows(
             continue
         if not _row_matches_import(row, tx, year, month):
             continue
+        row.import_kind = suggest_account_debit_import_kind(tx, row.vendor)
+        if row.import_kind == "transfer":
+            row.to_account = suggest_transfer_to_account(
+                row.vendor,
+                row.payment_account,
+                tx,
+            )
         row.already_exists = row.external_id in existing_ids
         row.selected = not row.already_exists
         rows.append(row)
@@ -866,6 +964,105 @@ def import_selected_expenses(
     if created:
         session.commit()
     return created
+
+
+def import_selected_transfers(
+    session: Session,
+    user_id: UUID,
+    rows: list[ImportExpenseRow],
+    selected_keys: set[str],
+    *,
+    kind_overrides: dict[str, str] | None = None,
+    to_account_overrides: dict[str, str] | None = None,
+    period_overrides: dict[str, tuple[int, int]] | None = None,
+) -> int:
+    kind_overrides = kind_overrides or {}
+    to_account_overrides = to_account_overrides or {}
+    created = 0
+    for row in rows:
+        if row.row_key not in selected_keys or row.already_exists:
+            continue
+        import_kind = kind_overrides.get(row.row_key, row.import_kind)
+        if import_kind != "transfer":
+            continue
+
+        from_account = row.payment_account
+        to_account = to_account_overrides.get(row.row_key, row.to_account)
+        if not to_account:
+            raise ValueError(f"Missing destination account for {row.vendor}.")
+        try:
+            parsed_from, parsed_to = validate_transfer_accounts(from_account, to_account)
+        except ValueError as exc:
+            raise ValueError(f"{row.vendor}: {exc}") from exc
+
+        import_year, import_month = resolve_import_period(row.row_key, row, period_overrides)
+        session.add(
+            FinanceTransferEntry(
+                user_id=user_id,
+                year=import_year,
+                month=import_month,
+                transaction_date=row.transaction_date,
+                from_account=parsed_from,
+                to_account=parsed_to,
+                amount=abs(row.amount),
+                description=row.vendor,
+                source=OPEN_FINANCE_SOURCE,
+                external_id=row.external_id,
+            )
+        )
+        created += 1
+    if created:
+        session.commit()
+    return created
+
+
+def import_selected_account_debits(
+    session: Session,
+    user_id: UUID,
+    rows: list[ImportExpenseRow],
+    selected_keys: set[str],
+    *,
+    kind_overrides: dict[str, str] | None = None,
+    to_account_overrides: dict[str, str] | None = None,
+    category_overrides: dict[str, str] | None = None,
+    subcategory_overrides: dict[str, str | None] | None = None,
+    period_overrides: dict[str, tuple[int, int]] | None = None,
+) -> tuple[int, int]:
+    kind_overrides = kind_overrides or {}
+    expense_rows: list[ImportExpenseRow] = []
+    transfer_rows: list[ImportExpenseRow] = []
+    expense_keys: set[str] = set()
+    transfer_keys: set[str] = set()
+
+    for row in rows:
+        if row.row_key not in selected_keys or row.already_exists:
+            continue
+        if kind_overrides.get(row.row_key, row.import_kind) == "transfer":
+            transfer_rows.append(row)
+            transfer_keys.add(row.row_key)
+        else:
+            expense_rows.append(row)
+            expense_keys.add(row.row_key)
+
+    expense_created = import_selected_expenses(
+        session,
+        user_id,
+        expense_rows,
+        expense_keys,
+        category_overrides=category_overrides,
+        subcategory_overrides=subcategory_overrides,
+        period_overrides=period_overrides,
+    )
+    transfer_created = import_selected_transfers(
+        session,
+        user_id,
+        transfer_rows,
+        transfer_keys,
+        kind_overrides=kind_overrides,
+        to_account_overrides=to_account_overrides,
+        period_overrides=period_overrides,
+    )
+    return expense_created, transfer_created
 
 
 def import_selected_income(

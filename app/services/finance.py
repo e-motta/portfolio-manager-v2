@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
+from collections.abc import Callable
 from uuid import UUID
 
 from sqlmodel import Session, select
@@ -10,6 +11,7 @@ from app.models.finance import (
     FinanceExpenseEntry,
     FinanceIncomeEntry,
     FinanceInvestmentEntry,
+    FinanceTransferEntry,
     FinanceVendorCategory,
 )
 
@@ -30,6 +32,7 @@ MONTH_LABELS = (
 
 BILLS_CATEGORY = "Bills"
 BILLS_PAYMENT_ACCOUNT = "Nuconta"
+DAY_TO_DAY_ALWAYS_PAID_ACCOUNTS = frozenset({BILLS_PAYMENT_ACCOUNT})
 BILLS_SUBCATEGORY_ALUGUEL = "Aluguel (/2+114)"
 BILLS_SUBCATEGORY_OUTRAS_CONTAS = "Outras contas (/2)"
 BILLS_SUBCATEGORIES = (
@@ -126,6 +129,8 @@ PAYMENT_ACCOUNTS = (
     "Dinheiro",
     "Manual",
 )
+
+TRANSFER_ACCOUNTS = tuple(account for account in PAYMENT_ACCOUNTS if account != "Manual")
 
 FINANCE_SOURCE_LABELS = {
     "manual": "Manual",
@@ -522,6 +527,20 @@ def validate_investment_broker(broker: str) -> str:
     return broker
 
 
+def validate_transfer_account(account: str) -> str:
+    if account not in TRANSFER_ACCOUNTS:
+        raise ValueError(f"Invalid account: {account}")
+    return account
+
+
+def validate_transfer_accounts(from_account: str, to_account: str) -> tuple[str, str]:
+    parsed_from = validate_transfer_account(from_account)
+    parsed_to = validate_transfer_account(to_account)
+    if parsed_from == parsed_to:
+        raise ValueError("From and to accounts must be different.")
+    return parsed_from, parsed_to
+
+
 def investment_broker_label(broker: str) -> str:
     for key, label in INVESTMENT_BROKERS:
         if key == broker:
@@ -840,6 +859,24 @@ def _load_investment_entries(
     )
 
 
+def _load_transfer_entries(
+    session: Session, user_id: UUID, year: int
+) -> list[FinanceTransferEntry]:
+    return list(
+        session.exec(
+            select(FinanceTransferEntry)
+            .where(FinanceTransferEntry.user_id == user_id)
+            .where(FinanceTransferEntry.year == year)
+            .order_by(
+                FinanceTransferEntry.month,
+                FinanceTransferEntry.transaction_date,
+                FinanceTransferEntry.from_account,
+                FinanceTransferEntry.to_account,
+            )
+        ).all()
+    )
+
+
 def _sum_income_by_category(
     entries: list[FinanceIncomeEntry],
 ) -> dict[str, dict[int, Decimal]]:
@@ -927,14 +964,41 @@ def _card_lines_for_month(
     month: int,
     *,
     ordered_keys: tuple[str, ...] | None = None,
+    always_paid: bool = False,
+    paid_for_line: Callable[[str, Decimal], bool] | None = None,
 ) -> list[dict[str, object]]:
     keys = ordered_keys or tuple(line_totals.keys())
     lines: list[dict[str, object]] = []
     for key in keys:
         total = line_totals.get(key, {}).get(month, Decimal("0"))
         if total != 0:
-            lines.append({"label": key, "amount": total})
+            line: dict[str, object] = {"label": key, "amount": total}
+            if always_paid:
+                line["paid"] = True
+            elif paid_for_line is not None:
+                line["paid"] = paid_for_line(key, total)
+            lines.append(line)
     return lines
+
+
+def _transfer_amounts_lookup(
+    entries: list[FinanceTransferEntry],
+) -> set[tuple[int, str, Decimal]]:
+    return {
+        (entry.month, entry.to_account, entry.amount)
+        for entry in entries
+    }
+
+
+def _day_to_day_line_is_paid(
+    month: int,
+    account: str,
+    amount: Decimal,
+    transfer_lookup: set[tuple[int, str, Decimal]],
+) -> bool:
+    if account in DAY_TO_DAY_ALWAYS_PAID_ACCOUNTS:
+        return True
+    return (month, account, abs(amount)) in transfer_lookup
 
 
 def build_income_context(
@@ -1163,6 +1227,8 @@ def build_summary_context(
 ) -> dict:
     income_entries = _load_income_entries(session, user_id, year)
     expense_entries = _load_expense_entries(session, user_id, year)
+    transfer_entries = _load_transfer_entries(session, user_id, year)
+    transfer_lookup = _transfer_amounts_lookup(transfer_entries)
 
     income_by_month = _sum_by_month(income_entries)
     expense_by_month = _sum_expenses_by_month(expense_entries)
@@ -1197,11 +1263,14 @@ def build_summary_context(
         month,
         ordered_keys=INCOME_CATEGORIES,
     )
-    bills_lines = _card_lines_for_month(bills_by_vendor, month)
+    bills_lines = _card_lines_for_month(bills_by_vendor, month, always_paid=True)
     day_to_day_lines = _card_lines_for_month(
         day_to_day_by_account,
         month,
         ordered_keys=PAYMENT_ACCOUNTS,
+        paid_for_line=lambda account, amount: _day_to_day_line_is_paid(
+            month, account, amount, transfer_lookup
+        ),
     )
 
     summary_cards = [
@@ -1224,6 +1293,7 @@ def build_summary_context(
             "total_label": "Total bills",
             "total_amount": month_bills,
             "lines": bills_lines,
+            "shows_payment_status": True,
             "manage_href": f"/finance/expenses?year={year}&month={month}",
             "manage_label": "Manage expenses",
         },
@@ -1235,6 +1305,7 @@ def build_summary_context(
             "total_label": "Total day-to-day",
             "total_amount": month_day_to_day,
             "lines": day_to_day_lines,
+            "shows_payment_status": True,
             "manage_href": f"/finance/expenses?year={year}&month={month}",
             "manage_label": "Manage expenses",
         },
@@ -1391,6 +1462,40 @@ def upsert_investment_entry(
     session.commit()
     session.refresh(entry)
     return entry
+
+
+def build_transfers_context(
+    session: Session, user_id: UUID, year: int, *, selected_month: int | None = None
+) -> dict:
+    entries = _load_transfer_entries(session, user_id, year)
+    month_totals = _sum_by_month(entries)
+    entries_by_month: dict[int, list[FinanceTransferEntry]] = {m: [] for m in range(1, 13)}
+    for entry in entries:
+        entries_by_month[entry.month].append(entry)
+
+    visible_entries = entries
+    if selected_month is not None:
+        visible_entries = entries_by_month.get(selected_month, [])
+
+    return {
+        "year": year,
+        "selected_month": selected_month,
+        "entries": visible_entries,
+        "all_entries": entries,
+        "entries_by_month": entries_by_month,
+        "transfer_accounts": TRANSFER_ACCOUNTS,
+        "month_labels": MONTH_LABELS,
+        "month_totals": month_totals,
+        "monthly_chart": build_monthly_chart(
+            month_totals,
+            year=year,
+            selected_month=selected_month,
+            link_base="/finance/transfers",
+            variant="income",
+            aria_label="Transfers by month",
+        ),
+        "year_total": sum(month_totals.values(), start=Decimal("0")),
+    }
 
 
 def advance_finance_month(year: int, month: int) -> tuple[int, int]:

@@ -1,9 +1,10 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from sqlmodel import select
 
-from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry
+from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry, FinanceTransferEntry
 from app.models.user import User
 from app.services.finance import (
     BILLS_CATEGORY,
@@ -11,9 +12,11 @@ from app.services.finance import (
     build_income_context,
     build_investments_context,
     build_summary_context,
+    build_transfers_context,
     format_finance_source,
     migrate_pro_labore_lucro_to_pj,
     upsert_investment_entry,
+    validate_transfer_accounts,
 )
 
 
@@ -321,6 +324,139 @@ def test_summary_bills_from_expense_entries(session, client):
     context = build_summary_context(session, user.id, 2026, selected_month=1)
     bills_card = next(card for card in context["summary_cards"] if card["id"] == "bills")
     assert bills_card["total_amount"] == Decimal("-1500.00")
+    assert bills_card["lines"][0]["paid"] is True
+
+
+def test_summary_bills_lines_always_paid(session):
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=2,
+            category=BILLS_CATEGORY,
+            vendor="Aluguel",
+            payment_account="Nuconta",
+            amount=Decimal("-2500"),
+        )
+    )
+    session.commit()
+
+    context = build_summary_context(session, user.id, 2026, selected_month=2)
+    bills_card = next(card for card in context["summary_cards"] if card["id"] == "bills")
+    assert all(line["paid"] for line in bills_card["lines"])
+
+
+def test_summary_day_to_day_unpaid_without_transfer(session):
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=3,
+            category="Transporte",
+            vendor="Uber",
+            payment_account="Nubank",
+            amount=Decimal("-50"),
+        )
+    )
+    session.commit()
+
+    context = build_summary_context(session, user.id, 2026, selected_month=3)
+    day_to_day_card = next(
+        card for card in context["summary_cards"] if card["id"] == "day-to-day"
+    )
+    nubank_line = next(line for line in day_to_day_card["lines"] if line["label"] == "Nubank")
+    assert nubank_line["paid"] is False
+
+
+def test_summary_day_to_day_nuconta_always_paid(session):
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=3,
+            category="Transporte",
+            vendor="Uber",
+            payment_account="Nuconta",
+            amount=Decimal("-50"),
+        )
+    )
+    session.commit()
+
+    context = build_summary_context(session, user.id, 2026, selected_month=3)
+    day_to_day_card = next(
+        card for card in context["summary_cards"] if card["id"] == "day-to-day"
+    )
+    nuconta_line = next(line for line in day_to_day_card["lines"] if line["label"] == "Nuconta")
+    assert nuconta_line["paid"] is True
+
+
+def test_summary_day_to_day_paid_with_matching_transfer(session):
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=3,
+            category="Transporte",
+            vendor="Uber",
+            payment_account="Nubank",
+            amount=Decimal("-50"),
+        )
+    )
+    session.add(
+        FinanceTransferEntry(
+            user_id=user.id,
+            year=2026,
+            month=3,
+            from_account="Nuconta",
+            to_account="Nubank",
+            amount=Decimal("50"),
+        )
+    )
+    session.commit()
+
+    context = build_summary_context(session, user.id, 2026, selected_month=3)
+    day_to_day_card = next(
+        card for card in context["summary_cards"] if card["id"] == "day-to-day"
+    )
+    nubank_line = next(line for line in day_to_day_card["lines"] if line["label"] == "Nubank")
+    assert nubank_line["paid"] is True
+
+
+def test_summary_day_to_day_unpaid_when_transfer_amount_differs(session):
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=3,
+            category="Transporte",
+            vendor="Uber",
+            payment_account="Nubank",
+            amount=Decimal("-50"),
+        )
+    )
+    session.add(
+        FinanceTransferEntry(
+            user_id=user.id,
+            year=2026,
+            month=3,
+            from_account="Nuconta",
+            to_account="Nubank",
+            amount=Decimal("49.99"),
+        )
+    )
+    session.commit()
+
+    context = build_summary_context(session, user.id, 2026, selected_month=3)
+    day_to_day_card = next(
+        card for card in context["summary_cards"] if card["id"] == "day-to-day"
+    )
+    nubank_line = next(line for line in day_to_day_card["lines"] if line["label"] == "Nubank")
+    assert nubank_line["paid"] is False
 
 
 def test_income_category_pj_and_outros(session, client):
@@ -843,3 +979,86 @@ def test_vendor_subcategory_auto_assignment_on_create(session, client):
         )
     ).one()
     assert entry.subcategory == BILLS_SUBCATEGORY_ALUGUEL
+
+
+def test_validate_transfer_accounts():
+    assert validate_transfer_accounts("Nuconta", "Nubank") == ("Nuconta", "Nubank")
+
+    with pytest.raises(ValueError, match="different"):
+        validate_transfer_accounts("Nubank", "Nubank")
+
+    with pytest.raises(ValueError, match="Invalid account"):
+        validate_transfer_accounts("Manual", "Nubank")
+
+
+def test_transfer_entry_totals(session, client):
+    user = _test_user(session)
+
+    session.add(
+        FinanceTransferEntry(
+            user_id=user.id,
+            year=2026,
+            month=3,
+            from_account="Nuconta",
+            to_account="Nubank",
+            amount=Decimal("500"),
+            description="Monthly top-up",
+        )
+    )
+    session.add(
+        FinanceTransferEntry(
+            user_id=user.id,
+            year=2026,
+            month=6,
+            from_account="Nubank",
+            to_account="Wise",
+            amount=Decimal("200"),
+        )
+    )
+    session.commit()
+
+    context = build_transfers_context(session, user.id, 2026)
+    assert context["month_totals"][3] == Decimal("500")
+    assert context["year_total"] == Decimal("700")
+
+    response = client.get("/finance/transfers?year=2026")
+    assert response.status_code == 200
+    assert "Nuconta" in response.text
+    assert "Monthly top-up" in response.text
+
+
+def test_create_transfer_entry(session, client):
+    response = client.post(
+        "/finance/transfers",
+        data={
+            "year": "2026",
+            "month": "2",
+            "from_account": "Nuconta",
+            "to_account": "Nubank",
+            "amount": "1500.00",
+            "description": "Pay credit card",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    entry = session.exec(select(FinanceTransferEntry)).one()
+    assert entry.from_account == "Nuconta"
+    assert entry.to_account == "Nubank"
+    assert entry.amount == Decimal("1500.00")
+    assert entry.description == "Pay credit card"
+
+
+def test_create_transfer_rejects_same_account(client):
+    response = client.post(
+        "/finance/transfers",
+        data={
+            "year": "2026",
+            "month": "2",
+            "from_account": "Nubank",
+            "to_account": "Nubank",
+            "amount": "100",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 422

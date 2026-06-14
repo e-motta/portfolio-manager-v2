@@ -34,18 +34,20 @@ function syncBillsSubcategoryField(container) {
     '#add-expense-category, [name="category"]'
   );
   const subcategoryField = container.querySelector("[data-finance-bills-subcategory]");
-  const picker = subcategoryField?.querySelector("[data-of-subcategory-picker]");
-  const select = picker?.querySelector("[data-of-subcategory-select]");
-  if (!categorySelect || !subcategoryField) {
+  const select = subcategoryField?.querySelector(
+    '[name="subcategory"], [data-of-subcategory-select]'
+  );
+  if (!categorySelect || !subcategoryField || !select) {
     return;
   }
 
   const isBills = categorySelect.value === "Bills";
   subcategoryField.hidden = !isBills;
-  if (select) {
-    select.disabled = !isBills;
-    if (!isBills) {
-      select.value = "";
+  select.disabled = !isBills;
+  if (!isBills) {
+    select.value = "";
+    const picker = select.closest("[data-of-subcategory-picker]");
+    if (picker) {
       updateSubcategoryPicker(picker);
     }
   }

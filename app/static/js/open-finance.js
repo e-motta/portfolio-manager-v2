@@ -246,6 +246,144 @@
     });
   }
 
+  function setFieldEnabled(field, enabled) {
+    if (!field) {
+      return;
+    }
+
+    const storedName = field.dataset.fieldName;
+    field.disabled = !enabled;
+    if (enabled && storedName) {
+      field.setAttribute("name", storedName);
+    } else {
+      field.removeAttribute("name");
+    }
+  }
+
+  function updateRowImportKind(row) {
+    const importKindSelect = row.querySelector("[data-of-import-kind]");
+    if (!importKindSelect) {
+      return;
+    }
+
+    const importKind = importKindSelect.value;
+    row.dataset.rowImportKind = importKind;
+    const isTransfer = importKind === "transfer";
+
+    const expenseDetails = row.querySelector("[data-of-expense-details]");
+    const transferDetails = row.querySelector("[data-of-transfer-details]");
+    if (expenseDetails) {
+      expenseDetails.hidden = isTransfer;
+    }
+    if (transferDetails) {
+      transferDetails.hidden = !isTransfer;
+    }
+
+    const categorySelect = row.querySelector("[data-of-category-select]");
+    const subcategorySelect = row.querySelector("[data-of-subcategory-select]");
+    setFieldEnabled(categorySelect, !isTransfer);
+    if (isTransfer) {
+      setSubcategorySelectEnabled(subcategorySelect, false);
+    } else {
+      updateRowSubcategoryVisibility(row);
+    }
+
+    const toAccountSelect = row.querySelector("[data-of-to-account]");
+    setFieldEnabled(toAccountSelect, isTransfer);
+
+    const status = row.querySelector(".status-pill");
+    if (
+      status
+      && !status.classList.contains("muted")
+      && !status.classList.contains("status-pill--reversal")
+    ) {
+      if (isTransfer) {
+        status.className = "status-pill ok";
+        status.textContent = "Transfer";
+      } else if (row.dataset.rowCategory === "Outros") {
+        status.className = "status-pill warn";
+        status.textContent = "Review";
+      } else {
+        status.className = "status-pill ok";
+        status.textContent = "New";
+      }
+    }
+
+    row.classList.toggle("import-row--needs-category", !isTransfer && row.dataset.rowCategory === "Outros");
+
+    const transferAmount = row.querySelector("[data-of-transfer-amount]");
+    const expenseAmount = row.querySelector("[data-of-expense-amount]");
+    if (transferAmount) {
+      transferAmount.hidden = !isTransfer;
+    }
+    if (expenseAmount) {
+      expenseAmount.hidden = isTransfer;
+      if (!isTransfer) {
+        updateRowAmountPreview(row);
+      }
+    }
+  }
+
+  function bindImportKindPickers(scope) {
+    scope.querySelectorAll("[data-of-import-kind]").forEach((select) => {
+      if (select.dataset.ofImportKindBound === "1") {
+        return;
+      }
+      select.dataset.ofImportKindBound = "1";
+      select.dataset.fieldName = select.getAttribute("name") || "";
+      select.addEventListener("change", () => {
+        const row = select.closest("[data-import-row]");
+        if (row) {
+          updateRowImportKind(row);
+        }
+      });
+    });
+
+    scope.querySelectorAll("[data-of-to-account]").forEach((select) => {
+      if (select.dataset.ofToAccountBound === "1") {
+        return;
+      }
+      select.dataset.ofToAccountBound = "1";
+      select.dataset.fieldName = select.getAttribute("name") || "";
+    });
+
+    scope.querySelectorAll("[data-import-row]").forEach((row) => {
+      if (row.querySelector("[data-of-import-kind]")) {
+        updateRowImportKind(row);
+      }
+    });
+  }
+
+  function bindBulkImportKindApply(scope) {
+    scope.querySelectorAll("[data-of-apply-bulk-import-kind]").forEach((button) => {
+      if (button.dataset.ofBulkImportKindBound === "1") {
+        return;
+      }
+      button.dataset.ofBulkImportKindBound = "1";
+
+      button.addEventListener("click", () => {
+        const form = button.closest("[data-import-preview-form]");
+        const bulkKind = form?.querySelector("[data-of-bulk-import-kind]");
+        if (!form || !bulkKind?.value) {
+          return;
+        }
+
+        form.querySelectorAll(".import-row--new").forEach((row) => {
+          const checkbox = row.querySelector('input[name="selected_rows"]');
+          if (!checkbox?.checked) {
+            return;
+          }
+
+          const importKindSelect = row.querySelector("[data-of-import-kind]");
+          if (importKindSelect) {
+            importKindSelect.value = bulkKind.value;
+            updateRowImportKind(row);
+          }
+        });
+      });
+    });
+  }
+
   function categorySlug(select) {
     return select.selectedOptions[0]?.dataset.slug || "other";
   }
@@ -443,6 +581,7 @@
         return;
       }
       picker.dataset.ofCategoryBound = "1";
+      select.dataset.fieldName = select.getAttribute("name") || "";
       select.addEventListener("change", () => {
         updateCategoryPicker(picker);
         const form = picker.closest("[data-import-preview-form]");
@@ -480,6 +619,9 @@
           if (!checkbox?.checked) {
             return;
           }
+          if (row.dataset.rowImportKind === "transfer") {
+            return;
+          }
 
           const categorySelect = row.querySelector("[data-of-category-select]");
           const categoryPicker = row.querySelector("[data-of-category-picker]");
@@ -512,12 +654,16 @@
     bindCategoryPickers(scope);
     bindSubcategoryPickers(scope);
     bindBulkSelectionApply(scope);
+    bindImportKindPickers(scope);
+    bindBulkImportKindApply(scope);
     scope.querySelectorAll("[data-import-preview-form]").forEach((form) => {
       updatePeriodOverrideNote(form);
     });
     scope.querySelectorAll("[data-import-row]").forEach((row) => {
-      updateRowSubcategoryVisibility(row);
-      updateRowAmountPreview(row);
+      if (!row.querySelector("[data-of-import-kind]")) {
+        updateRowSubcategoryVisibility(row);
+        updateRowAmountPreview(row);
+      }
     });
   }
 

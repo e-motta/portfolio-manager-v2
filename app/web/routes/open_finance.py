@@ -16,6 +16,7 @@ from app.services.cumbuca_sync import (
     build_investment_import_rows,
     fetch_open_finance_error,
     get_access_token_for_user,
+    import_selected_account_debits,
     import_selected_expenses,
     import_selected_income,
     import_selected_investments,
@@ -32,6 +33,7 @@ from app.services.finance import (
     EXPENSE_CATEGORIES,
     EXPENSE_CATEGORY_GROUPS,
     MONTH_LABELS,
+    TRANSFER_ACCOUNTS,
     resolve_month,
     resolve_year,
 )
@@ -138,6 +140,7 @@ def _preview_expense_import(
     month: int,
     default_import_year: int | None = None,
     default_import_month: int | None = None,
+    allow_transfer_import: bool = False,
 ) -> HTMLResponse:
     if not user_has_cumbuca(user):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
@@ -202,6 +205,8 @@ def _preview_expense_import(
             "default_import_label": (
                 f"{MONTH_LABELS[resolved_default_month - 1]} {resolved_default_year}"
             ),
+            "allow_transfer_import": allow_transfer_import,
+            "transfer_accounts": TRANSFER_ACCOUNTS,
             "sync_tab": "open-finance",
         },
     )
@@ -278,6 +283,63 @@ def _parse_period_overrides(form) -> dict[str, tuple[int, int]]:
     return overrides
 
 
+def _parse_import_kind_overrides(form) -> dict[str, str]:
+    return {
+        key.removeprefix("import_kind_"): value
+        for key, value in form.items()
+        if key.startswith("import_kind_") and value in {"expense", "transfer"}
+    }
+
+
+def _parse_to_account_overrides(form) -> dict[str, str]:
+    return {
+        key.removeprefix("to_account_"): value
+        for key, value in form.items()
+        if key.startswith("to_account_") and value
+    }
+
+
+async def _confirm_account_debits_import(
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+) -> RedirectResponse:
+    form = await request.form()
+    import_token = str(form.get("import_token") or "")
+    selected_rows = form.getlist("selected_rows")
+    rows = pop_stashed_finance_import(import_token)
+    if rows is None:
+        raise HTTPException(status_code=400, detail="Import preview expired.")
+
+    try:
+        expense_created, transfer_created = import_selected_account_debits(
+            session,
+            user.id,
+            rows,
+            set(selected_rows),
+            kind_overrides=_parse_import_kind_overrides(form),
+            to_account_overrides=_parse_to_account_overrides(form),
+            category_overrides=_parse_expense_category_overrides(form),
+            subcategory_overrides=_parse_expense_subcategory_overrides(form),
+            period_overrides=_parse_period_overrides(form),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if transfer_created and not expense_created:
+        url = f"/finance/transfers?imported={transfer_created}"
+    elif expense_created and not transfer_created:
+        url = f"/finance/expenses?imported={expense_created}"
+    elif transfer_created and expense_created:
+        url = (
+            f"/finance/transfers?imported={transfer_created}"
+            f"&expenses={expense_created}"
+        )
+    else:
+        url = "/finance/expenses?imported=0"
+    return RedirectResponse(url=url, status_code=303)
+
+
 async def _confirm_expense_import(
     request: Request,
     session: SessionDep,
@@ -338,12 +400,13 @@ def preview_account_debits_sync(
         period_label="Month",
         expense_mapping=(
             f"Debits default to {month_label} {resolved_year}. "
-            "Change any row to import elsewhere."
+            "Import each row as an expense or a transfer between accounts."
         ),
         year=year,
         month=month,
         default_import_year=resolved_year,
         default_import_month=resolved_month,
+        allow_transfer_import=True,
     )
 
 
@@ -353,7 +416,7 @@ async def confirm_account_debits_sync(
     session: SessionDep,
     user: CurrentUserDep,
 ) -> RedirectResponse:
-    return await _confirm_expense_import(request, session, user)
+    return await _confirm_account_debits_import(request, session, user)
 
 
 @router.post("/sync/account-deposits/preview", response_class=HTMLResponse)

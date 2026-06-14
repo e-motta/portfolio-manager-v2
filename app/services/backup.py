@@ -12,6 +12,7 @@ from app.models.finance import (
     FinanceExpenseEntry,
     FinanceIncomeEntry,
     FinanceInvestmentEntry,
+    FinanceTransferEntry,
     FinanceVendorCategory,
 )
 from app.models.investment import Investment
@@ -293,6 +294,34 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
         ).all()
     ]
 
+    finance_transfers = [
+        {
+            "year": entry.year,
+            "month": entry.month,
+            "transaction_date": entry.transaction_date.isoformat()
+            if entry.transaction_date
+            else None,
+            "from_account": entry.from_account,
+            "to_account": entry.to_account,
+            "amount": _serialize_decimal(entry.amount),
+            "description": entry.description,
+            "source": entry.source,
+            "external_id": entry.external_id,
+            "created_at": _serialize_datetime(entry.created_at),
+            "updated_at": _serialize_datetime(entry.updated_at),
+        }
+        for entry in session.exec(
+            select(FinanceTransferEntry)
+            .where(FinanceTransferEntry.user_id == user_id)
+            .order_by(
+                FinanceTransferEntry.year,
+                FinanceTransferEntry.month,
+                FinanceTransferEntry.from_account,
+                FinanceTransferEntry.to_account,
+            )
+        ).all()
+    ]
+
     finance_vendor_categories = [
         {
             "vendor_key": entry.vendor_key,
@@ -322,6 +351,7 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
         "finance_income": finance_income,
         "finance_expenses": finance_expenses,
         "finance_investments": finance_investments,
+        "finance_transfers": finance_transfers,
         "finance_vendor_categories": finance_vendor_categories,
     }
 
@@ -344,6 +374,10 @@ def _clear_finance_data(session: Session) -> None:
         session.delete(entry)
     for entry in session.exec(
         select(FinanceInvestmentEntry).where(FinanceInvestmentEntry.user_id == user_id)
+    ).all():
+        session.delete(entry)
+    for entry in session.exec(
+        select(FinanceTransferEntry).where(FinanceTransferEntry.user_id == user_id)
     ).all():
         session.delete(entry)
     for entry in session.exec(
@@ -571,6 +605,25 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
             month=row["month"],
             broker=row["broker"],
             amount=_parse_decimal(row.get("amount")) or Decimal("0"),
+        )
+        if row.get("created_at"):
+            entry.created_at = datetime.fromisoformat(row["created_at"])
+        if row.get("updated_at"):
+            entry.updated_at = datetime.fromisoformat(row["updated_at"])
+        session.add(entry)
+
+    for row in payload.get("finance_transfers", []):
+        entry = FinanceTransferEntry(
+            user_id=user_id,
+            year=row["year"],
+            month=row["month"],
+            transaction_date=_parse_optional_date(row.get("transaction_date")),
+            from_account=row["from_account"],
+            to_account=row["to_account"],
+            amount=_parse_decimal(row.get("amount")) or Decimal("0"),
+            description=row.get("description", ""),
+            source=row.get("source", "manual"),
+            external_id=row.get("external_id"),
         )
         if row.get("created_at"):
             entry.created_at = datetime.fromisoformat(row["created_at"])

@@ -57,6 +57,25 @@
           </button>
         </div>
       </div>
+      {% if allow_transfer_import %}
+      <div class="open-finance-preview__bulk-group">
+        <span class="open-finance-preview__bulk-label">Import as</span>
+        <div class="open-finance-preview__bulk-controls">
+          <select id="of-bulk-import-kind"
+                  class="input-md"
+                  data-of-bulk-import-kind
+                  aria-label="Import as">
+            <option value="expense">Expense</option>
+            <option value="transfer">Transfer</option>
+          </select>
+          <button type="button"
+                  class="btn btn-secondary btn-small"
+                  data-of-apply-bulk-import-kind>
+            Apply
+          </button>
+        </div>
+      </div>
+      {% endif %}
       <div class="open-finance-preview__bulk-group">
         <span class="open-finance-preview__bulk-label">Category</span>
         <div class="open-finance-preview__bulk-controls">
@@ -105,19 +124,25 @@
           <th class="col-import-period">
             <span class="import-preview-table__heading">Import to</span>
           </th>
+          {% if allow_transfer_import %}
+          <th class="col-import-kind">Import as</th>
+          <th class="col-import-details">Details</th>
+          {% else %}
           <th class="col-category">Category</th>
           <th class="col-subcategory">Subcategory</th>
           <th>Account</th>
+          {% endif %}
           <th class="num">Amount</th>
           <th>Status</th>
         </tr>
       </thead>
       <tbody>
         {% for row in rows %}
-        <tr class="import-row{% if row.already_exists %} import-row--existing{% else %} import-row--new{% endif %}{% if not row.already_exists and row.category == 'Outros' %} import-row--needs-category{% endif %}"
+        <tr class="import-row{% if row.already_exists %} import-row--existing{% else %} import-row--new{% endif %}{% if not row.already_exists and row.category == 'Outros' and row.import_kind != 'transfer' %} import-row--needs-category{% endif %}"
             data-import-row
             data-row-category="{{ row.category }}"
-            data-row-amount="{{ row.amount }}">
+            data-row-amount="{{ row.amount }}"
+            {% if allow_transfer_import %}data-row-import-kind="{{ row.import_kind }}"{% endif %}>
           <td class="col-check">
             {% if not row.already_exists %}
             <label class="import-check">
@@ -138,6 +163,75 @@
             {{ period_picker("import_month_" ~ row.row_key, "import_year_" ~ row.row_key, row.month, row.year, row_key=row.row_key) }}
             {% endif %}
           </td>
+          {% if allow_transfer_import %}
+          <td class="col-import-kind">
+            {% if row.already_exists %}
+            <span class="status-pill muted">{{ row.import_kind|title }}</span>
+            {% else %}
+            <select name="import_kind_{{ row.row_key }}"
+                    data-of-import-kind
+                    aria-label="Import {{ row.vendor }} as">
+              <option value="expense"{% if row.import_kind == 'expense' %} selected{% endif %}>Expense</option>
+              <option value="transfer"{% if row.import_kind == 'transfer' %} selected{% endif %}>Transfer</option>
+            </select>
+            {% endif %}
+          </td>
+          {% endif %}
+          {% if allow_transfer_import %}
+          <td class="col-import-details">
+            {% if row.already_exists %}
+              {% if row.import_kind == 'transfer' %}
+              <span class="of-transfer-route of-transfer-route--static">
+                <span>{{ row.payment_account }}</span>
+                <span class="of-transfer-route__arrow" aria-hidden="true">→</span>
+                <span>{{ row.to_account or '—' }}</span>
+              </span>
+              {% else %}
+              <div class="of-import-details of-import-details--static">
+                {{ category_badge(row.category) }}
+                {% if row.category == bills_category %}
+                {{ subcategory_badge(row.subcategory) }}
+                {% endif %}
+              </div>
+              {% endif %}
+            {% else %}
+            <div class="of-import-details">
+              <div class="of-import-details__expense"
+                   data-of-expense-details
+                   {% if row.import_kind == 'transfer' %}hidden{% endif %}>
+                <div class="of-import-details__expense-fields">
+                  {{ category_picker("category_" ~ row.row_key, row.category, row_key=row.row_key) }}
+                  <div class="of-subcategory-slot"
+                       data-of-subcategory-slot
+                       {% if row.category != bills_category %}hidden{% endif %}>
+                    {{ subcategory_picker(
+                         "subcategory_" ~ row.row_key,
+                         row.subcategory if row.category == bills_category else "",
+                         row_key=row.row_key,
+                         hidden=(row.category != bills_category)
+                    ) }}
+                  </div>
+                </div>
+              </div>
+              <div class="of-import-details__transfer"
+                   data-of-transfer-details
+                   {% if row.import_kind != 'transfer' %}hidden{% endif %}>
+                <div class="of-transfer-route">
+                  <span class="of-transfer-route__from">{{ row.payment_account }}</span>
+                  <span class="of-transfer-route__arrow" aria-hidden="true">→</span>
+                  <select name="to_account_{{ row.row_key }}"
+                          data-of-to-account
+                          aria-label="Transfer {{ row.vendor }} to">
+                    {% for account in transfer_accounts if account != row.payment_account %}
+                    <option value="{{ account }}"{% if account == row.to_account %} selected{% endif %}>{{ account }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+          </td>
+          {% else %}
           <td class="col-category">
             {% if row.already_exists %}
             {{ category_badge(row.category) }}
@@ -164,7 +258,14 @@
             {% endif %}
           </td>
           <td>{{ row.payment_account }}</td>
+          {% endif %}
           <td class="num">
+            {% if allow_transfer_import %}
+            <div data-of-transfer-amount{% if row.import_kind != 'transfer' %} hidden{% endif %}>
+              <span class="money pl-positive">{{ (-row.amount)|brl }}</span>
+            </div>
+            <div data-of-expense-amount{% if row.import_kind == 'transfer' %} hidden{% endif %}>
+            {% endif %}
             {% set active_subcategory = row.subcategory if row.category == bills_category else none %}
             {% set row_effective = row.amount|effective_expense_amount_for(active_subcategory) %}
             <div class="finance-expense-amount" data-of-amount-preview>
@@ -177,12 +278,17 @@
               <span class="finance-expense-amount__original muted" data-of-original-amount hidden></span>
               {% endif %}
             </div>
+            {% if allow_transfer_import %}
+            </div>
+            {% endif %}
           </td>
           <td>
             {% if row.already_exists %}
             <span class="status-pill muted">Imported</span>
             {% elif row.is_reversal %}
             <span class="status-pill status-pill--reversal">Reversal</span>
+            {% elif allow_transfer_import and row.import_kind == 'transfer' %}
+            <span class="status-pill ok">Transfer</span>
             {% elif row.category == 'Outros' %}
             <span class="status-pill warn">Review</span>
             {% else %}

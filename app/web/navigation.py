@@ -31,6 +31,7 @@ NAV_SECTIONS = [
             NavItem("Dashboard", "/finance/summary", "/finance/summary", "Finance"),
             NavItem("Income", "/finance/income", "/finance/income", "Finance"),
             NavItem("Expenses", "/finance/expenses", "/finance/expenses", "Finance"),
+            NavItem("Transfers", "/finance/transfers", "/finance/transfers", "Finance"),
             NavItem("Investments", "/finance/investments", "/finance/investments", "Finance"),
         ],
     ),
