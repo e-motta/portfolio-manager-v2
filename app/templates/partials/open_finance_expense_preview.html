@@ -8,6 +8,8 @@
 {% elif rows %}
 {% from "partials/open_finance_category_select.html" import category_picker, category_badge, category_options with context %}
 {% from "partials/open_finance_subcategory_select.html" import subcategory_picker, subcategory_badge with context %}
+{% from "partials/open_finance_period_select.html" import period_picker, period_badge, period_bulk_controls with context %}
+{% from "partials/open_finance_imported_toggle.html" import imported_toggle_badge %}
 {% if warnings %}
 <div class="open-finance-callout open-finance-callout--warn" role="status">
   <p class="open-finance-callout__title">Some sources were skipped</p>
@@ -21,16 +23,14 @@
 <form action="{{ confirm_action }}"
       method="post"
       data-import-preview-form
-      data-import-item-name="selected_rows">
+      data-import-item-name="selected_rows"
+      data-of-month-labels="{{ month_labels|join('|') }}">
   <input type="hidden" name="import_token" value="{{ import_token }}">
 
   <div class="import-modal-summary open-finance-preview__summary">
     <div class="import-modal-summary__meta">
       <span class="import-modal-summary__eyebrow">{{ period_label }}</span>
       <span class="import-modal-summary__date">{{ month_label }} {{ year }}</span>
-      {% if expense_mapping %}
-      <p class="open-finance-preview__mapping">{{ expense_mapping }}</p>
-      {% endif %}
     </div>
     <div class="import-modal-summary__badges">
       <span class="import-count-badge import-count-badge--new">
@@ -38,50 +38,52 @@
         <span class="import-count-badge__label">new</span>
       </span>
       {% if existing_count > 0 %}
-      <span class="import-count-badge import-count-badge--held">
-        <span class="import-count-badge__value">{{ existing_count }}</span>
-        <span class="import-count-badge__label">already imported</span>
-      </span>
+      {{ imported_toggle_badge(existing_count) }}
       {% endif %}
     </div>
   </div>
 
-  {% if new_count > 0 or existing_count > 0 %}
+  {% if new_count > 0 %}
   <div class="open-finance-preview__toolbar">
-    {% if existing_count > 0 %}
-    <label class="open-finance-preview__toggle">
-      <input type="checkbox" data-of-toggle-imported>
-      Show already imported
-    </label>
-    {% endif %}
-    {% if new_count > 0 %}
-    <div class="open-finance-preview__bulk-apply">
-      <span class="open-finance-preview__bulk-label">Apply to selected</span>
-      <div class="open-finance-preview__bulk-controls">
-        <div class="of-category-picker of-category-picker--toolbar of-category-picker--{{ expense_categories[0]|expense_category_slug }}"
-             data-of-bulk-picker
-             data-category="{{ expense_categories[0] }}">
-          <span class="of-category-picker__dot" aria-hidden="true"></span>
-          <select id="of-bulk-category"
-                  class="of-category-picker__select"
-                  data-of-bulk-category
-                  aria-label="{{ expense_categories[0] }}">
-            {{ category_options(expense_categories[0]) }}
-          </select>
+    <div class="open-finance-preview__bulk-groups">
+      <div class="open-finance-preview__bulk-group">
+        <span class="open-finance-preview__bulk-label">Import month</span>
+        <div class="open-finance-preview__bulk-controls">
+          {{ period_bulk_controls() }}
+          <button type="button"
+                  class="btn btn-secondary btn-small"
+                  data-of-apply-bulk-period>
+            Apply
+          </button>
         </div>
-        <div class="of-subcategory-slot"
-             data-of-bulk-subcategory-wrap
-             hidden>
-          {{ subcategory_picker("", "", picker_id="of-bulk-subcategory", toolbar=true) }}
+      </div>
+      <div class="open-finance-preview__bulk-group">
+        <span class="open-finance-preview__bulk-label">Category</span>
+        <div class="open-finance-preview__bulk-controls">
+          <div class="of-category-picker of-category-picker--toolbar of-category-picker--{{ expense_categories[0]|expense_category_slug }}"
+               data-of-bulk-picker
+               data-category="{{ expense_categories[0] }}">
+            <span class="of-category-picker__dot" aria-hidden="true"></span>
+            <select id="of-bulk-category"
+                    class="of-category-picker__select"
+                    data-of-bulk-category
+                    aria-label="{{ expense_categories[0] }}">
+              {{ category_options(expense_categories[0]) }}
+            </select>
+          </div>
+          <div class="of-subcategory-slot"
+               data-of-bulk-subcategory-wrap
+               hidden>
+            {{ subcategory_picker("", "", picker_id="of-bulk-subcategory", toolbar=true) }}
+          </div>
+          <button type="button"
+                  class="btn btn-secondary btn-small"
+                  data-of-apply-bulk-selection>
+            Apply
+          </button>
         </div>
-        <button type="button"
-                class="btn btn-secondary btn-small"
-                data-of-apply-bulk-selection>
-          Apply
-        </button>
       </div>
     </div>
-    {% endif %}
   </div>
   {% endif %}
 
@@ -100,6 +102,9 @@
           </th>
           <th>Date</th>
           <th>Vendor</th>
+          <th class="col-import-period">
+            <span class="import-preview-table__heading">Import to</span>
+          </th>
           <th class="col-category">Category</th>
           <th class="col-subcategory">Subcategory</th>
           <th>Account</th>
@@ -126,6 +131,13 @@
           </td>
           <td>{{ row.transaction_date|date_fmt }}</td>
           <td><span class="cell-primary">{{ row.vendor }}</span></td>
+          <td class="col-import-period">
+            {% if row.already_exists %}
+            {{ period_badge(row.month, row.year) }}
+            {% else %}
+            {{ period_picker("import_month_" ~ row.row_key, "import_year_" ~ row.row_key, row.month, row.year, row_key=row.row_key) }}
+            {% endif %}
+          </td>
           <td class="col-category">
             {% if row.already_exists %}
             {{ category_badge(row.category) }}
@@ -187,6 +199,7 @@
     <p class="import-modal__selection">
       <span data-import-selected-count>{{ new_count }}</span>
       transaction{% if new_count != 1 %}s{% endif %} selected
+      <span class="import-modal__override-note muted" data-of-period-override-note hidden></span>
     </p>
     <div class="import-modal__footer-actions">
       <a href="/open-finance" class="btn btn-secondary">Cancel</a>

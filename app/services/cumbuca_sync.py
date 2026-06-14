@@ -791,6 +791,17 @@ def pop_stashed_investment_import(token: str) -> list[ImportInvestmentRow] | Non
     return payload.rows
 
 
+def resolve_import_period(
+    row_key: str,
+    row: ImportExpenseRow | ImportIncomeRow,
+    period_overrides: dict[str, tuple[int, int]] | None = None,
+) -> tuple[int, int]:
+    override = (period_overrides or {}).get(row_key)
+    if override is not None:
+        return override
+    return row.year, row.month
+
+
 def import_selected_expenses(
     session: Session,
     user_id: UUID,
@@ -798,6 +809,7 @@ def import_selected_expenses(
     selected_keys: set[str],
     category_overrides: dict[str, str] | None = None,
     subcategory_overrides: dict[str, str | None] | None = None,
+    period_overrides: dict[str, tuple[int, int]] | None = None,
 ) -> int:
     overrides = category_overrides or {}
     subcategory_overrides = subcategory_overrides or {}
@@ -806,6 +818,7 @@ def import_selected_expenses(
     for row in rows:
         if row.row_key not in selected_keys or row.already_exists:
             continue
+        import_year, import_month = resolve_import_period(row.row_key, row, period_overrides)
         category = overrides.get(row.row_key, row.category)
         if category not in EXPENSE_CATEGORIES:
             category = "Outros"
@@ -834,8 +847,8 @@ def import_selected_expenses(
         session.add(
             FinanceExpenseEntry(
                 user_id=user_id,
-                year=row.year,
-                month=row.month,
+                year=import_year,
+                month=import_month,
                 transaction_date=row.transaction_date,
                 category=category,
                 vendor=row.vendor,
@@ -860,16 +873,18 @@ def import_selected_income(
     user_id: UUID,
     rows: list[ImportIncomeRow],
     selected_keys: set[str],
+    period_overrides: dict[str, tuple[int, int]] | None = None,
 ) -> int:
     created = 0
     for row in rows:
         if row.row_key not in selected_keys or row.already_exists:
             continue
+        import_year, import_month = resolve_import_period(row.row_key, row, period_overrides)
         session.add(
             FinanceIncomeEntry(
                 user_id=user_id,
-                year=row.year,
-                month=row.month,
+                year=import_year,
+                month=import_month,
                 category="Outros",
                 description=row.description,
                 amount=row.amount,

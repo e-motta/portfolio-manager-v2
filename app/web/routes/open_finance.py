@@ -44,6 +44,19 @@ _CREDIT_CARD_TOOL_NAMES = {"list_credit_card_bill_transactions"}
 _ACCOUNT_TOOL_NAMES = {"list_account_transactions"}
 
 
+def _year_options(current_year: int) -> list[int]:
+    return list(range(current_year - 2, current_year + 3))
+
+
+def _preview_year_options(import_year: int, rows) -> list[int]:
+    years = {import_year}
+    for row in rows:
+        years.add(row.year)
+    low = min(years) - 1
+    high = max(years) + 1
+    return list(range(low, high + 1))
+
+
 def _has_any_tool(tool_names: list[str], candidates: set[str]) -> bool:
     return bool(set(tool_names) & candidates)
 
@@ -94,7 +107,7 @@ def open_finance_page(
             "default_year": today.year,
             "default_month": today.month,
             "month_labels": MONTH_LABELS,
-            "year_options": list(range(today.year - 2, today.year + 1)),
+            "year_options": _year_options(today.year),
             "sync_tab": "open-finance",
         },
     )
@@ -123,6 +136,8 @@ def _preview_expense_import(
     expense_mapping: str | None,
     year: int,
     month: int,
+    default_import_year: int | None = None,
+    default_import_month: int | None = None,
 ) -> HTMLResponse:
     if not user_has_cumbuca(user):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
@@ -153,6 +168,10 @@ def _preview_expense_import(
 
     new_count = sum(1 for row in rows if not row.already_exists)
     existing_count = sum(1 for row in rows if row.already_exists)
+    resolved_default_year = default_import_year if default_import_year is not None else resolved_year
+    resolved_default_month = (
+        default_import_month if default_import_month is not None else resolved_month
+    )
 
     return templates.TemplateResponse(
         request=request,
@@ -176,6 +195,13 @@ def _preview_expense_import(
             "bills_subcategories": BILLS_SUBCATEGORIES,
             "bills_category": BILLS_CATEGORY,
             "confirm_action": request.url.path.replace("/preview", "/confirm"),
+            "month_labels": MONTH_LABELS,
+            "year_options": _preview_year_options(resolved_year, rows),
+            "default_import_year": resolved_default_year,
+            "default_import_month": resolved_default_month,
+            "default_import_label": (
+                f"{MONTH_LABELS[resolved_default_month - 1]} {resolved_default_year}"
+            ),
             "sync_tab": "open-finance",
         },
     )
@@ -192,7 +218,7 @@ def preview_credit_card_sync(
 ) -> HTMLResponse:
     resolved_year = resolve_year(year)
     resolved_month = resolve_month(month, resolved_year)
-    cc_expense_year, _, cc_expense_month_label = _cc_expense_period(
+    cc_expense_year, cc_expense_month, cc_expense_month_label = _cc_expense_period(
         resolved_year,
         resolved_month,
     )
@@ -207,10 +233,13 @@ def preview_credit_card_sync(
         import_subtitle=f"{MONTH_LABELS[resolved_month - 1]} {resolved_year} statement",
         period_label="Statement",
         expense_mapping=(
-            f"Charges import into {cc_expense_month_label} {cc_expense_year} expenses"
+            f"Charges default to {cc_expense_month_label} {cc_expense_year}. "
+            "Change any row to import elsewhere."
         ),
         year=year,
         month=month,
+        default_import_year=cc_expense_year,
+        default_import_month=cc_expense_month,
     )
 
 
@@ -228,6 +257,25 @@ def _parse_expense_subcategory_overrides(form) -> dict[str, str | None]:
         for key, value in form.items()
         if key.startswith("subcategory_")
     }
+
+
+def _parse_period_overrides(form) -> dict[str, tuple[int, int]]:
+    overrides: dict[str, tuple[int, int]] = {}
+    for key, value in form.items():
+        if not key.startswith("import_month_") or not value:
+            continue
+        row_key = key.removeprefix("import_month_")
+        year_raw = form.get(f"import_year_{row_key}")
+        if year_raw is None:
+            continue
+        try:
+            month = int(value)
+            year = int(year_raw)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= month <= 12:
+            overrides[row_key] = (year, month)
+    return overrides
 
 
 async def _confirm_expense_import(
@@ -249,6 +297,7 @@ async def _confirm_expense_import(
         set(selected_rows),
         category_overrides=_parse_expense_category_overrides(form),
         subcategory_overrides=_parse_expense_subcategory_overrides(form),
+        period_overrides=_parse_period_overrides(form),
     )
     return RedirectResponse(
         url=f"/finance/expenses?imported={created}",
@@ -287,9 +336,14 @@ def preview_account_debits_sync(
         import_title="Review account debits",
         import_subtitle=f"{month_label} {resolved_year}",
         period_label="Month",
-        expense_mapping=f"Debits import into {month_label} {resolved_year} expenses",
+        expense_mapping=(
+            f"Debits default to {month_label} {resolved_year}. "
+            "Change any row to import elsewhere."
+        ),
         year=year,
         month=month,
+        default_import_year=resolved_year,
+        default_import_month=resolved_month,
     )
 
 
@@ -356,18 +410,25 @@ def preview_account_deposits_sync(
             "new_count": new_count,
             "existing_count": existing_count,
             "confirm_action": "/open-finance/sync/account-deposits/confirm",
+            "month_labels": MONTH_LABELS,
+            "year_options": _preview_year_options(resolved_year, rows),
+            "default_import_year": resolved_year,
+            "default_import_month": resolved_month,
+            "default_import_label": f"{month_label} {resolved_year}",
             "sync_tab": "open-finance",
         },
     )
 
 
 @router.post("/sync/account-deposits/confirm")
-def confirm_account_deposits_sync(
+async def confirm_account_deposits_sync(
+    request: Request,
     session: SessionDep,
     user: CurrentUserDep,
-    import_token: str = Form(...),
-    selected_rows: list[str] = Form(default=[]),
 ) -> RedirectResponse:
+    form = await request.form()
+    import_token = str(form.get("import_token") or "")
+    selected_rows = form.getlist("selected_rows")
     rows = pop_stashed_income_import(import_token)
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
@@ -377,6 +438,7 @@ def confirm_account_deposits_sync(
         user.id,
         rows,
         set(selected_rows),
+        period_overrides=_parse_period_overrides(form),
     )
     return RedirectResponse(
         url=f"/finance/income?imported={created}",

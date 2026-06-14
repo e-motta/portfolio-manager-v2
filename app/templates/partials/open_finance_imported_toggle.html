@@ -1,0 +1,10 @@
+{% macro imported_toggle_badge(count) %}
+<button type="button"
+        class="import-count-badge import-count-badge--held import-count-badge--toggle"
+        data-of-toggle-imported
+        aria-pressed="false"
+        aria-label="Show {{ count }} already imported transaction{% if count != 1 %}s{% endif %}">
+  <span class="import-count-badge__value">{{ count }}</span>
+  <span class="import-count-badge__label" data-of-toggle-label>already imported</span>
+</button>
+{% endmacro %}

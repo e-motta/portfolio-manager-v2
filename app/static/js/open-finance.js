@@ -39,6 +39,142 @@
     preview.textContent = `${monthLabel(form, month)} ${year}`;
   }
 
+  function periodPickerValues(picker) {
+    const monthSelect = picker.querySelector(
+      "[data-of-period-month], [data-of-bulk-period-month]"
+    );
+    const yearSelect = picker.querySelector(
+      "[data-of-period-year], [data-of-bulk-period-year]"
+    );
+    return {
+      month: Number(monthSelect?.value),
+      year: Number(yearSelect?.value),
+    };
+  }
+
+  function periodPickerDefaults(picker) {
+    return {
+      month: Number(picker.dataset.defaultMonth),
+      year: Number(picker.dataset.defaultYear),
+    };
+  }
+
+  function periodPickerIsOverridden(picker) {
+    const current = periodPickerValues(picker);
+    const defaults = periodPickerDefaults(picker);
+    return current.month !== defaults.month || current.year !== defaults.year;
+  }
+
+  function updatePeriodPicker(picker) {
+    if (!picker) {
+      return;
+    }
+
+    const overridden = periodPickerIsOverridden(picker);
+    picker.classList.toggle("of-period-picker--overridden", overridden);
+    const reset = picker.querySelector("[data-of-period-reset]");
+    if (reset) {
+      reset.hidden = !overridden;
+    }
+
+    const form = picker.closest("[data-import-preview-form]");
+    if (form) {
+      updatePeriodOverrideNote(form);
+    }
+  }
+
+  function updatePeriodOverrideNote(form) {
+    const note = form?.querySelector("[data-of-period-override-note]");
+    if (!note) {
+      return;
+    }
+
+    const overriddenCount = form.querySelectorAll(
+      ".import-row--new [data-of-period-picker].of-period-picker--overridden"
+    ).length;
+    if (overriddenCount === 0) {
+      note.hidden = true;
+      note.textContent = "";
+      return;
+    }
+
+    note.hidden = false;
+    note.textContent =
+      `${overriddenCount} row${overriddenCount === 1 ? "" : "s"} with custom month`;
+  }
+
+  function bindPeriodPickers(scope) {
+    scope.querySelectorAll("[data-of-period-picker]").forEach((picker) => {
+      if (picker.dataset.ofPeriodBound === "1") {
+        return;
+      }
+      picker.dataset.ofPeriodBound = "1";
+
+      picker.querySelectorAll("[data-of-period-month], [data-of-period-year]").forEach((select) => {
+        select.addEventListener("change", () => updatePeriodPicker(picker));
+      });
+
+      picker.querySelector("[data-of-period-reset]")?.addEventListener("click", () => {
+        const defaults = periodPickerDefaults(picker);
+        const monthSelect = picker.querySelector("[data-of-period-month]");
+        const yearSelect = picker.querySelector("[data-of-period-year]");
+        if (monthSelect) {
+          monthSelect.value = String(defaults.month);
+        }
+        if (yearSelect) {
+          yearSelect.value = String(defaults.year);
+        }
+        updatePeriodPicker(picker);
+      });
+
+      updatePeriodPicker(picker);
+    });
+  }
+
+  function bindBulkPeriodApply(scope) {
+    scope.querySelectorAll("[data-of-apply-bulk-period]").forEach((button) => {
+      if (button.dataset.ofBulkPeriodBound === "1") {
+        return;
+      }
+      button.dataset.ofBulkPeriodBound = "1";
+
+      button.addEventListener("click", () => {
+        const form = button.closest("[data-import-preview-form]");
+        const bulkPicker = form?.querySelector("[data-of-bulk-period-picker]");
+        if (!form || !bulkPicker) {
+          return;
+        }
+
+        const { month, year } = periodPickerValues(bulkPicker);
+        if (!month || !year) {
+          return;
+        }
+
+        form.querySelectorAll(".import-row--new").forEach((row) => {
+          const checkbox = row.querySelector('input[name="selected_rows"]');
+          if (!checkbox?.checked) {
+            return;
+          }
+
+          const picker = row.querySelector("[data-of-period-picker]");
+          if (!picker) {
+            return;
+          }
+
+          const monthSelect = picker.querySelector("[data-of-period-month]");
+          const yearSelect = picker.querySelector("[data-of-period-year]");
+          if (monthSelect) {
+            monthSelect.value = String(month);
+          }
+          if (yearSelect) {
+            yearSelect.value = String(year);
+          }
+          updatePeriodPicker(picker);
+        });
+      });
+    });
+  }
+
   function bindMonthPills(scope) {
     scope.querySelectorAll(".open-finance-period .finance-months__pill input").forEach((input) => {
       input.addEventListener("change", () => {
@@ -70,18 +206,42 @@
 
   function bindImportedToggle(scope) {
     scope.querySelectorAll("[data-of-toggle-imported]").forEach((toggle) => {
+      if (toggle.dataset.ofImportedToggleBound === "1") {
+        return;
+      }
+      toggle.dataset.ofImportedToggleBound = "1";
+
       const form = toggle.closest("[data-import-preview-form]");
       if (!form) {
         return;
       }
 
+      const label = toggle.querySelector("[data-of-toggle-label]");
+      const count = toggle.querySelector(".import-count-badge__value")?.textContent?.trim() || "";
+
       const apply = () => {
+        const show = toggle.getAttribute("aria-pressed") === "true";
         form.querySelectorAll(".import-row--existing").forEach((row) => {
-          row.hidden = !toggle.checked;
+          row.hidden = !show;
         });
+        toggle.classList.toggle("is-active", show);
+        if (label) {
+          label.textContent = show ? "showing imported" : "already imported";
+        }
+        toggle.setAttribute(
+          "aria-label",
+          show
+            ? `Hide ${count} already imported transaction${count === "1" ? "" : "s"}`
+            : `Show ${count} already imported transaction${count === "1" ? "" : "s"}`
+        );
       };
 
-      toggle.addEventListener("change", apply);
+      toggle.addEventListener("click", () => {
+        const show = toggle.getAttribute("aria-pressed") !== "true";
+        toggle.setAttribute("aria-pressed", show ? "true" : "false");
+        apply();
+      });
+
       apply();
     });
   }
@@ -347,9 +507,14 @@
     bindPeriodForms(scope);
     bindDismissibleAlerts(scope);
     bindImportedToggle(scope);
+    bindPeriodPickers(scope);
+    bindBulkPeriodApply(scope);
     bindCategoryPickers(scope);
     bindSubcategoryPickers(scope);
     bindBulkSelectionApply(scope);
+    scope.querySelectorAll("[data-import-preview-form]").forEach((form) => {
+      updatePeriodOverrideNote(form);
+    });
     scope.querySelectorAll("[data-import-row]").forEach((row) => {
       updateRowSubcategoryVisibility(row);
       updateRowAmountPreview(row);

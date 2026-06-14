@@ -25,6 +25,7 @@ from app.services.cumbuca_sync import (
     import_selected_investments,
     map_category,
     map_payment_account,
+    resolve_import_period,
     _transaction_amount,
 )
 from app.services.finance import (
@@ -347,6 +348,59 @@ def test_import_selected_income(session):
 
     again, _ = build_account_deposit_import_rows(session, user, year=2026, month=6)
     assert again[0].already_exists
+
+
+def test_import_selected_expenses_with_period_override(session):
+    user = session.exec(select(User)).one()
+    rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
+    target = next(row for row in rows if row.external_id == "tx-001")
+    assert target.month == 5
+
+    created = import_selected_expenses(
+        session,
+        user.id,
+        rows,
+        {target.row_key},
+        period_overrides={target.row_key: (2026, 6)},
+    )
+    assert created == 1
+
+    entry = session.exec(
+        select(FinanceExpenseEntry).where(
+            FinanceExpenseEntry.external_id == target.external_id
+        )
+    ).one()
+    assert entry.year == 2026
+    assert entry.month == 6
+
+
+def test_import_selected_income_with_period_override(session):
+    user = session.exec(select(User)).one()
+    rows, _ = build_account_deposit_import_rows(session, user, year=2026, month=6)
+    target = rows[0]
+    assert target.month == 6
+
+    created = import_selected_income(
+        session,
+        user.id,
+        rows,
+        {target.row_key},
+        period_overrides={target.row_key: (2026, 5)},
+    )
+    assert created == 1
+
+    income = session.exec(
+        select(FinanceIncomeEntry).where(FinanceIncomeEntry.external_id == "tx-005")
+    ).one()
+    assert income.year == 2026
+    assert income.month == 5
+
+
+def test_resolve_import_period_defaults_to_row(session):
+    user = session.exec(select(User)).one()
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    target = rows[0]
+    assert resolve_import_period(target.row_key, target) == (2026, 6)
 
 
 def test_build_investment_import_rows_filters_equity(session):
