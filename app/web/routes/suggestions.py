@@ -24,6 +24,7 @@ def suggestions_page(
     return templates.TemplateResponse(
         request=request,
         name="pages/suggestions.html",
+        context={"allocation_tab": "rebalance"},
     )
 
 

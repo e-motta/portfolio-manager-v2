@@ -1,22 +1,14 @@
-{% extends "base.html" %}
-{% from "partials/icons.html" import icon_back %}
+{% extends "sync_base.html" %}
 
 {% block title %}Review deposits — Open Finance{% endblock %}
 {% block topbar_title %}Open Finance{% endblock %}
 
-{% block content %}
-<div class="open-finance-preview-page">
-  <header class="open-finance-preview-page__header">
-    <a href="/open-finance" class="open-finance-preview-page__back">{{ icon_back() }} Open Finance</a>
-    <div class="open-finance-preview-page__title-group">
-      <h1 class="open-finance-preview-page__title">Review account deposits</h1>
-      <p class="open-finance-preview-page__subtitle">{{ month_label }} {{ year }}</p>
-    </div>
-  </header>
+{% block sync_title %}Review account deposits{% endblock %}
+{% block sync_subtitle %}{{ month_label }} {{ year }}{% endblock %}
 
-  <div class="panel open-finance-preview">
-    {% include "partials/open_finance_deposit_preview.html" %}
-  </div>
+{% block sync_content %}
+<div class="panel open-finance-preview">
+  {% include "partials/open_finance_deposit_preview.html" %}
 </div>
 {% endblock %}
 

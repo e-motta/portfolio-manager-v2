@@ -38,6 +38,7 @@ def snapshots_dashboard(
         name="pages/snapshots.html",
         context={
             "today": date.today().isoformat(),
+            "sync_tab": "history",
             **dashboard,
         },
     )
@@ -75,6 +76,7 @@ def snapshot_detail(
                 key=lambda row: (row.institution.lower(), row.name.lower()),
             ),
             "holdings": sorted(snapshot.holdings, key=lambda row: row.symbol),
+            "sync_tab": "history",
         },
     )
 

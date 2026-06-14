@@ -1,15 +1,13 @@
-{% extends "base.html" %}
+{% extends "sync_base.html" %}
 {% from "partials/icons.html" import icon_capture, icon_view, icon_delete %}
 
 {% block title %}Snapshots — Portfolio Manager{% endblock %}
 {% block topbar_title %}Snapshots{% endblock %}
 
-{% block content %}
-<section class="page-intro">
-  <h1>Portfolio history</h1>
-  <p>Capture and compare portfolio value over time · BRL</p>
-</section>
+{% block sync_title %}Portfolio history{% endblock %}
+{% block sync_subtitle %}Capture and compare portfolio value over time · BRL{% endblock %}
 
+{% block sync_content %}
 <div class="panel">
   <div class="panel__header"><h2 class="panel__title">Capture snapshot</h2></div>
   <p class="panel__desc">Saves asset classes, other positions, and securities. Same date replaces the prior snapshot.</p>

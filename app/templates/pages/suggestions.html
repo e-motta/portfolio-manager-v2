@@ -1,14 +1,12 @@
-{% extends "base.html" %}
+{% extends "allocation_base.html" %}
 
 {% block title %}Rebalancing — Portfolio Manager{% endblock %}
 {% block topbar_title %}Rebalancing{% endblock %}
 
-{% block content %}
-<section class="page-intro">
-  <h1>Rebalancing</h1>
-  <p>Trade suggestions to move the portfolio toward target weights</p>
-</section>
+{% block allocation_title %}Rebalancing{% endblock %}
+{% block allocation_subtitle %}Trade suggestions to move the portfolio toward target weights{% endblock %}
 
+{% block allocation_content %}
 <div class="panel">
   <div class="panel__header"><h2 class="panel__title">Parameters</h2></div>
   <div class="form-panel">

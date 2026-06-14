@@ -1,5 +1,6 @@
-{% extends "base.html" %}
+{% extends "sync_base.html" %}
 {% from "partials/icons.html" import icon_back %}
+{% from "partials/finance_kpi.html" import finance_stats_open, finance_stats_close, finance_stat %}
 
 {% block title %}Snapshot {{ snapshot.snapshot_date|date_fmt }} — Portfolio Manager{% endblock %}
 {% block topbar_title %}Snapshot · {{ snapshot.snapshot_date|date_fmt }}{% endblock %}
@@ -8,26 +9,15 @@
    aria-label="Back to history" title="Back to history">{{ icon_back() }}</a>
 {% endblock %}
 
-{% block content %}
-<section class="page-intro">
-  <h1>{{ snapshot.snapshot_date|date_fmt }}</h1>
-  <p>Captured {{ snapshot.created_at|datetime_fmt }}</p>
-</section>
+{% block sync_title %}{{ snapshot.snapshot_date|date_fmt }}{% endblock %}
+{% block sync_subtitle %}Captured {{ snapshot.created_at|datetime_fmt }}{% endblock %}
 
-<div class="kpi-grid">
-  <div class="kpi">
-    <div class="kpi__label">Total value</div>
-    <div class="kpi__value">{{ snapshot.total_value|brl }}</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi__label">Other</div>
-    <div class="kpi__value">{{ investments|length }}</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi__label">Securities</div>
-    <div class="kpi__value">{{ holdings|length }}</div>
-  </div>
-</div>
+{% block sync_content %}
+{{ finance_stats_open() }}
+  {{ finance_stat("Total value", snapshot.total_value|brl, tone="balance", highlight=true) }}
+  {{ finance_stat("Other", investments|length, meta="Positions", tone="neutral") }}
+  {{ finance_stat("Securities", holdings|length, meta="Holdings", tone="neutral") }}
+{{ finance_stats_close() }}
 
 <div class="panel">
   <div class="panel__header"><h2 class="panel__title">Asset classes</h2></div>

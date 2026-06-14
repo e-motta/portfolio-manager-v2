@@ -1,6 +1,7 @@
 {% extends "portfolio_base.html" %}
 {% from "partials/weight_column_hints.html" import weight_label_total, weight_label_alloc %}
 {% from "partials/allocation_column_hints.html" import allocation_column_head %}
+{% from "partials/finance_kpi.html" import finance_stats_open, finance_stats_close, finance_stat %}
 
 {% block title %}Dashboard — Portfolio Manager{% endblock %}
 {% block topbar_title %}Dashboard{% endblock %}
@@ -9,27 +10,17 @@
 {% block portfolio_subtitle %}Weights as % of total portfolio and % of the allocation sleeve · BRL{% endblock %}
 
 {% block portfolio_content %}
-<div class="kpi-grid">
-  <div class="kpi kpi--featured">
-    <div class="kpi__label">Total value</div>
-    <div class="kpi__value">{{ total_value|brl }}</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi__label">Allocation sleeve</div>
-    <div class="kpi__value">{{ allocation_sleeve_value|brl }}</div>
-    {% if total_value > 0 %}
-    <div class="kpi__sub">{{ "%.1f"|format(allocation_sleeve_value / total_value * 100) }}% of total</div>
-    {% endif %}
-  </div>
-  <div class="kpi">
-    <div class="kpi__label">Overweight</div>
-    <div class="kpi__value">{{ overweight }}</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi__label">Underweight</div>
-    <div class="kpi__value">{{ underweight }}</div>
-  </div>
-</div>
+{{ finance_stats_open("finance-stats--4") }}
+  {{ finance_stat("Total value", total_value|brl, tone="balance", highlight=true) }}
+  {{ finance_stat(
+    "Allocation sleeve",
+    allocation_sleeve_value|brl,
+    meta=(("%.1f"|format(allocation_sleeve_value / total_value * 100) ~ "% of total") if total_value > 0 else none),
+    tone="neutral"
+  ) }}
+  {{ finance_stat("Overweight", overweight, tone="expense") }}
+  {{ finance_stat("Underweight", underweight, tone="income") }}
+{{ finance_stats_close() }}
 
 <div class="panel">
   <div class="panel__header">

@@ -1,5 +1,6 @@
 {% extends "portfolio_base.html" %}
 {% from "partials/icons.html" import icon_add %}
+{% from "partials/finance_kpi.html" import finance_stats_open, finance_stats_close, finance_stat %}
 
 {% block title %}Other Investments — Portfolio Manager{% endblock %}
 {% block topbar_title %}Other{% endblock %}
@@ -17,16 +18,10 @@
 {% block portfolio_subtitle %}{{ investment_count }} positions outside securities · BRL{% endblock %}
 
 {% block portfolio_content %}
-<div class="kpi-grid">
-  <div class="kpi kpi--featured">
-    <div class="kpi__label">Total value</div>
-    <div class="kpi__value">{{ total_current|brl }}</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi__label">Positions</div>
-    <div class="kpi__value">{{ investment_count }}</div>
-  </div>
-</div>
+{{ finance_stats_open("finance-stats--2") }}
+  {{ finance_stat("Total value", total_current|brl, tone="balance", highlight=true) }}
+  {{ finance_stat("Positions", investment_count, tone="neutral") }}
+{{ finance_stats_close() }}
 
 <div class="panel">
   <div class="panel__header"><h2 class="panel__title">By bank / institution</h2></div>

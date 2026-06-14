@@ -73,6 +73,7 @@ def backups_page(
             "deleted": request.query_params.get("deleted") == "1",
             "connected": request.query_params.get("connected") == "1",
             "error_message": request.query_params.get("error"),
+            "sync_tab": "backups",
         },
     )
 

@@ -1,37 +1,35 @@
-{% extends "base.html" %}
+{% extends "sync_base.html" %}
 {% from "partials/icons.html" import icon_refresh, icon_delete %}
 
 {% block title %}Backups — Portfolio Manager{% endblock %}
 {% block topbar_title %}Backups{% endblock %}
 
-{% block content %}
-<section class="page-intro">
-  <h1>Google Drive backups</h1>
-  <p>Save and restore your full portfolio in Google Drive</p>
-</section>
+{% block sync_title %}Google Drive backups{% endblock %}
+{% block sync_subtitle %}Save and restore your full portfolio in Google Drive{% endblock %}
 
+{% block sync_content %}
 {% if saved %}
-<div class="panel panel--notice">
+<div class="open-finance-alert open-finance-alert--success" role="status">
   <p>Backup saved to Google Drive.</p>
 </div>
 {% endif %}
 {% if restored %}
-<div class="panel panel--notice">
+<div class="open-finance-alert open-finance-alert--success" role="status">
   <p>Portfolio restored from backup.</p>
 </div>
 {% endif %}
 {% if deleted %}
-<div class="panel panel--notice">
+<div class="open-finance-alert open-finance-alert--success" role="status">
   <p>Backup deleted from Google Drive.</p>
 </div>
 {% endif %}
 {% if connected %}
-<div class="panel panel--notice">
+<div class="open-finance-alert open-finance-alert--success" role="status">
   <p>Google Drive connected.</p>
 </div>
 {% endif %}
 {% if error_message %}
-<div class="panel panel--error">
+<div class="open-finance-alert open-finance-alert--error" role="alert">
   <p>{{ error_message }}</p>
 </div>
 {% endif %}

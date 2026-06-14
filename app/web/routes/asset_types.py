@@ -69,6 +69,7 @@ def list_asset_types(
             "target_total": target_total,
             "weighted_count": weighted_count,
             "get_asset_count": get_asset_type_asset_count,
+            "allocation_tab": "classes",
         },
     )
 

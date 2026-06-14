@@ -9,7 +9,13 @@
 
 {% block content %}
 <div class="finance-page">
-  {% include "partials/finance_tabs.html" %}
+  <header class="finance-header">
+    <div class="finance-header__intro">
+      <h1 class="finance-header__title">{% block finance_title %}Finance{% endblock %}</h1>
+      <p class="finance-header__subtitle">{% block finance_subtitle %}Track income and spending in BRL{% endblock %}</p>
+    </div>
+    {% include "partials/finance_tabs.html" %}
+  </header>
   {% block finance_content %}{% endblock %}
 </div>
 {% endblock %}

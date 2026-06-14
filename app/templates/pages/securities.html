@@ -1,6 +1,6 @@
 {% extends "portfolio_base.html" %}
 {% from "partials/icons.html" import icon_refresh, icon_add %}
-{% from "partials/pl_value.html" import pl_kpi %}
+{% from "partials/finance_kpi.html" import finance_stats_open, finance_stats_close, finance_stat %}
 
 {% block title %}Securities — Portfolio Manager{% endblock %}
 {% block topbar_title %}Securities{% endblock %}
@@ -37,24 +37,29 @@
 {% block portfolio_subtitle %}{{ symbol_count }} tickers · {{ lot_count }} tax lots · {{ dividend_count }} dividends{% endblock %}
 
 {% block portfolio_content %}
-<div class="kpi-grid">
-  <div class="kpi kpi--featured">
-    <div class="kpi__label">Sleeve value</div>
-    <div class="kpi__value">{{ total_current_usd|usd }}</div>
-    <div class="kpi__sub">{{ total_brl|brl }}</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi__label">Total return (USD)</div>
-    {{ pl_kpi(total_pl_usd, total_pl_pct_usd, 'usd') }}
-    {% if dividend_net_usd > 0 %}
-    <div class="kpi__sub">incl. {{ dividend_net_usd|usd }} dividends</div>
-    {% endif %}
-  </div>
-  <div class="kpi">
-    <div class="kpi__label">Total return (BRL)</div>
-    {{ pl_kpi(total_pl_brl, total_pl_pct_brl, 'brl') }}
-  </div>
-</div>
+{{ finance_stats_open() }}
+  {{ finance_stat(
+    "Sleeve value",
+    total_current_usd|usd,
+    meta=total_brl|brl,
+    tone="balance",
+    highlight=true
+  ) }}
+  {{ finance_stat(
+    "Total return (USD)",
+    total_pl_usd|pl_usd,
+    meta=(total_pl_pct_usd|pl_pct ~ (" · incl. " ~ (dividend_net_usd|usd) ~ " dividends" if dividend_net_usd > 0 else "")),
+    tone="income",
+    value_class=total_pl_usd|pl_class
+  ) }}
+  {{ finance_stat(
+    "Total return (BRL)",
+    total_pl_brl|pl_brl,
+    meta=total_pl_pct_brl|pl_pct,
+    tone="income",
+    value_class=total_pl_brl|pl_class
+  ) }}
+{{ finance_stats_close() }}
 
 <div class="panel">
   <div class="panel__header"><h2 class="panel__title">Performance by ticker</h2></div>

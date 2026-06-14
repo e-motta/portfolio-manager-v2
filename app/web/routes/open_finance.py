@@ -93,6 +93,7 @@ def open_finance_page(
             "default_month": today.month,
             "month_labels": MONTH_LABELS,
             "year_options": list(range(today.year - 2, today.year + 1)),
+            "sync_tab": "open-finance",
         },
     )
 
@@ -171,6 +172,7 @@ def _preview_expense_import(
             "expense_categories": EXPENSE_CATEGORIES,
             "expense_category_groups": EXPENSE_CATEGORY_GROUPS,
             "confirm_action": request.url.path.replace("/preview", "/confirm"),
+            "sync_tab": "open-finance",
         },
     )
 
@@ -341,6 +343,7 @@ def preview_account_deposits_sync(
             "new_count": new_count,
             "existing_count": existing_count,
             "confirm_action": "/open-finance/sync/account-deposits/confirm",
+            "sync_tab": "open-finance",
         },
     )
 
@@ -403,6 +406,7 @@ def preview_investment_sync(
             "import_token": import_token,
             "new_count": new_count,
             "update_count": update_count,
+            "sync_tab": "open-finance",
         },
     )
 

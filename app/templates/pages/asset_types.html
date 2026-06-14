@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "allocation_base.html" %}
 {% from "partials/icons.html" import icon_add %}
 
 {% block title %}Asset Classes — Portfolio Manager{% endblock %}
@@ -19,12 +19,10 @@
 </div>
 {% endblock %}
 
-{% block content %}
-<section class="page-intro">
-  <h1>Asset classes</h1>
-  <p>Target weights for allocation policy · leave blank to exclude a class from drift and rebalancing</p>
-</section>
+{% block allocation_title %}Asset classes{% endblock %}
+{% block allocation_subtitle %}Target weights for allocation policy · leave blank to exclude a class from drift and rebalancing{% endblock %}
 
+{% block allocation_content %}
 <div class="panel">
   <div class="panel__header">
     <h2 class="panel__title">Classes</h2>

@@ -1,17 +1,13 @@
-{% extends "base.html" %}
+{% extends "sync_base.html" %}
 {% from "partials/icons.html" import icon_bank, icon_card, icon_expenses, icon_income, icon_portfolio, icon_shield, icon_preview %}
 
 {% block title %}Open Finance — Portfolio Manager{% endblock %}
 {% block topbar_title %}Open Finance{% endblock %}
 
-{% block content %}
-<section class="page-intro open-finance-intro">
-  <div class="open-finance-intro__copy">
-    <h1>Open Finance</h1>
-    <p>Import credit card charges, account debits, deposits, and investment balances — each with its own preview</p>
-  </div>
-</section>
+{% block sync_title %}Open Finance{% endblock %}
+{% block sync_subtitle %}Import credit card charges, account debits, deposits, and investment balances — each with its own preview{% endblock %}
 
+{% block sync_content %}
 {% if saved or disconnected or error_message %}
 <div class="open-finance-alerts">
   {% if saved %}
@@ -236,7 +232,7 @@
 </details>
 {% endif %}
 {% endif %}
-{% endblock %}
+{% endblock sync_content %}
 
 {% block page_scripts %}
 <script src="/static/js/open-finance.js" defer></script>
