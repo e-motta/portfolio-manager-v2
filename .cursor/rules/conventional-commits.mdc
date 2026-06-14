@@ -1,0 +1,39 @@
+---
+description: Use Conventional Commits for all git commits
+alwaysApply: true
+---
+
+# Conventional Commits
+
+Always write commit messages using [Conventional Commits](https://www.conventionalcommits.org/).
+
+## Format
+
+```
+<type>(<optional scope>): <short description>
+
+<optional body>
+```
+
+- **type**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`
+- **scope**: optional area (e.g. `finance`, `open-finance`, `auth`)
+- **description**: imperative, lowercase, no trailing period, ~72 chars max
+- **body**: optional; explain why, not what the diff already shows
+
+## Examples
+
+```
+feat(finance): add Bills expense subcategories
+
+Store original amounts and compute effective totals for summaries.
+```
+
+```
+fix(open-finance): hide subcategory picker for non-Bills rows
+```
+
+## Do not
+
+- Use vague messages (`update`, `fix stuff`, `WIP`)
+- Mix unrelated changes in one commit
+- End the subject line with a period
