@@ -42,6 +42,16 @@ def test_suggest_expense_category_maps_vendors():
     assert suggest_expense_category("Random merchant", "Outros") == "Outros"
 
 
+def test_normalize_vendor_key_strips_installment_suffix():
+    from app.services.finance import normalize_vendor_key
+
+    assert normalize_vendor_key("Samsung 7/12") == "samsung"
+    assert normalize_vendor_key("Pura Vida 6/6") == "pura vida"
+    assert normalize_vendor_key("Centauro Ce64 6/8") == "centauro ce64"
+    assert normalize_vendor_key("Merchant (3/10)") == "merchant"
+    assert normalize_vendor_key("Netshoes Boston 13") == "netshoes example 13"
+
+
 def _test_user(session) -> User:
     return session.exec(select(User)).one()
 

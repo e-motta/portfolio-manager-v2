@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
@@ -196,10 +197,16 @@ SUMMARY_INCOME_LINE_CATEGORIES = {
 }
 
 
+_INSTALLMENT_VENDOR_SUFFIX = re.compile(
+    r"\s*(?:\(\s*)?\d+\s*/\s*\d+\s*(?:\))?\s*$"
+)
+
+
 def normalize_vendor_key(vendor: str) -> str:
     name = vendor.strip()
     if "|" in name:
         name = name.split("|", 1)[1].strip()
+    name = _INSTALLMENT_VENDOR_SUFFIX.sub("", name).strip()
     normalized = name.lower()
     return normalized or "unknown"
 

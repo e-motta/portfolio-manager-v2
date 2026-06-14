@@ -143,7 +143,7 @@ def test_bill_relevant_to_month():
 def test_credit_card_uses_statement_month(session):
     user = session.exec(select(User)).one()
     rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
-    assert len(rows) == 4
+    assert len(rows) == 6
     assert all(row.month == 5 for row in rows)
     assert all(row.payment_account == "Nubank" for row in rows)
     reversal = next(row for row in rows if row.external_id == "tx-002-r")
@@ -200,9 +200,9 @@ def test_build_expense_import_rows_from_fixtures(session):
     bank_rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
     rows, warnings = build_expense_import_rows(session, user, year=2026, month=6)
     assert not warnings
-    assert len(cc_rows) == 4
+    assert len(cc_rows) == 6
     assert len(bank_rows) == 3
-    assert len(rows) == 7
+    assert len(rows) == 9
     charges = [row for row in rows if not row.is_reversal]
     assert all(row.amount < 0 for row in charges)
     reversals = [row for row in rows if row.is_reversal]
@@ -393,6 +393,17 @@ def test_vendor_category_suggested_on_future_import(session):
     rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
     uber_row = next(row for row in rows if "UBER" in row.vendor.upper())
     assert uber_row.category == "Transporte"
+
+
+def test_vendor_category_matches_installment_suffixes(session):
+    user = session.exec(select(User)).one()
+    save_vendor_category(session, user.id, "Samsung 7/12", "Compras online")
+    session.commit()
+
+    rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
+    later = next(row for row in rows if row.external_id == "tx-samsung-8")
+    assert later.vendor == "Samsung 8/12"
+    assert later.category == "Compras online"
 
 
 def test_import_selected_income(session):
