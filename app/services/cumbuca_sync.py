@@ -25,6 +25,7 @@ from app.services.finance import (
     EXPENSE_CATEGORIES,
     PAYMENT_ACCOUNTS,
     TRANSFER_ACCOUNTS,
+    load_import_vendor_rule_map,
     load_vendor_rule_map,
     normalize_vendor_key,
     resolve_expense_subcategory,
@@ -87,6 +88,8 @@ TRANSFER_VENDOR_KEYWORDS = (
     "transf ",
     "ted ",
     "doc ",
+    "pagamento de fatura",
+    "pagamento da fatura",
     "pagamento fatura",
     "pagamento cartao",
     "pagamento cartão",
@@ -229,13 +232,21 @@ def map_payment_account_from_brand(brand: str, default: str) -> str:
     return default
 
 
+def _transfer_vendor_haystacks(vendor: str) -> tuple[str, ...]:
+    lowered = vendor.lower()
+    normalized = lowered.replace(" de ", " ").replace(" da ", " ")
+    if normalized == lowered:
+        return (lowered,)
+    return (lowered, normalized)
+
+
 def suggest_account_debit_import_kind(tx: dict[str, Any], vendor: str) -> str:
     tx_type = str(tx.get("type") or "").upper()
     if tx_type in TRANSFER_TRANSACTION_TYPES:
         return "transfer"
-    haystack = vendor.lower()
-    if any(keyword in haystack for keyword in TRANSFER_VENDOR_KEYWORDS):
-        return "transfer"
+    for haystack in _transfer_vendor_haystacks(vendor):
+        if any(keyword in haystack for keyword in TRANSFER_VENDOR_KEYWORDS):
+            return "transfer"
     return "expense"
 
 
@@ -368,6 +379,57 @@ def _existing_open_finance_debit_ids(session: Session, user_id: UUID) -> set[str
     return _existing_expense_ids(session, user_id) | _existing_transfer_ids(
         session, user_id
     )
+
+
+def _existing_open_finance_expense_map(
+    session: Session, user_id: UUID
+) -> dict[str, FinanceExpenseEntry]:
+    entries = session.exec(
+        select(FinanceExpenseEntry)
+        .where(FinanceExpenseEntry.user_id == user_id)
+        .where(FinanceExpenseEntry.source == OPEN_FINANCE_SOURCE)
+        .where(FinanceExpenseEntry.external_id.is_not(None))  # type: ignore[union-attr]
+    ).all()
+    return {entry.external_id: entry for entry in entries if entry.external_id}
+
+
+def _existing_open_finance_transfer_map(
+    session: Session, user_id: UUID
+) -> dict[str, FinanceTransferEntry]:
+    entries = session.exec(
+        select(FinanceTransferEntry)
+        .where(FinanceTransferEntry.user_id == user_id)
+        .where(FinanceTransferEntry.source == OPEN_FINANCE_SOURCE)
+        .where(FinanceTransferEntry.external_id.is_not(None))  # type: ignore[union-attr]
+    ).all()
+    return {entry.external_id: entry for entry in entries if entry.external_id}
+
+
+def _apply_imported_open_finance_debit(
+    row: ImportExpenseRow,
+    *,
+    expenses: dict[str, FinanceExpenseEntry],
+    transfers: dict[str, FinanceTransferEntry],
+) -> None:
+    imported_transfer = transfers.get(row.external_id)
+    if imported_transfer is not None:
+        row.import_kind = "transfer"
+        row.to_account = imported_transfer.to_account
+        row.payment_account = imported_transfer.from_account
+        row.year = imported_transfer.year
+        row.month = imported_transfer.month
+        return
+
+    imported_expense = expenses.get(row.external_id)
+    if imported_expense is None:
+        return
+
+    row.import_kind = "expense"
+    row.category = imported_expense.category
+    row.subcategory = imported_expense.subcategory
+    row.payment_account = imported_expense.payment_account
+    row.year = imported_expense.year
+    row.month = imported_expense.month
 
 
 def _existing_income_ids(session: Session, user_id: UUID) -> set[str]:
@@ -694,7 +756,7 @@ def build_credit_card_expense_import_rows(
     )
     account_lookup = _account_lookup(accounts, credit_cards)
     existing_ids = _existing_expense_ids(session, user.id)
-    vendor_rules = load_vendor_rule_map(session, user.id)
+    vendor_rules = load_import_vendor_rule_map(session, user.id)
     rows: list[ImportExpenseRow] = []
 
     for tx in transactions:
@@ -730,8 +792,10 @@ def build_account_expense_import_rows(
         month=month,
     )
     account_lookup = _account_lookup(accounts, credit_cards)
-    existing_ids = _existing_open_finance_debit_ids(session, user.id)
-    vendor_rules = load_vendor_rule_map(session, user.id)
+    existing_expenses = _existing_open_finance_expense_map(session, user.id)
+    existing_transfers = _existing_open_finance_transfer_map(session, user.id)
+    existing_ids = set(existing_expenses) | set(existing_transfers)
+    vendor_rules = load_import_vendor_rule_map(session, user.id)
     rows: list[ImportExpenseRow] = []
 
     for tx in transactions:
@@ -751,6 +815,12 @@ def build_account_expense_import_rows(
                 row.vendor,
                 row.payment_account,
                 tx,
+            )
+        if row.external_id in existing_ids:
+            _apply_imported_open_finance_debit(
+                row,
+                expenses=existing_expenses,
+                transfers=existing_transfers,
             )
         row.already_exists = row.external_id in existing_ids
         row.selected = not row.already_exists

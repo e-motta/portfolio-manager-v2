@@ -330,11 +330,30 @@ def migrate_expense_categories(session: Session) -> int:
     return updated
 
 
+def _vendor_rules_from_category_rows(
+    rows: list[FinanceVendorCategory],
+) -> dict[str, tuple[str, str | None]]:
+    rules: dict[str, tuple[str, str | None]] = {}
+    best_updated: dict[str, datetime] = {}
+    for row in rows:
+        key = normalize_vendor_key(row.vendor_key)
+        if not key or key == "unknown":
+            continue
+        previous = best_updated.get(key)
+        if previous is None or row.updated_at >= previous:
+            rules[key] = (row.category, row.subcategory)
+            best_updated[key] = row.updated_at
+    return rules
+
+
 def load_vendor_category_map(session: Session, user_id: UUID) -> dict[str, str]:
     rows = session.exec(
         select(FinanceVendorCategory).where(FinanceVendorCategory.user_id == user_id)
     ).all()
-    return {row.vendor_key: row.category for row in rows}
+    return {
+        key: category
+        for key, (category, _subcategory) in _vendor_rules_from_category_rows(rows).items()
+    }
 
 
 def load_vendor_rule_map(
@@ -343,7 +362,38 @@ def load_vendor_rule_map(
     rows = session.exec(
         select(FinanceVendorCategory).where(FinanceVendorCategory.user_id == user_id)
     ).all()
-    return {row.vendor_key: (row.category, row.subcategory) for row in rows}
+    return _vendor_rules_from_category_rows(rows)
+
+
+def load_expense_vendor_rule_map(
+    session: Session, user_id: UUID
+) -> dict[str, tuple[str, str | None]]:
+    entries = session.exec(
+        select(FinanceExpenseEntry)
+        .where(FinanceExpenseEntry.user_id == user_id)
+        .order_by(
+            FinanceExpenseEntry.year.desc(),
+            FinanceExpenseEntry.month.desc(),
+            FinanceExpenseEntry.updated_at.desc(),
+        )
+    ).all()
+    rules: dict[str, tuple[str, str | None]] = {}
+    for entry in entries:
+        key = normalize_vendor_key(entry.vendor)
+        if not key or key == "unknown" or key in rules:
+            continue
+        if entry.category not in EXPENSE_CATEGORIES:
+            continue
+        rules[key] = (entry.category, entry.subcategory)
+    return rules
+
+
+def load_import_vendor_rule_map(
+    session: Session, user_id: UUID
+) -> dict[str, tuple[str, str | None]]:
+    saved_rules = load_vendor_rule_map(session, user_id)
+    expense_rules = load_expense_vendor_rule_map(session, user_id)
+    return {**expense_rules, **saved_rules}
 
 
 def normalize_expense_subcategory(category: str, subcategory: str | None) -> str | None:
@@ -436,11 +486,24 @@ def save_vendor_category(
     except ValueError:
         normalized_subcategory = None
 
-    existing = session.exec(
-        select(FinanceVendorCategory)
-        .where(FinanceVendorCategory.user_id == user_id)
-        .where(FinanceVendorCategory.vendor_key == vendor_key)
-    ).first()
+    user_rules = session.exec(
+        select(FinanceVendorCategory).where(FinanceVendorCategory.user_id == user_id)
+    ).all()
+    matches = [
+        row
+        for row in user_rules
+        if normalize_vendor_key(row.vendor_key) == vendor_key
+    ]
+    if len(matches) > 1:
+        matches.sort(key=lambda row: row.updated_at, reverse=True)
+        existing = matches[0]
+        for duplicate in matches[1:]:
+            session.delete(duplicate)
+    elif len(matches) == 1:
+        existing = matches[0]
+    else:
+        existing = None
+
     if existing is None:
         session.add(
             FinanceVendorCategory(
@@ -453,6 +516,9 @@ def save_vendor_category(
         return
 
     changed = False
+    if existing.vendor_key != vendor_key:
+        existing.vendor_key = vendor_key
+        changed = True
     if existing.category != category:
         existing.category = category
         changed = True

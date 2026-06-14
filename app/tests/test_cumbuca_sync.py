@@ -5,7 +5,12 @@ from uuid import uuid4
 import pytest
 from sqlmodel import select
 
-from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry, FinanceTransferEntry
+from app.models.finance import (
+    FinanceExpenseEntry,
+    FinanceIncomeEntry,
+    FinanceTransferEntry,
+    FinanceVendorCategory,
+)
 from app.models.investment import Investment
 from app.models.user import User
 from app.services.cumbuca_oauth import (
@@ -35,6 +40,7 @@ from app.services.finance import (
     BILLS_CATEGORY,
     BILLS_SUBCATEGORY_ALUGUEL,
     load_vendor_category_map,
+    normalize_vendor_key,
     save_vendor_category,
 )
 from app.services.cumbuca_mcp import (
@@ -163,7 +169,7 @@ def test_credit_card_uses_brazilian_amount_for_usd(session):
 def test_bank_transactions_use_import_month(session):
     user = session.exec(select(User)).one()
     rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
-    assert len(rows) == 3
+    assert len(rows) == 4
     assert all(row.month == 6 for row in rows)
 
 
@@ -176,6 +182,15 @@ def test_account_debit_transfer_suggestions():
     assert suggest_transfer_to_account(tx["transactionName"], "Nuconta", tx) == "Nubank"
 
 
+def test_pagamento_de_fatura_suggested_as_transfer():
+    tx = {
+        "type": "PAGAMENTO",
+        "transactionName": "Pagamento de fatura",
+    }
+    assert suggest_account_debit_import_kind(tx, "Pagamento de fatura") == "transfer"
+    assert suggest_transfer_to_account("Pagamento de fatura", "Nuconta", tx) == "Nubank"
+
+
 def test_account_debit_import_marks_transfer_rows(session):
     user = session.exec(select(User)).one()
     rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
@@ -183,6 +198,34 @@ def test_account_debit_import_marks_transfer_rows(session):
     assert transfer.import_kind == "transfer"
     assert transfer.to_account == "Nubank"
     assert transfer.payment_account == "Nuconta"
+    fatura = next(row for row in rows if row.external_id == "tx-fatura")
+    assert fatura.import_kind == "transfer"
+    assert fatura.to_account == "Nubank"
+
+
+def test_imported_transfer_shows_as_transfer_in_preview(session):
+    user = session.exec(select(User)).one()
+    session.add(
+        FinanceTransferEntry(
+            user_id=user.id,
+            year=2026,
+            month=6,
+            from_account="Nuconta",
+            to_account="Nubank",
+            amount=Decimal("4768.15"),
+            description="Pagamento de fatura",
+            source=OPEN_FINANCE_SOURCE,
+            external_id="tx-fatura",
+        )
+    )
+    session.commit()
+
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    row = next(item for item in rows if item.external_id == "tx-fatura")
+    assert row.already_exists
+    assert row.import_kind == "transfer"
+    assert row.to_account == "Nubank"
+    assert row.payment_account == "Nuconta"
 
 
 def test_account_deposits_import_credits(session):
@@ -201,8 +244,8 @@ def test_build_expense_import_rows_from_fixtures(session):
     rows, warnings = build_expense_import_rows(session, user, year=2026, month=6)
     assert not warnings
     assert len(cc_rows) == 6
-    assert len(bank_rows) == 3
-    assert len(rows) == 9
+    assert len(bank_rows) == 4
+    assert len(rows) == 10
     charges = [row for row in rows if not row.is_reversal]
     assert all(row.amount < 0 for row in charges)
     reversals = [row for row in rows if row.is_reversal]
@@ -251,7 +294,7 @@ def test_import_selected_expenses(session):
         rows,
         {row.row_key for row in rows if not row.already_exists},
     )
-    assert created == 3
+    assert created == 4
 
     again, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
     assert all(row.already_exists for row in again)
@@ -317,7 +360,7 @@ def test_import_selected_expenses_saves_vendor_category(session):
     assert created == 1
 
     vendor_map = load_vendor_category_map(session, user.id)
-    assert vendor_map[target.vendor.lower()] == "Assinaturas digitais"
+    assert vendor_map[normalize_vendor_key(target.vendor)] == "Assinaturas digitais"
 
 
 def test_import_prefills_bills_subcategory_from_vendor_rule(session):
@@ -403,6 +446,44 @@ def test_vendor_category_matches_installment_suffixes(session):
     rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
     later = next(row for row in rows if row.external_id == "tx-samsung-8")
     assert later.vendor == "Samsung 8/12"
+    assert later.category == "Compras online"
+
+
+def test_vendor_category_matches_legacy_installment_key(session):
+    user = session.exec(select(User)).one()
+    session.add(
+        FinanceVendorCategory(
+            user_id=user.id,
+            vendor_key="samsung 11/12",
+            category="Compras online",
+        )
+    )
+    session.commit()
+
+    rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
+    later = next(row for row in rows if row.external_id == "tx-samsung-8")
+    assert later.category == "Compras online"
+
+
+def test_vendor_category_falls_back_to_expense_history(session):
+    user = session.exec(select(User)).one()
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=4,
+            category="Compras online",
+            vendor="Samsung 10/12",
+            payment_account="Nubank",
+            amount=Decimal("-250.00"),
+            source=OPEN_FINANCE_SOURCE,
+            external_id="legacy-samsung-10",
+        )
+    )
+    session.commit()
+
+    rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
+    later = next(row for row in rows if row.external_id == "tx-samsung-8")
     assert later.category == "Compras online"
 
 
