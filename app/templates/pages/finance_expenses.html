@@ -106,10 +106,11 @@
   <summary class="finance-category__summary">
     <span class="finance-category__title">{{ category }}</span>
     <span class="finance-category__meta">
+      {{ cat_entries|length }} items ·
       {% if filter_month %}
-        {{ cat_entries|length }} items · {{ cat_entries|sum_effective_expenses|brl }}
+        {{ cat_entries|sum_effective_expenses|brl }}
       {% else %}
-        {{ all_categories[category]|length }} items · {{ category_year_totals[category]|brl }}
+        {{ category_year_totals[category]|brl }}
       {% endif %}
     </span>
   </summary>

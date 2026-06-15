@@ -1269,6 +1269,7 @@ def build_expenses_context(
             selected_month=selected_month,
         ),
         "expense_categories": EXPENSE_CATEGORIES,
+        "expense_category_groups": EXPENSE_CATEGORY_GROUPS,
         "bills_subcategories": BILLS_SUBCATEGORIES,
         "bills_category": BILLS_CATEGORY,
         "payment_accounts": PAYMENT_ACCOUNTS,

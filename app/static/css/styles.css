@@ -4022,6 +4022,28 @@ body.form-modal-open {
   white-space: nowrap;
 }
 
+.finance-expense-edit-fields {
+  display: none;
+}
+
+.editable-row.is-editing .finance-expense-edit-fields {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 12rem;
+}
+
+.editable-row.is-editing .finance-expense-edit-fields input.edit-mode {
+  display: block;
+  width: 100%;
+}
+
+.editable-row.is-editing .finance-expense-edit-fields .of-category-picker {
+  width: 100%;
+}
+
 .finance-subcategory-badge {
   display: inline-flex;
   align-items: center;

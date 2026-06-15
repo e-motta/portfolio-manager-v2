@@ -1,10 +1,11 @@
+import time
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.core.auth import CurrentUserDep
 from app.core.db import SessionDep
@@ -18,6 +19,7 @@ from app.services.finance import (
     BILLS_CATEGORY,
     BILLS_SUBCATEGORIES,
     EXPENSE_CATEGORIES,
+    EXPENSE_CATEGORY_GROUPS,
     INCOME_CATEGORIES,
     INVESTMENT_BROKERS,
     MAX_EXPENSE_INSTALLMENTS,
@@ -40,10 +42,13 @@ from app.services.finance import (
     validate_income_category,
     validate_investment_broker,
     validate_transfer_accounts,
+    expense_category_slug,
 )
 from app.web.dependencies import TemplatesDep
 
 router = APIRouter(prefix="/finance", tags=["finance"])
+
+FINANCE_REDIRECT_HEADER = "X-Finance-Redirect"
 
 
 def _parse_optional_date(value: str, field_name: str = "date") -> date | None:
@@ -145,16 +150,34 @@ def _finance_query(year: int, month: int | None = None) -> str:
     return query
 
 
+def _expense_recategory_redirect_url(
+    entry: FinanceExpenseEntry,
+    *,
+    year: int,
+    filter_month: int | None,
+) -> str:
+    slug = expense_category_slug(entry.category)
+    return (
+        f"/finance/expenses?{_finance_query(year, filter_month)}"
+        f"&updated={time.time_ns()}#category-{slug}"
+    )
+
+
 def _expense_row_context(context: dict, entry: FinanceExpenseEntry) -> dict:
     return {
         "entry": entry,
         "month_labels": context["month_labels"],
         "expense_categories": EXPENSE_CATEGORIES,
+        "expense_category_groups": context.get(
+            "expense_category_groups", EXPENSE_CATEGORY_GROUPS
+        ),
         "bills_subcategories": context.get("bills_subcategories", BILLS_SUBCATEGORIES),
         "bills_category": context.get("bills_category", BILLS_CATEGORY),
         "payment_accounts": PAYMENT_ACCOUNTS,
         "link_targets": context.get("link_targets", {}),
         "show_month_column": context.get("show_month_column", True),
+        "year": context.get("year"),
+        "filter_month": context.get("filter_month"),
     }
 
 
@@ -449,10 +472,14 @@ def update_expense_entry(
     amount: str = Form(default=""),
     transaction_date: str = Form(default=""),
     subcategory: str = Form(default=""),
+    return_year: str = Form(default=""),
+    return_month: str = Form(default=""),
 ) -> HTMLResponse:
     entry = session.get(FinanceExpenseEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    previous_category = entry.category
 
     if month:
         entry.month = _parse_month(month)
@@ -505,7 +532,30 @@ def update_expense_entry(
     session.commit()
     session.refresh(entry)
 
-    context = build_expenses_context(session, current_user.id, entry.year)
+    filter_month: int | None = None
+    if return_month.strip():
+        filter_month = _parse_month(return_month)
+    selected_year = _parse_year(return_year) if return_year.strip() else entry.year
+
+    if previous_category != entry.category:
+        redirect_url = _expense_recategory_redirect_url(
+            entry,
+            year=selected_year,
+            filter_month=filter_month,
+        )
+        if request.headers.get("HX-Request"):
+            return Response(
+                status_code=200,
+                headers={FINANCE_REDIRECT_HEADER: redirect_url},
+            )
+        return RedirectResponse(url=redirect_url, status_code=303)
+
+    context = build_expenses_context(
+        session,
+        current_user.id,
+        selected_year,
+        selected_month=filter_month,
+    )
     return templates.TemplateResponse(
         request=request,
         name="partials/finance_expense_row.html",

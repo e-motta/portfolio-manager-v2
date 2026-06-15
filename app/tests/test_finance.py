@@ -225,6 +225,188 @@ def test_expense_update_transaction_date(session, client):
     assert entry.transaction_date == date(2026, 2, 14)
 
 
+def test_expense_update_category_redirects(session, client):
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=2,
+            category="Outros",
+            vendor="Samsung 11/12",
+            payment_account="Nubank",
+            amount=Decimal("-250.00"),
+        )
+    )
+    session.commit()
+    entry = session.exec(select(FinanceExpenseEntry)).one()
+
+    response = client.post(
+        f"/finance/expenses/{entry.id}",
+        data={
+            "month": "2",
+            "category": "Compras online",
+            "vendor": "Samsung 11/12",
+            "payment_account": "Nubank",
+            "amount": "250.00",
+            "return_year": "2026",
+            "return_month": "2",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "updated=" in response.headers["location"]
+    assert response.headers["location"].endswith("#category-online")
+
+    session.refresh(entry)
+    assert entry.category == "Compras online"
+
+
+def test_expense_update_category_htmx_redirects(session, client):
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=2,
+            category="Outros",
+            vendor="Gift shop",
+            payment_account="Nubank",
+            amount=Decimal("-22.00"),
+        )
+    )
+    session.commit()
+    entry = session.exec(select(FinanceExpenseEntry)).one()
+
+    response = client.post(
+        f"/finance/expenses/{entry.id}",
+        data={
+            "month": "2",
+            "category": "Presentes",
+            "vendor": "Gift shop",
+            "payment_account": "Nubank",
+            "amount": "22.00",
+            "return_year": "2026",
+        },
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "updated=" in response.headers["X-Finance-Redirect"]
+    assert response.headers["X-Finance-Redirect"].endswith("#category-gifts")
+
+    page = client.get("/finance/expenses?year=2026")
+    assert response.status_code == 200
+    assert 'id="category-gifts"' in page.text
+    assert "Gift shop" in page.text
+    assert page.text.index("Gift shop") > page.text.index('id="category-gifts"')
+
+
+def test_expense_recategory_redirect_url_changes_each_save(session, client):
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=2,
+            category="Outros",
+            vendor="Gift shop",
+            payment_account="Nubank",
+            amount=Decimal("-22.00"),
+        )
+    )
+    session.commit()
+    entry = session.exec(select(FinanceExpenseEntry)).one()
+
+    first = client.post(
+        f"/finance/expenses/{entry.id}",
+        data={
+            "month": "2",
+            "category": "Presentes",
+            "vendor": "Gift shop",
+            "payment_account": "Nubank",
+            "amount": "22.00",
+        },
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    session.refresh(entry)
+    assert entry.category == "Presentes"
+
+    second = client.post(
+        f"/finance/expenses/{entry.id}",
+        data={
+            "month": "2",
+            "category": "Profissional",
+            "vendor": "Gift shop",
+            "payment_account": "Nubank",
+            "amount": "22.00",
+        },
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    assert first.headers["X-Finance-Redirect"] != second.headers["X-Finance-Redirect"]
+
+
+def test_expense_update_category_saves_vendor_rule(session, client):
+    from app.services.finance import load_vendor_category_map
+
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=2,
+            category="Outros",
+            vendor="Samsung 11/12",
+            payment_account="Nubank",
+            amount=Decimal("-250.00"),
+        )
+    )
+    session.commit()
+    entry = session.exec(select(FinanceExpenseEntry)).one()
+
+    response = client.post(
+        f"/finance/expenses/{entry.id}",
+        data={
+            "month": "2",
+            "category": "Compras online",
+            "vendor": "Samsung 11/12",
+            "payment_account": "Nubank",
+            "amount": "250.00",
+        },
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "HX-Redirect" not in response.headers
+    assert "X-Finance-Redirect" in response.headers
+
+    vendor_map = load_vendor_category_map(session, user.id)
+    assert vendor_map["samsung"] == "Compras online"
+
+
+def test_expenses_page_hides_category_column_in_view(session, client):
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=2,
+            category="Transporte",
+            vendor="Metro",
+            payment_account="Nubank",
+            amount=Decimal("-5.50"),
+        )
+    )
+    session.commit()
+
+    response = client.get("/finance/expenses?year=2026&month=2")
+    assert response.status_code == 200
+    assert "<th>Category</th>" not in response.text
+    assert "data-of-category-select" in response.text
+
+
 def test_expense_installments_create_monthly_entries(session, client):
     user = _test_user(session)
 

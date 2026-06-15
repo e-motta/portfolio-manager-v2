@@ -2,6 +2,22 @@ function subcategorySlug(select) {
   return select?.selectedOptions[0]?.dataset.slug || "none";
 }
 
+function categorySlug(select) {
+  return select?.selectedOptions[0]?.dataset.slug || "other";
+}
+
+function updateCategoryPicker(picker) {
+  const select = picker?.querySelector("[data-of-category-select]");
+  if (!select) {
+    return;
+  }
+
+  const slug = categorySlug(select);
+  picker.className = `of-category-picker of-category-picker--${slug}`;
+  picker.dataset.category = select.value;
+  select.setAttribute("aria-label", select.value);
+}
+
 function updateSubcategoryPicker(picker) {
   const select = picker?.querySelector("[data-of-subcategory-select]");
   if (!select) {
@@ -29,9 +45,54 @@ function bindFinanceSubcategoryPickers(scope) {
   });
 }
 
+function bindFinanceCategoryPickers(scope) {
+  scope.querySelectorAll("[data-of-category-picker]").forEach((picker) => {
+    if (picker.dataset.financeCategoryBound === "1") {
+      return;
+    }
+    picker.dataset.financeCategoryBound = "1";
+    const select = picker.querySelector("[data-of-category-select]");
+    select?.addEventListener("change", () => {
+      updateCategoryPicker(picker);
+      const row = picker.closest(".editable-row");
+      if (row) {
+        syncExpenseRowSubcategory(row);
+      }
+    });
+    updateCategoryPicker(picker);
+  });
+}
+
+function syncExpenseRowSubcategory(row) {
+  const form = row?.querySelector(".row-form-table");
+  if (!form) {
+    return;
+  }
+
+  const categorySelect = form.querySelector("[data-of-category-select]");
+  const subcategoryCell = form.querySelector("[data-finance-bills-subcategory]");
+  const subcategorySelect = subcategoryCell?.querySelector(
+    '[name="subcategory"], [data-of-subcategory-select]'
+  );
+  if (!categorySelect || !subcategoryCell || !subcategorySelect) {
+    return;
+  }
+
+  const isBills = categorySelect.value === "Bills";
+  subcategoryCell.hidden = !isBills;
+  subcategorySelect.disabled = !isBills;
+  if (!isBills) {
+    subcategorySelect.value = "";
+    const picker = subcategorySelect.closest("[data-of-subcategory-picker]");
+    if (picker) {
+      updateSubcategoryPicker(picker);
+    }
+  }
+}
+
 function syncBillsSubcategoryField(container) {
   const categorySelect = container.querySelector(
-    '#add-expense-category, [name="category"]'
+    '#add-expense-category, [data-of-category-select], [name="category"]'
   );
   const subcategoryField = container.querySelector("[data-finance-bills-subcategory]");
   const select = subcategoryField?.querySelector(
@@ -54,19 +115,29 @@ function syncBillsSubcategoryField(container) {
 }
 
 function bindFinanceBillsSubcategory() {
-  document.querySelectorAll("#add-expense-modal, .finance-quick-form").forEach((container) => {
+  document.querySelectorAll("#add-expense-modal, .finance-quick-form, .editable-row").forEach((container) => {
     if (container.dataset.financeBillsSubcategoryBound === "1") {
       return;
     }
     container.dataset.financeBillsSubcategoryBound = "1";
     const categorySelect = container.querySelector(
-      '#add-expense-category, [name="category"]'
+      '#add-expense-category, [data-of-category-select], [name="category"]'
     );
     if (!categorySelect) {
       return;
     }
-    categorySelect.addEventListener("change", () => syncBillsSubcategoryField(container));
-    syncBillsSubcategoryField(container);
+    categorySelect.addEventListener("change", () => {
+      if (container.classList.contains("editable-row")) {
+        syncExpenseRowSubcategory(container);
+        return;
+      }
+      syncBillsSubcategoryField(container);
+    });
+    if (container.classList.contains("editable-row")) {
+      syncExpenseRowSubcategory(container);
+    } else {
+      syncBillsSubcategoryField(container);
+    }
   });
 }
 
@@ -109,12 +180,47 @@ function bindFinanceInstallments() {
   });
 }
 
+function clearHtmxIndicator() {
+  const indicator = document.getElementById("global-indicator");
+  indicator?.classList.remove("htmx-request");
+  document.body.classList.remove("htmx-request");
+}
+
+function bindFinanceHtmxRedirects() {
+  if (document.body.dataset.financeHtmxRedirectBound === "1") {
+    return;
+  }
+  document.body.dataset.financeHtmxRedirectBound = "1";
+
+  document.body.addEventListener("htmx:responseError", clearHtmxIndicator);
+  document.body.addEventListener("htmx:sendError", clearHtmxIndicator);
+  document.body.addEventListener("htmx:timeout", clearHtmxIndicator);
+
+  document.body.addEventListener("htmx:beforeSwap", (event) => {
+    const redirect = event.detail.xhr?.getResponseHeader("X-Finance-Redirect");
+    if (!redirect) {
+      return;
+    }
+    event.preventDefault();
+    clearHtmxIndicator();
+    document.querySelectorAll(".editable-row.is-editing").forEach((row) => {
+      row.classList.remove("is-editing");
+      row.querySelector("form")?.reset();
+    });
+    window.location.assign(redirect);
+  });
+}
+
 function bindFinancePage() {
   bindFinanceForms();
   bindFinanceInstallments();
+  bindFinanceCategoryPickers(document);
   bindFinanceBillsSubcategory();
   bindFinanceSubcategoryPickers(document);
 }
 
-document.addEventListener("DOMContentLoaded", bindFinancePage);
+document.addEventListener("DOMContentLoaded", () => {
+  bindFinanceHtmxRedirects();
+  bindFinancePage();
+});
 document.body.addEventListener("htmx:afterSwap", bindFinancePage);
