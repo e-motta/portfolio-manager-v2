@@ -402,7 +402,7 @@ def _merge_import_vendor_rules(
         if expense is None:
             merged[key] = saved
             continue
-        merged[key] = (saved[0], saved[1], saved[2] or expense[2])
+        merged[key] = (saved[0], saved[1] or expense[1], saved[2] or expense[2])
     return merged
 
 

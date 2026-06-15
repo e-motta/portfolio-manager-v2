@@ -575,6 +575,47 @@ def test_expense_update_saves_vendor_description(session, client):
     assert vendor_rules["samsung"][2] == "Phone installment"
 
 
+def test_expense_update_saves_vendor_subcategory(session, client):
+    from app.services.finance import (
+        BILLS_SUBCATEGORY_ALUGUEL,
+        load_vendor_rule_map,
+        normalize_vendor_key,
+    )
+
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=2,
+            category=BILLS_CATEGORY,
+            vendor="Aluguel",
+            payment_account="Nuconta",
+            amount=Decimal("-1000.00"),
+        )
+    )
+    session.commit()
+    entry = session.exec(select(FinanceExpenseEntry)).one()
+
+    response = client.post(
+        f"/finance/expenses/{entry.id}",
+        data={
+            "month": "2",
+            "category": BILLS_CATEGORY,
+            "vendor": "Aluguel",
+            "payment_account": "Nuconta",
+            "amount": "1000.00",
+            "subcategory": BILLS_SUBCATEGORY_ALUGUEL,
+        },
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+
+    vendor_rules = load_vendor_rule_map(session, user.id)
+    assert vendor_rules[normalize_vendor_key("Aluguel")][1] == BILLS_SUBCATEGORY_ALUGUEL
+
+
 def test_expenses_page_hides_category_column_in_view(session, client):
     user = _test_user(session)
     session.add(
