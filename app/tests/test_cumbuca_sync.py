@@ -40,6 +40,7 @@ from app.services.finance import (
     BILLS_CATEGORY,
     BILLS_SUBCATEGORY_ALUGUEL,
     load_vendor_category_map,
+    load_vendor_rule_map,
     normalize_vendor_key,
     save_vendor_category,
 )
@@ -380,6 +381,61 @@ def test_import_prefills_bills_subcategory_from_vendor_rule(session):
     assert target.subcategory == BILLS_SUBCATEGORY_ALUGUEL
 
 
+def test_import_prefills_description_from_vendor_rule(session):
+    user = session.exec(select(User)).one()
+    save_vendor_category(
+        session,
+        user.id,
+        "PIX ENVIADO - ALUGUEL",
+        BILLS_CATEGORY,
+        description="Monthly rent",
+    )
+    session.commit()
+
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    target = next(row for row in rows if row.external_id == "tx-003")
+    assert target.description == "Monthly rent"
+
+
+def test_import_prefills_description_from_previous_expense(session):
+    user = session.exec(select(User)).one()
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=5,
+            category=BILLS_CATEGORY,
+            vendor="PIX ENVIADO - ALUGUEL",
+            description="Apartment rent",
+            payment_account="Nuconta",
+            amount=Decimal("-3000.00"),
+        )
+    )
+    session.commit()
+
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    target = next(row for row in rows if row.external_id == "tx-003")
+    assert target.description == "Apartment rent"
+
+
+def test_import_selected_expenses_saves_vendor_description(session):
+    user = session.exec(select(User)).one()
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    target = next(row for row in rows if row.external_id == "tx-003")
+
+    created = import_selected_expenses(
+        session,
+        user.id,
+        rows,
+        {target.row_key},
+        description_overrides={target.row_key: "Monthly rent"},
+    )
+    assert created == 1
+
+    vendor_rules = load_vendor_rule_map(session, user.id)
+    assert vendor_rules[normalize_vendor_key(target.vendor)][2] == "Monthly rent"
+
+
 def test_import_selected_expenses_persists_subcategory(session):
     user = session.exec(select(User)).one()
     rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
@@ -402,6 +458,28 @@ def test_import_selected_expenses_persists_subcategory(session):
     ).one()
     assert entry.category == BILLS_CATEGORY
     assert entry.subcategory == BILLS_SUBCATEGORY_ALUGUEL
+
+
+def test_import_selected_expenses_persists_description(session):
+    user = session.exec(select(User)).one()
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    target = next(row for row in rows if row.external_id == "tx-003")
+
+    created = import_selected_expenses(
+        session,
+        user.id,
+        rows,
+        {target.row_key},
+        description_overrides={target.row_key: "Monthly subscription"},
+    )
+    assert created == 1
+
+    entry = session.exec(
+        select(FinanceExpenseEntry).where(
+            FinanceExpenseEntry.external_id == target.external_id
+        )
+    ).one()
+    assert entry.description == "Monthly subscription"
 
 
 def test_import_ignores_subcategory_when_category_not_bills(session):

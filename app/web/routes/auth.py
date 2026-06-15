@@ -1,6 +1,8 @@
+from urllib.parse import quote
+
+from authlib.integrations.base_client.errors import MismatchingStateError
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from urllib.parse import quote
 
 from app.core.config import settings
 from app.core.db import SessionDep
@@ -28,7 +30,10 @@ def login_page(request: Request, templates: TemplatesDep):
     return templates.TemplateResponse(
         request=request,
         name="pages/login.html",
-        context={"google_configured": bool(settings.GOOGLE_CLIENT_ID)},
+        context={
+            "google_configured": bool(settings.GOOGLE_CLIENT_ID),
+            "error": request.query_params.get("error"),
+        },
     )
 
 
@@ -45,7 +50,19 @@ async def google_callback(request: Request, session: SessionDep) -> RedirectResp
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Google login is not configured")
 
-    token = await oauth.google.authorize_access_token(request)
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except MismatchingStateError:
+        return RedirectResponse(
+            url="/auth/login?error=Login%20session%20expired.%20Please%20try%20again.",
+            status_code=303,
+        )
+    except Exception as exc:
+        return RedirectResponse(
+            url=f"/auth/login?error={quote(str(exc))}",
+            status_code=303,
+        )
+
     oauth_purpose = request.session.pop("oauth_purpose", None)
 
     if oauth_purpose == OAUTH_PURPOSE_DRIVE:

@@ -264,6 +264,14 @@ def _parse_expense_subcategory_overrides(form) -> dict[str, str | None]:
     }
 
 
+def _parse_expense_description_overrides(form) -> dict[str, str]:
+    return {
+        key.removeprefix("description_"): value
+        for key, value in form.items()
+        if key.startswith("description_")
+    }
+
+
 def _parse_period_overrides(form) -> dict[str, tuple[int, int]]:
     overrides: dict[str, tuple[int, int]] = {}
     for key, value in form.items():
@@ -322,6 +330,7 @@ async def _confirm_account_debits_import(
             category_overrides=_parse_expense_category_overrides(form),
             subcategory_overrides=_parse_expense_subcategory_overrides(form),
             period_overrides=_parse_period_overrides(form),
+            description_overrides=_parse_expense_description_overrides(form),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -360,6 +369,7 @@ async def _confirm_expense_import(
         category_overrides=_parse_expense_category_overrides(form),
         subcategory_overrides=_parse_expense_subcategory_overrides(form),
         period_overrides=_parse_period_overrides(form),
+        description_overrides=_parse_expense_description_overrides(form),
     )
     return RedirectResponse(
         url=f"/finance/expenses?imported={created}",

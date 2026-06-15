@@ -1,9 +1,27 @@
+from unittest.mock import AsyncMock, patch
+
+from authlib.integrations.base_client.errors import MismatchingStateError
 from sqlmodel import select
 
 from app.models.asset_type import AssetType
 from app.models.portfolio import Portfolio
 from app.models.user import User
 from app.services.auth import ensure_user_portfolio, find_or_create_user
+
+
+def test_google_callback_redirects_to_login_on_state_mismatch(client):
+    with patch("app.web.routes.auth.oauth") as mock_oauth:
+        mock_oauth.google.authorize_access_token = AsyncMock(
+            side_effect=MismatchingStateError()
+        )
+        response = client.get("/auth/callback?code=fake", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/auth/login?error=")
+
+    login_page = client.get(response.headers["location"])
+    assert login_page.status_code == 200
+    assert "Login session expired" in login_page.text
 
 
 def test_find_or_create_user_is_idempotent(session):

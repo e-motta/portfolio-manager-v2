@@ -50,6 +50,11 @@
           <input id="add-expense-vendor" type="text" name="vendor" placeholder="Store or service" required>
         </div>
         <div class="field">
+          <label for="add-expense-description">Description</label>
+          <input id="add-expense-description" type="text" name="description"
+                 placeholder="Optional details">
+        </div>
+        <div class="field">
           <label for="add-expense-payment">Payment account</label>
           <select id="add-expense-payment" name="payment_account" required>
             {% for account in payment_accounts %}

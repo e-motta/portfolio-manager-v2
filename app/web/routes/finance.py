@@ -176,6 +176,7 @@ def _expense_row_context(context: dict, entry: FinanceExpenseEntry) -> dict:
         "payment_accounts": PAYMENT_ACCOUNTS,
         "link_targets": context.get("link_targets", {}),
         "show_month_column": context.get("show_month_column", True),
+        "show_subcategory_column": entry.category == BILLS_CATEGORY,
         "year": context.get("year"),
         "filter_month": context.get("filter_month"),
     }
@@ -395,6 +396,7 @@ def create_expense_entry(
     installments: Annotated[str, Form()] = "",
     installments_enabled: Annotated[str, Form()] = "",
     subcategory: Annotated[str, Form()] = "",
+    description: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
     parsed_amount = _parse_expense_amount(amount)
     parsed_installments = (
@@ -435,6 +437,7 @@ def create_expense_entry(
             installments=parsed_installments,
             transaction_date=_parse_optional_date(transaction_date),
             subcategory=resolved_subcategory,
+            description=description,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -448,6 +451,7 @@ def create_expense_entry(
         vendor,
         category,
         subcategory=resolved_subcategory,
+        description=description.strip(),
     )
 
     session.commit()
@@ -468,6 +472,7 @@ def update_expense_entry(
     month: str = Form(default=""),
     category: str = Form(default=""),
     vendor: str = Form(default=""),
+    description: str = Form(default=""),
     payment_account: str = Form(default=""),
     amount: str = Form(default=""),
     transaction_date: str = Form(default=""),
@@ -492,6 +497,7 @@ def update_expense_entry(
         entry.category = category
     if vendor:
         entry.vendor = vendor.strip()
+    entry.description = description.strip()
     if payment_account:
         if payment_account not in PAYMENT_ACCOUNTS:
             raise HTTPException(
@@ -528,6 +534,7 @@ def update_expense_entry(
         entry.vendor,
         entry.category,
         subcategory=entry.subcategory,
+        description=entry.description,
     )
     session.commit()
     session.refresh(entry)

@@ -16,6 +16,8 @@ from app.models.finance import (
     FinanceVendorCategory,
 )
 
+VendorRule = tuple[str, str | None, str]
+
 MONTH_LABELS = (
     "January",
     "February",
@@ -332,8 +334,8 @@ def migrate_expense_categories(session: Session) -> int:
 
 def _vendor_rules_from_category_rows(
     rows: list[FinanceVendorCategory],
-) -> dict[str, tuple[str, str | None]]:
-    rules: dict[str, tuple[str, str | None]] = {}
+) -> dict[str, VendorRule]:
+    rules: dict[str, VendorRule] = {}
     best_updated: dict[str, datetime] = {}
     for row in rows:
         key = normalize_vendor_key(row.vendor_key)
@@ -341,7 +343,7 @@ def _vendor_rules_from_category_rows(
             continue
         previous = best_updated.get(key)
         if previous is None or row.updated_at >= previous:
-            rules[key] = (row.category, row.subcategory)
+            rules[key] = (row.category, row.subcategory, row.description or "")
             best_updated[key] = row.updated_at
     return rules
 
@@ -352,13 +354,15 @@ def load_vendor_category_map(session: Session, user_id: UUID) -> dict[str, str]:
     ).all()
     return {
         key: category
-        for key, (category, _subcategory) in _vendor_rules_from_category_rows(rows).items()
+        for key, (category, _subcategory, _description) in _vendor_rules_from_category_rows(
+            rows
+        ).items()
     }
 
 
 def load_vendor_rule_map(
     session: Session, user_id: UUID
-) -> dict[str, tuple[str, str | None]]:
+) -> dict[str, VendorRule]:
     rows = session.exec(
         select(FinanceVendorCategory).where(FinanceVendorCategory.user_id == user_id)
     ).all()
@@ -367,7 +371,7 @@ def load_vendor_rule_map(
 
 def load_expense_vendor_rule_map(
     session: Session, user_id: UUID
-) -> dict[str, tuple[str, str | None]]:
+) -> dict[str, VendorRule]:
     entries = session.exec(
         select(FinanceExpenseEntry)
         .where(FinanceExpenseEntry.user_id == user_id)
@@ -377,23 +381,37 @@ def load_expense_vendor_rule_map(
             FinanceExpenseEntry.updated_at.desc(),
         )
     ).all()
-    rules: dict[str, tuple[str, str | None]] = {}
+    rules: dict[str, VendorRule] = {}
     for entry in entries:
         key = normalize_vendor_key(entry.vendor)
         if not key or key == "unknown" or key in rules:
             continue
         if entry.category not in EXPENSE_CATEGORIES:
             continue
-        rules[key] = (entry.category, entry.subcategory)
+        rules[key] = (entry.category, entry.subcategory, entry.description or "")
     return rules
+
+
+def _merge_import_vendor_rules(
+    expense_rules: dict[str, VendorRule],
+    saved_rules: dict[str, VendorRule],
+) -> dict[str, VendorRule]:
+    merged = dict(expense_rules)
+    for key, saved in saved_rules.items():
+        expense = expense_rules.get(key)
+        if expense is None:
+            merged[key] = saved
+            continue
+        merged[key] = (saved[0], saved[1], saved[2] or expense[2])
+    return merged
 
 
 def load_import_vendor_rule_map(
     session: Session, user_id: UUID
-) -> dict[str, tuple[str, str | None]]:
+) -> dict[str, VendorRule]:
     saved_rules = load_vendor_rule_map(session, user_id)
     expense_rules = load_expense_vendor_rule_map(session, user_id)
-    return {**expense_rules, **saved_rules}
+    return _merge_import_vendor_rules(expense_rules, saved_rules)
 
 
 def normalize_expense_subcategory(category: str, subcategory: str | None) -> str | None:
@@ -412,7 +430,7 @@ def normalize_expense_subcategory(category: str, subcategory: str | None) -> str
 def resolve_expense_subcategory(
     category: str,
     vendor: str,
-    vendor_rules: dict[str, tuple[str, str | None]],
+    vendor_rules: dict[str, VendorRule],
     *,
     explicit_subcategory: str | None | object = _UNSET,
 ) -> str | None:
@@ -473,6 +491,7 @@ def save_vendor_category(
     category: str,
     *,
     subcategory: str | None = None,
+    description: str = "",
 ) -> None:
     if category not in EXPENSE_CATEGORIES:
         return
@@ -485,6 +504,7 @@ def save_vendor_category(
         normalized_subcategory = normalize_expense_subcategory(category, subcategory)
     except ValueError:
         normalized_subcategory = None
+    normalized_description = description.strip()
 
     user_rules = session.exec(
         select(FinanceVendorCategory).where(FinanceVendorCategory.user_id == user_id)
@@ -511,6 +531,7 @@ def save_vendor_category(
                 vendor_key=vendor_key,
                 category=category,
                 subcategory=normalized_subcategory,
+                description=normalized_description,
             )
         )
         return
@@ -524,6 +545,9 @@ def save_vendor_category(
         changed = True
     if existing.subcategory != normalized_subcategory:
         existing.subcategory = normalized_subcategory
+        changed = True
+    if existing.description != normalized_description:
+        existing.description = normalized_description
         changed = True
     if changed:
         existing.updated_at = datetime.utcnow()
@@ -1610,6 +1634,7 @@ def build_expense_entries(
     installments: int = 1,
     transaction_date: date | None = None,
     subcategory: str | None = None,
+    description: str = "",
 ) -> list[FinanceExpenseEntry]:
     if installments < 1 or installments > MAX_EXPENSE_INSTALLMENTS:
         raise ValueError(
@@ -1628,6 +1653,7 @@ def build_expense_entries(
                 transaction_date=transaction_date if index == 1 else None,
                 category=category,
                 vendor=installment_vendor_label(vendor, index, installments),
+                description=description.strip(),
                 payment_account=payment_account,
                 amount=installment_amount,
                 subcategory=subcategory,
@@ -1650,6 +1676,7 @@ def create_expense_entries(
     installments: int = 1,
     transaction_date: date | None = None,
     subcategory: str | None = None,
+    description: str = "",
 ) -> list[FinanceExpenseEntry]:
     entries = build_expense_entries(
         user_id=user_id,
@@ -1662,6 +1689,7 @@ def create_expense_entries(
         installments=installments,
         transaction_date=transaction_date,
         subcategory=subcategory,
+        description=description,
     )
     for entry in entries:
         session.add(entry)

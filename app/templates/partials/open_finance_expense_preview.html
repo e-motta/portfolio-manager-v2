@@ -155,7 +155,23 @@
             {% endif %}
           </td>
           <td>{{ row.transaction_date|date_fmt }}</td>
-          <td><span class="cell-primary">{{ row.vendor }}</span></td>
+          <td>
+            <div class="finance-entry-vendor">
+              <span class="cell-primary finance-entry-vendor__name">{{ row.vendor }}</span>
+              {% if row.already_exists %}
+                {% if row.description %}
+                <span class="finance-entry-vendor__description muted">{{ row.description }}</span>
+                {% endif %}
+              {% else %}
+              <input type="text"
+                     class="finance-entry-vendor__description-input"
+                     name="description_{{ row.row_key }}"
+                     value="{{ row.description }}"
+                     placeholder="Description (optional)"
+                     aria-label="Description for {{ row.vendor }}">
+              {% endif %}
+            </div>
+          </td>
           <td class="col-import-period">
             {% if row.already_exists %}
             {{ period_badge(row.month, row.year) }}

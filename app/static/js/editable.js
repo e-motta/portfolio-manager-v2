@@ -117,7 +117,14 @@ document.body.addEventListener("htmx:responseError", (event) => {
   showEditError(form, message);
 });
 
-document.body.addEventListener("htmx:afterSwap", () => {
+document.body.addEventListener("htmx:afterSwap", (event) => {
+  const target = event.detail.target;
+  if (target?.matches?.(".editable-row")) {
+    target.classList.remove("is-editing");
+    target.querySelector("form")?.reset();
+    return;
+  }
+
   document.querySelectorAll(".editable-cell.is-editing, .editable-row.is-editing").forEach((el) => {
     el.classList.remove("is-editing");
   });

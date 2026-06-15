@@ -17,6 +17,9 @@
     </div>
     <h1 class="login-card__title">Sign in to continue</h1>
     <p class="login-card__subtitle">Use your Google account to access your portfolio.</p>
+    {% if error %}
+    <p class="login-card__error" role="alert">{{ error }}</p>
+    {% endif %}
     {% if google_configured %}
     <a href="/auth/google" class="btn btn--google">
       <svg class="btn__icon" viewBox="0 0 24 24" aria-hidden="true">

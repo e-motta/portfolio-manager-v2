@@ -79,7 +79,7 @@ function syncExpenseRowSubcategory(row) {
   }
 
   const isBills = categorySelect.value === "Bills";
-  subcategoryCell.hidden = !isBills;
+  subcategoryCell.classList.toggle("col-subcategory--inactive", !isBills);
   subcategorySelect.disabled = !isBills;
   if (!isBills) {
     subcategorySelect.value = "";
@@ -114,8 +114,17 @@ function syncBillsSubcategoryField(container) {
   }
 }
 
-function bindFinanceBillsSubcategory() {
-  document.querySelectorAll("#add-expense-modal, .finance-quick-form, .editable-row").forEach((container) => {
+function queryFinanceContainers(scope) {
+  const root = scope && scope.querySelectorAll ? scope : document;
+  const nodes = [...root.querySelectorAll("#add-expense-modal, .finance-quick-form, .editable-row")];
+  if (root !== document && root.matches?.("#add-expense-modal, .finance-quick-form, .editable-row")) {
+    nodes.unshift(root);
+  }
+  return nodes;
+}
+
+function bindFinanceBillsSubcategory(scope = document) {
+  queryFinanceContainers(scope).forEach((container) => {
     if (container.dataset.financeBillsSubcategoryBound === "1") {
       return;
     }
@@ -211,16 +220,45 @@ function bindFinanceHtmxRedirects() {
   });
 }
 
-function bindFinancePage() {
+function resetEditableRow(row) {
+  if (!row) {
+    return;
+  }
+  row.classList.remove("is-editing");
+  row.querySelector("form")?.reset();
+}
+
+function bindFinancePage(scope = document) {
   bindFinanceForms();
   bindFinanceInstallments();
-  bindFinanceCategoryPickers(document);
-  bindFinanceBillsSubcategory();
-  bindFinanceSubcategoryPickers(document);
+  bindFinanceCategoryPickers(scope);
+  bindFinanceBillsSubcategory(scope);
+  bindFinanceSubcategoryPickers(scope);
+}
+
+function handleFinanceHtmxSwap(event) {
+  clearHtmxIndicator();
+  const target = event.detail.target;
+  if (!target) {
+    bindFinancePage();
+    return;
+  }
+
+  if (typeof htmx !== "undefined") {
+    htmx.process(target);
+  }
+
+  if (target.matches?.(".editable-row")) {
+    resetEditableRow(target);
+  } else {
+    target.querySelectorAll?.(".editable-row").forEach(resetEditableRow);
+  }
+
+  bindFinancePage(target);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   bindFinanceHtmxRedirects();
   bindFinancePage();
 });
-document.body.addEventListener("htmx:afterSwap", bindFinancePage);
+document.body.addEventListener("htmx:afterSwap", handleFinanceHtmxSwap);

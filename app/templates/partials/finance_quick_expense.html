@@ -2,61 +2,71 @@
 {% from "partials/open_finance_subcategory_select.html" import subcategory_picker with context %}
   <input type="hidden" name="year" value="{{ year }}">
   <div class="finance-quick-form__fields">
-    <div class="field finance-quick-form__field">
-      <label class="sr-only" for="quick-expense-month">Month</label>
-      <select id="quick-expense-month" name="month" required>
-        {% for month in range(1, 13) %}
-        <option value="{{ month }}"{% if month == form_default_month %} selected{% endif %}>
-          {{ month_labels[month - 1] }}
-        </option>
-        {% endfor %}
-      </select>
+    <div class="finance-quick-form__row finance-quick-form__row--primary">
+      <div class="field finance-quick-form__field finance-quick-form__field--month">
+        <label class="sr-only" for="quick-expense-month">Month</label>
+        <select id="quick-expense-month" name="month" required>
+          {% for month in range(1, 13) %}
+          <option value="{{ month }}"{% if month == form_default_month %} selected{% endif %}>
+            {{ month_labels[month - 1] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field finance-quick-form__field finance-quick-form__field--date">
+        <label class="sr-only" for="quick-expense-date">Date</label>
+        <input id="quick-expense-date" type="date" name="transaction_date" title="Date (optional)">
+      </div>
+      <div class="field finance-quick-form__field finance-quick-form__field--vendor">
+        <label class="sr-only" for="quick-expense-vendor">Vendor</label>
+        <input id="quick-expense-vendor" type="text" name="vendor"
+               placeholder="Where did you spend?" required>
+      </div>
+      <div class="field finance-quick-form__field finance-quick-form__field--description">
+        <label class="sr-only" for="quick-expense-description">Description</label>
+        <input id="quick-expense-description" type="text" name="description"
+               placeholder="Description (optional)">
+      </div>
     </div>
-    {% if preset_category is defined %}
-    <input type="hidden" name="category" value="{{ preset_category }}">
-    {% else %}
-    <div class="field finance-quick-form__field">
-      <label class="sr-only" for="quick-expense-category">Category</label>
-      <select id="quick-expense-category" name="category" required>
-        {% for category in expense_categories %}
-        <option value="{{ category }}">{{ category }}</option>
-        {% endfor %}
-      </select>
+    <div class="finance-quick-form__row finance-quick-form__row--secondary">
+      {% if preset_category is defined %}
+      <input type="hidden" name="category" value="{{ preset_category }}">
+      {% else %}
+      <div class="field finance-quick-form__field finance-quick-form__field--category">
+        <label class="sr-only" for="quick-expense-category">Category</label>
+        <select id="quick-expense-category" name="category" required>
+          {% for category in expense_categories %}
+          <option value="{{ category }}">{{ category }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      {% if preset_category is defined and preset_category == bills_category %}
+      <div class="field finance-quick-form__field finance-quick-form__field--subcategory"
+           data-finance-bills-subcategory>
+        <label class="sr-only" for="quick-expense-subcategory">Subcategory</label>
+        {{ subcategory_picker("subcategory", "", picker_id="quick-expense-subcategory") }}
+      </div>
+      {% endif %}
+      <div class="field finance-quick-form__field finance-quick-form__field--payment">
+        <label class="sr-only" for="quick-expense-payment">Payment</label>
+        <select id="quick-expense-payment" name="payment_account" required>
+          {% for account in payment_accounts %}
+          <option value="{{ account }}">{{ account }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field finance-quick-form__field finance-quick-form__field--amount">
+        <label class="sr-only" for="quick-expense-amount">Amount</label>
+        <input id="quick-expense-amount" class="input-md" type="number" name="amount"
+               placeholder="0.00" step="0.01" min="0" inputmode="decimal" required>
+      </div>
+      <div class="field finance-quick-form__field finance-quick-form__field--installments">
+        <label class="sr-only" for="quick-expense-installments">Installments</label>
+        <input id="quick-expense-installments" class="input-sm" type="number" name="installments"
+               min="2" max="48" step="1" inputmode="numeric" placeholder="1x" title="Installments">
+      </div>
+      <button type="submit" class="btn btn-primary finance-quick-form__submit">Add</button>
     </div>
-    {% endif %}
-    <div class="field finance-quick-form__field">
-      <label class="sr-only" for="quick-expense-date">Date</label>
-      <input id="quick-expense-date" type="date" name="transaction_date" title="Date (optional)">
-    </div>
-    <div class="field finance-quick-form__field finance-quick-form__field--grow">
-      <label class="sr-only" for="quick-expense-vendor">Vendor</label>
-      <input id="quick-expense-vendor" type="text" name="vendor"
-             placeholder="Where did you spend?" required>
-    </div>
-    {% if preset_category is defined and preset_category == bills_category %}
-    <div class="field finance-quick-form__field finance-quick-form__field--subcategory">
-      <label class="sr-only" for="quick-expense-subcategory">Subcategory</label>
-      {{ subcategory_picker("subcategory", "", picker_id="quick-expense-subcategory") }}
-    </div>
-    {% endif %}
-    <div class="field finance-quick-form__field">
-      <label class="sr-only" for="quick-expense-payment">Payment</label>
-      <select id="quick-expense-payment" name="payment_account" required>
-        {% for account in payment_accounts %}
-        <option value="{{ account }}">{{ account }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field finance-quick-form__field">
-      <label class="sr-only" for="quick-expense-amount">Amount</label>
-      <input id="quick-expense-amount" class="input-md" type="number" name="amount"
-             placeholder="0.00" step="0.01" min="0" inputmode="decimal" required>
-    </div>
-    <div class="field finance-quick-form__field">
-      <label class="sr-only" for="quick-expense-installments">Installments</label>
-      <input id="quick-expense-installments" class="input-sm" type="number" name="installments"
-             min="2" max="48" step="1" inputmode="numeric" placeholder="1x" title="Installments">
-    </div>
-    <button type="submit" class="btn btn-primary finance-quick-form__submit">Add</button>
   </div>
 </form>

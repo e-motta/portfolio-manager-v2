@@ -32,6 +32,7 @@ from app.services.finance import (
     save_vendor_category,
     suggest_expense_category,
     validate_transfer_accounts,
+    VendorRule,
 )
 from app.web.helpers import get_investable_asset_types, get_investments
 
@@ -121,6 +122,7 @@ class ImportExpenseRow:
     subcategory: str | None = None
     import_kind: str = "expense"
     to_account: str | None = None
+    description: str = ""
 
 
 @dataclass
@@ -501,7 +503,7 @@ def _normalize_expense_transaction(
     account_lookup: dict[str, dict[str, Any]],
     *,
     source_kind: str,
-    vendor_rules: dict[str, tuple[str, str | None]] | None = None,
+    vendor_rules: dict[str, VendorRule] | None = None,
 ) -> ImportExpenseRow | None:
     if str(tx.get("_source_kind") or "bank") != source_kind:
         return None
@@ -568,6 +570,9 @@ def _normalize_expense_transaction(
             )
 
     subcategory = None
+    description = ""
+    if saved_rule:
+        description = saved_rule[2]
     if category == BILLS_CATEGORY:
         subcategory = resolve_expense_subcategory(
             category,
@@ -589,6 +594,7 @@ def _normalize_expense_transaction(
         selected=True,
         is_reversal=is_reversal,
         subcategory=subcategory,
+        description=description,
     )
 
 
@@ -978,9 +984,11 @@ def import_selected_expenses(
     category_overrides: dict[str, str] | None = None,
     subcategory_overrides: dict[str, str | None] | None = None,
     period_overrides: dict[str, tuple[int, int]] | None = None,
+    description_overrides: dict[str, str] | None = None,
 ) -> int:
     overrides = category_overrides or {}
     subcategory_overrides = subcategory_overrides or {}
+    description_overrides = description_overrides or {}
     vendor_rules = load_vendor_rule_map(session, user_id)
     created = 0
     for row in rows:
@@ -1020,6 +1028,7 @@ def import_selected_expenses(
                 transaction_date=row.transaction_date,
                 category=category,
                 vendor=row.vendor,
+                description=description_overrides.get(row.row_key, row.description).strip(),
                 payment_account=row.payment_account,
                 amount=row.amount,
                 subcategory=subcategory,
@@ -1028,7 +1037,12 @@ def import_selected_expenses(
             )
         )
         save_vendor_category(
-            session, user_id, row.vendor, category, subcategory=subcategory
+            session,
+            user_id,
+            row.vendor,
+            category,
+            subcategory=subcategory,
+            description=description_overrides.get(row.row_key, row.description).strip(),
         )
         created += 1
     if created:
@@ -1097,6 +1111,7 @@ def import_selected_account_debits(
     category_overrides: dict[str, str] | None = None,
     subcategory_overrides: dict[str, str | None] | None = None,
     period_overrides: dict[str, tuple[int, int]] | None = None,
+    description_overrides: dict[str, str] | None = None,
 ) -> tuple[int, int]:
     kind_overrides = kind_overrides or {}
     expense_rows: list[ImportExpenseRow] = []
@@ -1122,6 +1137,7 @@ def import_selected_account_debits(
         category_overrides=category_overrides,
         subcategory_overrides=subcategory_overrides,
         period_overrides=period_overrides,
+        description_overrides=description_overrides,
     )
     transfer_created = import_selected_transfers(
         session,

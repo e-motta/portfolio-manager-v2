@@ -170,6 +170,158 @@ def test_expense_without_date_defaults_to_none(session, client):
     assert entry.transaction_date is None
 
 
+def test_expense_description_defaults_empty(session, client):
+    response = client.post(
+        "/finance/expenses",
+        data={
+            "year": "2026",
+            "month": "2",
+            "category": "Transporte",
+            "vendor": "Metro",
+            "payment_account": "Nubank",
+            "amount": "5.50",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    entry = session.exec(select(FinanceExpenseEntry)).one()
+    assert entry.description == ""
+
+
+def test_expense_create_with_description(session, client):
+    response = client.post(
+        "/finance/expenses",
+        data={
+            "year": "2026",
+            "month": "2",
+            "category": "Transporte",
+            "vendor": "Uber",
+            "description": "Airport ride",
+            "payment_account": "Nubank",
+            "amount": "42.50",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    entry = session.exec(select(FinanceExpenseEntry)).one()
+    assert entry.description == "Airport ride"
+
+
+def test_expense_update_description(session, client):
+    user = _test_user(session)
+    entry = FinanceExpenseEntry(
+        user_id=user.id,
+        year=2026,
+        month=2,
+        category="Transporte",
+        vendor="Uber",
+        payment_account="Nubank",
+        amount=Decimal("-42.50"),
+    )
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+
+    response = client.post(
+        f"/finance/expenses/{entry.id}",
+        data={
+            "vendor": "Uber",
+            "description": "Airport ride",
+            "payment_account": "Nubank",
+            "amount": "42.50",
+        },
+    )
+    assert response.status_code == 200
+    assert "Airport ride" in response.text
+
+    session.refresh(entry)
+    assert entry.description == "Airport ride"
+
+
+def test_expense_can_be_updated_twice_via_htmx(session, client):
+    user = _test_user(session)
+    entry = FinanceExpenseEntry(
+        user_id=user.id,
+        year=2026,
+        month=2,
+        category="Transporte",
+        vendor="Uber",
+        payment_account="Nubank",
+        amount=Decimal("-42.50"),
+    )
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+
+    first = client.post(
+        f"/finance/expenses/{entry.id}",
+        data={
+            "vendor": "Uber",
+            "description": "First edit",
+            "payment_account": "Nubank",
+            "amount": "42.50",
+        },
+    )
+    second = client.post(
+        f"/finance/expenses/{entry.id}",
+        data={
+            "vendor": "Uber",
+            "description": "Second edit",
+            "payment_account": "Nubank",
+            "amount": "42.50",
+        },
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert "btn-edit" in first.text
+    assert "btn-edit" in second.text
+    assert "Second edit" in second.text
+    assert 'class="editable-row' in second.text
+    assert "is-editing" not in second.text
+
+
+def test_bills_expense_update_keeps_subcategory_column(session, client):
+    from app.services.finance import BILLS_SUBCATEGORY_ALUGUEL
+
+    user = _test_user(session)
+    entry = FinanceExpenseEntry(
+        user_id=user.id,
+        year=2026,
+        month=6,
+        category=BILLS_CATEGORY,
+        vendor="CELESC DISTRIBUICAO S.A",
+        description="Test",
+        payment_account="Nuconta",
+        amount=Decimal("-316.38"),
+        subcategory=BILLS_SUBCATEGORY_ALUGUEL,
+    )
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+
+    response = client.post(
+        f"/finance/expenses/{entry.id}",
+        data={
+            "vendor": "CELESC DISTRIBUICAO S.A",
+            "description": "Test",
+            "category": BILLS_CATEGORY,
+            "subcategory": BILLS_SUBCATEGORY_ALUGUEL,
+            "payment_account": "Nuconta",
+            "amount": "316.38",
+        },
+    )
+
+    assert response.status_code == 200
+    assert 'class="col-subcategory' in response.text
+    assert "data-finance-bills-subcategory" in response.text
+    assert "Aluguel" in response.text
+    assert "finance-payment-badge" in response.text
+    assert "finance-source-badge" in response.text
+
+
 def test_expenses_page_shows_dash_without_date(session, client):
     user = _test_user(session)
     session.add(
@@ -384,6 +536,43 @@ def test_expense_update_category_saves_vendor_rule(session, client):
 
     vendor_map = load_vendor_category_map(session, user.id)
     assert vendor_map["samsung"] == "Compras online"
+
+
+def test_expense_update_saves_vendor_description(session, client):
+    from app.services.finance import load_vendor_rule_map
+
+    user = _test_user(session)
+    session.add(
+        FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=2,
+            category="Outros",
+            vendor="Samsung 11/12",
+            payment_account="Nubank",
+            amount=Decimal("-250.00"),
+        )
+    )
+    session.commit()
+    entry = session.exec(select(FinanceExpenseEntry)).one()
+
+    response = client.post(
+        f"/finance/expenses/{entry.id}",
+        data={
+            "month": "2",
+            "category": "Compras online",
+            "vendor": "Samsung 11/12",
+            "description": "Phone installment",
+            "payment_account": "Nubank",
+            "amount": "250.00",
+        },
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+
+    vendor_rules = load_vendor_rule_map(session, user.id)
+    assert vendor_rules["samsung"][2] == "Phone installment"
 
 
 def test_expenses_page_hides_category_column_in_view(session, client):

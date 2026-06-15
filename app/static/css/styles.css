@@ -3807,9 +3807,46 @@ body.form-modal-open {
 
 .finance-quick-form__fields {
   display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.finance-quick-form__row {
+  display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
   align-items: end;
+}
+
+.finance-quick-form__row--primary .finance-quick-form__field--month {
+  flex: 0 1 7rem;
+}
+
+.finance-quick-form__row--primary .finance-quick-form__field--date {
+  flex: 0 1 10rem;
+}
+
+.finance-quick-form__row--primary .finance-quick-form__field--vendor,
+.finance-quick-form__row--primary .finance-quick-form__field--description {
+  flex: 1 1 12rem;
+  min-width: 9rem;
+}
+
+.finance-quick-form__row--secondary .finance-quick-form__field--subcategory {
+  flex: 1 1 11rem;
+  min-width: 10rem;
+}
+
+.finance-quick-form__row--secondary .finance-quick-form__field--payment {
+  flex: 0 1 8rem;
+}
+
+.finance-quick-form__row--secondary .finance-quick-form__field--amount {
+  flex: 0 1 7rem;
+}
+
+.finance-quick-form__row--secondary .finance-quick-form__field--installments {
+  flex: 0 1 4.5rem;
 }
 
 .finance-quick-form__field {
@@ -4022,6 +4059,23 @@ body.form-modal-open {
   white-space: nowrap;
 }
 
+.finance-entry-vendor__description {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.finance-entry-vendor__description-input {
+  width: 100%;
+  min-width: 10rem;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+}
+
 .finance-expense-edit-fields {
   display: none;
 }
@@ -4035,6 +4089,12 @@ body.form-modal-open {
   min-width: 12rem;
 }
 
+.finance-expense-edit-fields__primary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 .editable-row.is-editing .finance-expense-edit-fields input.edit-mode {
   display: block;
   width: 100%;
@@ -4042,6 +4102,26 @@ body.form-modal-open {
 
 .editable-row.is-editing .finance-expense-edit-fields .of-category-picker {
   width: 100%;
+}
+
+.editable-row.is-editing .finance-expense-edit-subcategory {
+  display: block;
+  width: 100%;
+  min-width: 9rem;
+}
+
+.editable-row.is-editing .finance-expense-edit-subcategory .of-category-picker {
+  width: 100%;
+}
+
+.col-subcategory--inactive .view-mode,
+.col-subcategory--inactive .edit-mode {
+  opacity: 0.45;
+}
+
+.col-subcategory--inactive .edit-mode select,
+.col-subcategory--inactive .edit-mode .of-category-picker__select {
+  pointer-events: none;
 }
 
 .finance-subcategory-badge {
@@ -4175,6 +4255,10 @@ body.form-modal-open {
   gap: 0.5rem;
 }
 
+.finance-category__quick .finance-quick-form__row {
+  gap: 0.5rem;
+}
+
 .finance-category__quick .finance-quick-form__field {
   min-width: 6rem;
 }
@@ -4288,6 +4372,11 @@ body.form-modal-open {
   }
 
   .finance-quick-form__fields {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .finance-quick-form__row {
     flex-direction: column;
     align-items: stretch;
   }
