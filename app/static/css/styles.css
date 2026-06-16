@@ -3807,7 +3807,7 @@ body.form-modal-open {
 }
 
 .finance-quick-panel .panel__body {
-  padding: 0 1rem 1rem;
+  padding: 0.85rem 1rem 1rem;
 }
 
 .finance-quick-form__fields {
@@ -3823,34 +3823,40 @@ body.form-modal-open {
   align-items: end;
 }
 
-.finance-quick-form__row--primary .finance-quick-form__field--month {
+.finance-quick-form__row .finance-quick-form__field--month {
   flex: 0 1 7rem;
 }
 
-.finance-quick-form__row--primary .finance-quick-form__field--date {
+.finance-quick-form__row .finance-quick-form__field--date {
   flex: 0 1 10rem;
 }
 
-.finance-quick-form__row--primary .finance-quick-form__field--vendor,
-.finance-quick-form__row--primary .finance-quick-form__field--description {
+.finance-quick-form__row .finance-quick-form__field--vendor,
+.finance-quick-form__row .finance-quick-form__field--description {
   flex: 1 1 12rem;
   min-width: 9rem;
 }
 
-.finance-quick-form__row--secondary .finance-quick-form__field--subcategory {
+.finance-quick-form__row .finance-quick-form__field--subcategory {
   flex: 1 1 11rem;
   min-width: 10rem;
 }
 
-.finance-quick-form__row--secondary .finance-quick-form__field--payment {
+.finance-quick-form__row .finance-quick-form__field--category,
+.finance-quick-form__row .finance-quick-form__field--broker,
+.finance-quick-form__row .finance-quick-form__field--account {
+  flex: 0 1 9rem;
+}
+
+.finance-quick-form__row .finance-quick-form__field--payment {
   flex: 0 1 8rem;
 }
 
-.finance-quick-form__row--secondary .finance-quick-form__field--amount {
+.finance-quick-form__row .finance-quick-form__field--amount {
   flex: 0 1 7rem;
 }
 
-.finance-quick-form__row--secondary .finance-quick-form__field--installments {
+.finance-quick-form__row .finance-quick-form__field--installments {
   flex: 0 1 4.5rem;
 }
 
@@ -3859,12 +3865,18 @@ body.form-modal-open {
   min-width: 7rem;
 }
 
+.finance-quick-form__field input:not(.input-sm),
+.finance-quick-form__field select {
+  width: 100%;
+}
+
 .finance-quick-form__field--grow {
   flex: 1 1 12rem;
 }
 
 .finance-quick-form__submit {
   flex-shrink: 0;
+  align-self: end;
 }
 
 .finance-chart-panel .panel__header {
@@ -3918,7 +3930,7 @@ body.form-modal-open {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0;
-  padding: 0 1rem 0.65rem;
+  padding: 0.65rem 1rem;
 }
 
 @media (min-width: 960px) {
@@ -4012,7 +4024,7 @@ body.form-modal-open {
 
 .finance-category-breakdown-empty,
 .finance-payment-breakdown-empty {
-  padding: 0.5rem 1rem 0.85rem;
+  padding: 0.85rem 1rem;
   font-size: 0.875rem;
 }
 
@@ -4252,7 +4264,7 @@ body.form-modal-open {
 }
 
 .finance-category__quick {
-  padding: 0 1rem 0.75rem;
+  padding: 0.85rem 1rem 0.75rem;
   border-bottom: 1px solid var(--border);
 }
 
