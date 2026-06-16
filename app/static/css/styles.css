@@ -4812,6 +4812,17 @@ body.form-modal-open {
   align-self: flex-start;
 }
 
+.open-finance-card__submit.is-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.open-finance-card__submit.is-loading .spinner {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+}
+
 .open-finance-card__unavailable {
   padding: 1.1rem 1.25rem 1.25rem;
   margin-top: auto;

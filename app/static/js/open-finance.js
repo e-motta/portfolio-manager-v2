@@ -196,6 +196,34 @@
     });
   }
 
+  function setPreviewSubmitLoading(form) {
+    const button = form.querySelector(".open-finance-card__submit");
+    if (!button || button.disabled) {
+      return;
+    }
+
+    if (!button.dataset.ofSubmitLabel) {
+      button.dataset.ofSubmitLabel = button.textContent.trim();
+    }
+
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    button.classList.add("is-loading");
+    button.innerHTML = '<span class="spinner" aria-hidden="true"></span> Loading…';
+
+    document.getElementById("global-indicator")?.classList.add("htmx-request");
+  }
+
+  function bindPreviewSubmit(scope) {
+    scope.querySelectorAll(".open-finance-card__form").forEach((form) => {
+      if (form.dataset.ofPreviewSubmitBound === "1") {
+        return;
+      }
+      form.dataset.ofPreviewSubmitBound = "1";
+      form.addEventListener("submit", () => setPreviewSubmitLoading(form));
+    });
+  }
+
   function bindDismissibleAlerts(scope) {
     scope.querySelectorAll("[data-of-alert-dismiss]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -686,6 +714,7 @@
   function init(scope) {
     bindMonthPills(scope);
     bindPeriodForms(scope);
+    bindPreviewSubmit(scope);
     bindDismissibleAlerts(scope);
     bindImportedToggle(scope);
     bindPeriodPickers(scope);
