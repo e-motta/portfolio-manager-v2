@@ -1,0 +1,155 @@
+{% from "partials/icons.html" import icon_card, icon_expenses, icon_income, icon_portfolio %}
+
+{% if tools_error %}
+<div class="open-finance-alert open-finance-alert--error" role="alert">
+  <p>{{ tools_error }}</p>
+</div>
+{% endif %}
+
+<span id="open-finance-tool-count" hx-swap-oob="true">
+  {{ tool_names|length }} data source{% if tool_names|length != 1 %}s{% endif %} available
+</span>
+
+<section class="open-finance-section">
+  <h2 class="open-finance-section__title">Finance</h2>
+  <div class="open-finance-actions open-finance-actions--finance">
+    <article class="open-finance-card open-finance-card--credit-card{% if not has_credit_card_tools %} is-unavailable{% endif %}">
+      <div class="open-finance-card__head">
+        <div class="open-finance-card__icon">{{ icon_card() }}</div>
+        <div>
+          <h3 class="open-finance-card__title">Credit card charges</h3>
+          <p class="open-finance-card__desc">
+            Import card statement charges into
+            <a href="/finance/expenses">Finance expenses</a>.
+            Posted to the previous month.
+          </p>
+        </div>
+      </div>
+      {% if has_credit_card_tools %}
+      <form action="/open-finance/sync/credit-card/preview"
+            method="post"
+            class="open-finance-card__form"
+            data-of-finance-form
+            data-of-month-labels="{{ month_labels|join('|') }}">
+        {% with form_id="open-finance-cc", period_label="Statement month", period_mode="credit_card" %}
+        {% include "partials/open_finance_period_fields.html" %}
+        {% endwith %}
+        <button type="submit" class="btn btn-primary open-finance-card__submit">Preview charges</button>
+      </form>
+      {% else %}
+      <div class="open-finance-card__unavailable">
+        <p>Credit card tools are not available for your bank connection.</p>
+      </div>
+      {% endif %}
+    </article>
+
+    <article class="open-finance-card open-finance-card--account-debits{% if not has_account_tools %} is-unavailable{% endif %}">
+      <div class="open-finance-card__head">
+        <div class="open-finance-card__icon">{{ icon_expenses() }}</div>
+        <div>
+          <h3 class="open-finance-card__title">Account debits</h3>
+          <p class="open-finance-card__desc">
+            Import PIX, boletos, and account outflows as
+            <a href="/finance/expenses">expenses</a>,
+            <a href="/finance/transfers">transfers</a>, or
+            <a href="/finance/investments">investments</a>.
+          </p>
+        </div>
+      </div>
+      {% if has_account_tools %}
+      <form action="/open-finance/sync/account-debits/preview"
+            method="post"
+            class="open-finance-card__form"
+            data-of-finance-form
+            data-of-month-labels="{{ month_labels|join('|') }}">
+        {% with form_id="open-finance-debits", period_label="Month", period_mode="calendar" %}
+        {% include "partials/open_finance_period_fields.html" %}
+        {% endwith %}
+        <button type="submit" class="btn btn-primary open-finance-card__submit">Preview debits</button>
+      </form>
+      {% else %}
+      <div class="open-finance-card__unavailable">
+        <p>Account transaction tools are not available for your bank connection.</p>
+      </div>
+      {% endif %}
+    </article>
+
+    <article class="open-finance-card open-finance-card--account-credits{% if not has_account_tools %} is-unavailable{% endif %}">
+      <div class="open-finance-card__head">
+        <div class="open-finance-card__icon">{{ icon_income() }}</div>
+        <div>
+          <h3 class="open-finance-card__title">Account credits</h3>
+          <p class="open-finance-card__desc">
+            Import salary, transfers in, and other credits as
+            <a href="/finance/income">income</a> or
+            <a href="/finance/investments">investments</a>.
+          </p>
+        </div>
+      </div>
+      {% if has_account_tools %}
+      <form action="/open-finance/sync/account-credits/preview"
+            method="post"
+            class="open-finance-card__form"
+            data-of-finance-form
+            data-of-month-labels="{{ month_labels|join('|') }}">
+        {% with form_id="open-finance-credits", period_label="Month", period_mode="calendar" %}
+        {% include "partials/open_finance_period_fields.html" %}
+        {% endwith %}
+        <button type="submit" class="btn btn-primary open-finance-card__submit">Preview credits</button>
+      </form>
+      {% else %}
+      <div class="open-finance-card__unavailable">
+        <p>Account transaction tools are not available for your bank connection.</p>
+      </div>
+      {% endif %}
+    </article>
+  </div>
+</section>
+
+<section class="open-finance-section">
+  <h2 class="open-finance-section__title">Investments</h2>
+  <div class="open-finance-actions open-finance-actions--investments">
+    <article class="open-finance-card open-finance-card--investments{% if not has_investment_tools %} is-unavailable{% endif %}">
+      <div class="open-finance-card__head">
+        <div class="open-finance-card__icon">{{ icon_portfolio() }}</div>
+        <div>
+          <h3 class="open-finance-card__title">Other investments</h3>
+          <p class="open-finance-card__desc">
+            Sync fixed-income and savings balances in
+            <a href="/portfolio/investments">Other investments</a>.
+            Exchange-traded positions stay in Securities.
+          </p>
+        </div>
+      </div>
+      {% if has_investment_tools %}
+      <form action="/open-finance/sync/investments/preview" method="post" class="open-finance-card__form">
+        <p class="open-finance-card__sync-note">
+          Pulls all importable non-exchange positions from your bank in one step.
+        </p>
+        <button type="submit" class="btn btn-primary open-finance-card__submit">Preview investment sync</button>
+      </form>
+      {% else %}
+      <div class="open-finance-card__unavailable">
+        <p>Investment tools are not exposed by Cumbuca for your bank yet.</p>
+      </div>
+      {% endif %}
+    </article>
+  </div>
+</section>
+
+{% if tool_names %}
+<details class="open-finance-details">
+  <summary class="open-finance-details__summary">
+    Technical details
+    <span class="open-finance-details__meta">{{ tool_names|length }} MCP tools</span>
+  </summary>
+  <div class="open-finance-details__body">
+    <p class="open-finance-details__hint">Tools exposed by your bank through the Cumbuca MCP server.</p>
+    <ul class="open-finance-details__tools">
+      {% for tool in tool_names %}
+      <li><code>{{ tool }}</code></li>
+      {% endfor %}
+    </ul>
+  </div>
+</details>
+{% endif %}

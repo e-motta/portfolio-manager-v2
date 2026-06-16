@@ -185,19 +185,26 @@ def test_securities_page_loads(client, session, exchange_type):
     make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"))
     response = client.get("/portfolio/holdings")
     assert response.status_code == 200
-    assert "Positions by ticker" in response.text
-    assert "Performance by ticker" in response.text
-    assert "Total return (USD)" in response.text
-    assert "Dividends net (USD)" in response.text
+    assert 'id="securities-content"' in response.text
+    assert 'hx-get="/portfolio/holdings/partials/content"' in response.text
+    assert "Loading securities and market data" in response.text
     assert "Add trade" in response.text
     assert 'id="add-trade-modal"' in response.text
     assert 'id="add-dividend-modal"' in response.text
     assert "/static/js/form-modal.js" in response.text
     assert "Record trade" not in response.text
     assert 'class="panel panel--import"' not in response.text
-    assert "Prices " in response.text
-    assert "BRT" in response.text
-    assert "hx-swap-oob" not in response.text
+
+    partial = client.get("/portfolio/holdings/partials/content")
+    assert partial.status_code == 200
+    assert "Positions by ticker" in partial.text
+    assert "Performance by ticker" in partial.text
+    assert "Total return (USD)" in partial.text
+    assert "Dividends net (USD)" in partial.text
+    assert "Prices " in partial.text
+    assert "BRT" in partial.text
+    assert 'id="securities-subtitle"' in partial.text
+    assert 'hx-swap-oob="true"' in partial.text
 
 
 def test_suggestions_page_loads(client):
@@ -468,7 +475,10 @@ def test_holdings_page_shows_dividends_section(client):
     response = client.get("/portfolio/holdings")
     assert response.status_code == 200
     assert "Preview dividends" in response.text
-    assert "Dividends" in response.text
+
+    partial = client.get("/portfolio/holdings/partials/content")
+    assert partial.status_code == 200
+    assert "Dividends" in partial.text
 
 
 def test_create_lot_with_provisional_fx(client, session, exchange_type):
@@ -540,8 +550,11 @@ def test_holdings_page_shows_update_ptax_button_when_provisional_fx(client, sess
     )
     response = client.get("/portfolio/holdings")
     assert response.status_code == 200
-    assert "Update PTAX rates" in response.text
-    assert "/portfolio/holdings/ptax/refresh" in response.text
+
+    partial = client.get("/portfolio/holdings/partials/content")
+    assert partial.status_code == 200
+    assert "Update PTAX rates" in partial.text
+    assert "/portfolio/holdings/ptax/refresh" in partial.text
 
 
 def test_holdings_page_hides_update_ptax_button_without_provisional_fx(client, session, exchange_type):
@@ -552,4 +565,7 @@ def test_holdings_page_hides_update_ptax_button_without_provisional_fx(client, s
     make_lot(session, exchange_type.id, "VTI", Decimal("10"), Decimal("100"))
     response = client.get("/portfolio/holdings")
     assert response.status_code == 200
-    assert "Update PTAX rates" not in response.text
+
+    partial = client.get("/portfolio/holdings/partials/content")
+    assert partial.status_code == 200
+    assert "Update PTAX rates" not in partial.text

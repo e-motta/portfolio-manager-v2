@@ -137,13 +137,28 @@ def target_weight_total_partial(
 @router.get("", response_class=HTMLResponse)
 def list_securities(
     request: Request,
+    templates: TemplatesDep,
+) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="pages/securities.html",
+        context={
+            "portfolio_tab": "holdings",
+            "today": date.today().isoformat(),
+        },
+    )
+
+
+@router.get("/partials/content", response_class=HTMLResponse)
+def securities_content_partial(
+    request: Request,
     session: SessionDep,
     templates: TemplatesDep,
 ) -> HTMLResponse:
     exchange_type = get_exchange_traded_type(session)
     return templates.TemplateResponse(
         request=request,
-        name="pages/securities.html",
+        name="partials/securities_content_panel.html",
         context=_securities_context(session, exchange_type),
     )
 

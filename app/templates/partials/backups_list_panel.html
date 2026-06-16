@@ -1,0 +1,51 @@
+{% from "partials/icons.html" import icon_refresh, icon_delete %}
+
+{% if drive_error %}
+<div class="panel panel--error">
+  <p>{{ drive_error }}</p>
+  <div class="panel__actions panel__actions--padded">
+    <a href="/backups/google/connect" class="btn btn-secondary">Reconnect Google Drive</a>
+  </div>
+</div>
+{% elif backups %}
+<div class="panel">
+  <div class="panel__header"><h2 class="panel__title">Saved backups</h2></div>
+  <div class="table-wrap table-wrap--flush">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>File</th>
+          <th class="num">Size</th>
+          <th class="actions-cell"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for backup in backups %}
+        <tr>
+          <td>
+            <div class="cell-primary">{{ backup.created_at|datetime_fmt }}</div>
+          </td>
+          <td>{{ backup.name }}</td>
+          <td class="num">{{ backup.size_bytes }} B</td>
+          <td class="actions-cell">
+            <button type="button" class="btn btn-secondary btn-small btn-icon-only"
+                    hx-post="/backups/{{ backup.file_id }}/restore"
+                    hx-confirm="Restore this backup? This replaces all current portfolio data."
+                    aria-label="Restore backup" title="Restore backup">{{ icon_refresh() }}</button>
+            <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-delete"
+                    hx-post="/backups/{{ backup.file_id }}/delete"
+                    hx-confirm="Delete this backup from Google Drive?"
+                    aria-label="Delete backup" title="Delete backup">{{ icon_delete() }}</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="panel">
+  <p class="empty-state">No backups yet. Save your first backup above.</p>
+</div>
+{% endif %}

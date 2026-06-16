@@ -72,13 +72,7 @@ def _cc_expense_period(year: int, month: int) -> tuple[int, int, str]:
     return expense_year, expense_month, MONTH_LABELS[expense_month - 1]
 
 
-@router.get("", response_class=HTMLResponse)
-def open_finance_page(
-    request: Request,
-    session: SessionDep,
-    templates: TemplatesDep,
-    user: CurrentUserDep,
-) -> HTMLResponse:
+def _open_finance_tools_context(session, user) -> dict:
     tool_names: list[str] = []
     tools_error = None
     if user_has_cumbuca(user):
@@ -93,26 +87,53 @@ def open_finance_page(
             tools_error = fetch_open_finance_error(exc)
 
     today = date.today()
+    return {
+        "tool_names": tool_names,
+        "tools_error": tools_error,
+        "has_credit_card_tools": _has_any_tool(tool_names, _CREDIT_CARD_TOOL_NAMES),
+        "has_account_tools": _has_any_tool(tool_names, _ACCOUNT_TOOL_NAMES),
+        "has_investment_tools": _has_any_tool(tool_names, _INVESTMENT_TOOL_NAMES),
+        "default_year": today.year,
+        "default_month": today.month,
+        "month_labels": MONTH_LABELS,
+        "year_options": _year_options(today.year),
+    }
+
+
+@router.get("", response_class=HTMLResponse)
+def open_finance_page(
+    request: Request,
+    templates: TemplatesDep,
+    user: CurrentUserDep,
+) -> HTMLResponse:
     return templates.TemplateResponse(
         request=request,
         name="pages/open_finance.html",
         context={
             "connected": user_has_cumbuca(user),
             "connected_at": user.cumbuca_connected_at,
-            "tool_names": tool_names,
-            "tools_error": tools_error,
-            "has_credit_card_tools": _has_any_tool(tool_names, _CREDIT_CARD_TOOL_NAMES),
-            "has_account_tools": _has_any_tool(tool_names, _ACCOUNT_TOOL_NAMES),
-            "has_investment_tools": _has_any_tool(tool_names, _INVESTMENT_TOOL_NAMES),
             "saved": request.query_params.get("connected") == "1",
             "disconnected": request.query_params.get("disconnected") == "1",
             "error_message": request.query_params.get("error"),
-            "default_year": today.year,
-            "default_month": today.month,
-            "month_labels": MONTH_LABELS,
-            "year_options": _year_options(today.year),
             "sync_tab": "open-finance",
         },
+    )
+
+
+@router.get("/partials/tools", response_class=HTMLResponse)
+def open_finance_tools_partial(
+    request: Request,
+    session: SessionDep,
+    templates: TemplatesDep,
+    user: CurrentUserDep,
+) -> HTMLResponse:
+    if not user_has_cumbuca(user):
+        raise HTTPException(status_code=400, detail="Connect Open Finance first.")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/open_finance_connected_panel.html",
+        context=_open_finance_tools_context(session, user),
     )
 
 

@@ -46,34 +46,47 @@ def _load_drive_backups(user):
 @router.get("", response_class=HTMLResponse)
 def backups_page(
     request: Request,
-    session: SessionDep,
     templates: TemplatesDep,
     user: CurrentUserDep,
 ) -> HTMLResponse:
-    drive_connected = _user_has_drive(user)
-    backups = []
-    drive_error = None
-
-    if drive_connected:
-        try:
-            _, _, backups = _load_drive_backups(user)
-        except HTTPException as exc:
-            drive_error = exc.detail
-
     return templates.TemplateResponse(
         request=request,
         name="pages/backups.html",
         context={
             "google_configured": _drive_configured(),
-            "drive_connected": drive_connected,
-            "backups": backups,
-            "drive_error": drive_error,
+            "drive_connected": _user_has_drive(user),
             "saved": request.query_params.get("saved") == "1",
             "restored": request.query_params.get("restored") == "1",
             "deleted": request.query_params.get("deleted") == "1",
             "connected": request.query_params.get("connected") == "1",
             "error_message": request.query_params.get("error"),
             "sync_tab": "backups",
+        },
+    )
+
+
+@router.get("/partials/list", response_class=HTMLResponse)
+def backups_list_partial(
+    request: Request,
+    templates: TemplatesDep,
+    user: CurrentUserDep,
+) -> HTMLResponse:
+    if not _user_has_drive(user):
+        raise HTTPException(status_code=400, detail="Connect Google Drive first.")
+
+    backups = []
+    drive_error = None
+    try:
+        _, _, backups = _load_drive_backups(user)
+    except HTTPException as exc:
+        drive_error = exc.detail
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/backups_list_panel.html",
+        context={
+            "backups": backups,
+            "drive_error": drive_error,
         },
     )
 
