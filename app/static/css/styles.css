@@ -329,8 +329,10 @@ body {
 
 .page-content {
   flex: 1;
+  width: 100%;
+  max-width: 96rem;
+  margin-inline: auto;
   padding: 1.5rem 1.75rem 2.5rem;
-  max-width: 1280px;
 }
 
 .page-intro {
@@ -569,6 +571,46 @@ body {
   border-collapse: collapse;
   min-width: 720px;
   font-size: 0.875rem;
+}
+
+.data-table.pnl-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.data-table.pnl-table col.col-symbol {
+  width: 14%;
+}
+
+.data-table.pnl-table col.col-num {
+  width: 14.3%;
+}
+
+.data-table.pnl-table th,
+.data-table.pnl-table td {
+  padding: 0.65rem 0.75rem;
+}
+
+.data-table.pnl-table th.num {
+  white-space: normal;
+  line-height: 1.35;
+  vertical-align: bottom;
+}
+
+.data-table.pnl-table td.symbol-cell {
+  overflow: hidden;
+}
+
+.data-table.pnl-table .symbol-name {
+  max-width: 100%;
+}
+
+@media (max-width: 900px) {
+  .data-table.pnl-table {
+    min-width: 44rem;
+    table-layout: auto;
+  }
 }
 
 .data-table.consolidated-table {
@@ -2106,6 +2148,16 @@ form.row-form-table {
 
 #securities-subtitle.loading-text {
   width: 9.5rem;
+}
+
+#securities-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+#securities-content > .panel {
+  margin-bottom: 0;
 }
 
 #open-finance-tool-count.loading-text {
