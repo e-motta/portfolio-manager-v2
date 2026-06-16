@@ -269,20 +269,31 @@
     const importKind = importKindSelect.value;
     row.dataset.rowImportKind = importKind;
     const isTransfer = importKind === "transfer";
+    const isInvestment = importKind === "investment";
+    const isExpense = importKind === "expense";
+    const isIncome = importKind === "income";
 
     const expenseDetails = row.querySelector("[data-of-expense-details]");
     const transferDetails = row.querySelector("[data-of-transfer-details]");
+    const investmentDetails = row.querySelector("[data-of-investment-details]");
+    const incomeDetails = row.querySelector("[data-of-income-details]");
     if (expenseDetails) {
-      expenseDetails.hidden = isTransfer;
+      expenseDetails.hidden = !isExpense;
     }
     if (transferDetails) {
       transferDetails.hidden = !isTransfer;
     }
+    if (investmentDetails) {
+      investmentDetails.hidden = !isInvestment;
+    }
+    if (incomeDetails) {
+      incomeDetails.hidden = !isIncome;
+    }
 
     const categorySelect = row.querySelector("[data-of-category-select]");
     const subcategorySelect = row.querySelector("[data-of-subcategory-select]");
-    setFieldEnabled(categorySelect, !isTransfer);
-    if (isTransfer) {
+    setFieldEnabled(categorySelect, isExpense);
+    if (!isExpense) {
       setSubcategorySelectEnabled(subcategorySelect, false);
     } else {
       updateRowSubcategoryVisibility(row);
@@ -290,6 +301,9 @@
 
     const toAccountSelect = row.querySelector("[data-of-to-account]");
     setFieldEnabled(toAccountSelect, isTransfer);
+
+    const brokerSelect = row.querySelector("[data-of-broker]");
+    setFieldEnabled(brokerSelect, isInvestment);
 
     const status = row.querySelector(".status-pill");
     if (
@@ -300,6 +314,12 @@
       if (isTransfer) {
         status.className = "status-pill ok";
         status.textContent = "Transfer";
+      } else if (isInvestment) {
+        status.className = "status-pill ok";
+        status.textContent = "Investment";
+      } else if (isIncome) {
+        status.className = "status-pill ok";
+        status.textContent = "New";
       } else if (row.dataset.rowCategory === "Outros") {
         status.className = "status-pill warn";
         status.textContent = "Review";
@@ -309,16 +329,27 @@
       }
     }
 
-    row.classList.toggle("import-row--needs-category", !isTransfer && row.dataset.rowCategory === "Outros");
+    row.classList.toggle(
+      "import-row--needs-category",
+      isExpense && row.dataset.rowCategory === "Outros",
+    );
 
     const transferAmount = row.querySelector("[data-of-transfer-amount]");
+    const investmentAmount = row.querySelector("[data-of-investment-amount]");
     const expenseAmount = row.querySelector("[data-of-expense-amount]");
+    const incomeAmount = row.querySelector("[data-of-income-amount]");
     if (transferAmount) {
       transferAmount.hidden = !isTransfer;
     }
+    if (investmentAmount) {
+      investmentAmount.hidden = !isInvestment;
+    }
+    if (incomeAmount) {
+      incomeAmount.hidden = !isIncome;
+    }
     if (expenseAmount) {
-      expenseAmount.hidden = isTransfer;
-      if (!isTransfer) {
+      expenseAmount.hidden = !isExpense;
+      if (isExpense) {
         updateRowAmountPreview(row);
       }
     }
@@ -344,6 +375,14 @@
         return;
       }
       select.dataset.ofToAccountBound = "1";
+      select.dataset.fieldName = select.getAttribute("name") || "";
+    });
+
+    scope.querySelectorAll("[data-of-broker]").forEach((select) => {
+      if (select.dataset.ofBrokerBound === "1") {
+        return;
+      }
+      select.dataset.ofBrokerBound = "1";
       select.dataset.fieldName = select.getAttribute("name") || "";
     });
 
@@ -619,7 +658,7 @@
           if (!checkbox?.checked) {
             return;
           }
-          if (row.dataset.rowImportKind === "transfer") {
+          if (row.dataset.rowImportKind === "transfer" || row.dataset.rowImportKind === "investment") {
             return;
           }
 

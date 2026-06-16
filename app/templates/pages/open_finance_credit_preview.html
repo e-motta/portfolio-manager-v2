@@ -1,14 +1,14 @@
 {% extends "sync_base.html" %}
 
-{% block title %}Review deposits — Open Finance{% endblock %}
+{% block title %}Review credits — Open Finance{% endblock %}
 {% block topbar_title %}Open Finance{% endblock %}
 
-{% block sync_title %}Review account deposits{% endblock %}
+{% block sync_title %}Review account credits{% endblock %}
 {% block sync_subtitle %}{{ month_label }} {{ year }}{% endblock %}
 
 {% block sync_content %}
 <div class="panel open-finance-preview">
-  {% include "partials/open_finance_deposit_preview.html" %}
+  {% include "partials/open_finance_credit_preview.html" %}
 </div>
 {% endblock %}
 

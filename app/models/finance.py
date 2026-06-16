@@ -56,6 +56,20 @@ class FinanceInvestmentEntry(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class FinanceInvestmentOpenFinanceImport(SQLModel, table=True):
+    __tablename__ = "finance_investment_open_finance_imports"
+    __table_args__ = (UniqueConstraint("user_id", "external_id"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(foreign_key="users.id", ondelete="CASCADE", index=True)
+    external_id: str = Field(index=True)
+    year: int = Field(index=True)
+    month: int = Field(ge=1, le=12)
+    broker: str = Field(index=True)
+    amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=2)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class FinanceTransferEntry(SQLModel, table=True):
     __tablename__ = "finance_transfer_entries"
 

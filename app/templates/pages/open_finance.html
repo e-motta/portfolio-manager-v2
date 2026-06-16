@@ -5,7 +5,7 @@
 {% block topbar_title %}Open Finance{% endblock %}
 
 {% block sync_title %}Open Finance{% endblock %}
-{% block sync_subtitle %}Import credit card charges, account debits, deposits, and investment balances — each with its own preview{% endblock %}
+{% block sync_subtitle %}Import credit card charges, account debits, credits, and investment balances — each with its own preview{% endblock %}
 
 {% block sync_content %}
 {% if saved or disconnected or error_message %}
@@ -131,8 +131,9 @@
           <h3 class="open-finance-card__title">Account debits</h3>
           <p class="open-finance-card__desc">
             Import PIX, boletos, and account outflows as
-            <a href="/finance/expenses">expenses</a> or
-            <a href="/finance/transfers">transfers</a>.
+            <a href="/finance/expenses">expenses</a>,
+            <a href="/finance/transfers">transfers</a>, or
+            <a href="/finance/investments">investments</a>.
           </p>
         </div>
       </div>
@@ -154,27 +155,28 @@
       {% endif %}
     </article>
 
-    <article class="open-finance-card open-finance-card--account-deposits{% if not has_account_tools %} is-unavailable{% endif %}">
+    <article class="open-finance-card open-finance-card--account-credits{% if not has_account_tools %} is-unavailable{% endif %}">
       <div class="open-finance-card__head">
         <div class="open-finance-card__icon">{{ icon_income() }}</div>
         <div>
-          <h3 class="open-finance-card__title">Account deposits</h3>
+          <h3 class="open-finance-card__title">Account credits</h3>
           <p class="open-finance-card__desc">
-            Import salary, transfers in, and other credits into
-            <a href="/finance/income">Finance income</a>.
+            Import salary, transfers in, and other credits as
+            <a href="/finance/income">income</a> or
+            <a href="/finance/investments">investments</a>.
           </p>
         </div>
       </div>
       {% if has_account_tools %}
-      <form action="/open-finance/sync/account-deposits/preview"
+      <form action="/open-finance/sync/account-credits/preview"
             method="post"
             class="open-finance-card__form"
             data-of-finance-form
             data-of-month-labels="{{ month_labels|join('|') }}">
-        {% with form_id="open-finance-deposits", period_label="Month", period_mode="calendar" %}
+        {% with form_id="open-finance-credits", period_label="Month", period_mode="calendar" %}
         {% include "partials/open_finance_period_fields.html" %}
         {% endwith %}
-        <button type="submit" class="btn btn-primary open-finance-card__submit">Preview deposits</button>
+        <button type="submit" class="btn btn-primary open-finance-card__submit">Preview credits</button>
       </form>
       {% else %}
       <div class="open-finance-card__unavailable">

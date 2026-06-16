@@ -167,6 +167,12 @@ INVESTMENT_BROKERS = (
     ("mb", "MB"),
 )
 
+PAYMENT_ACCOUNT_TO_INVESTMENT_BROKER = {
+    "XP Crédito": "xp",
+    "Nubank": "nubank",
+    "Nuconta": "nubank",
+}
+
 INVESTMENT_TARGET_RATE = Decimal("0.30")
 
 MIGRATED_SUMMARY_SOURCE = "migrated_summary"
@@ -622,6 +628,23 @@ def validate_investment_broker(broker: str) -> str:
     if broker not in allowed:
         raise ValueError(f"Invalid broker: {broker}")
     return broker
+
+
+def suggest_investment_broker(payment_account: str, vendor: str) -> str:
+    mapped = PAYMENT_ACCOUNT_TO_INVESTMENT_BROKER.get(payment_account)
+    if mapped is not None:
+        return mapped
+
+    haystack = f"{payment_account} {vendor}".lower()
+    if "xp" in haystack or "xpi" in haystack:
+        return "xp"
+    if "nubank" in haystack or "nu pagamentos" in haystack:
+        return "nubank"
+    if "interactive" in haystack or " ib " in f" {haystack} ":
+        return "ib"
+    if "mercado bitcoin" in haystack:
+        return "mb"
+    return INVESTMENT_BROKERS[0][0]
 
 
 def validate_transfer_account(account: str) -> str:
@@ -1559,6 +1582,50 @@ def upsert_investment_entry(
     session.add(entry)
     session.commit()
     session.refresh(entry)
+    return entry
+
+
+def add_investment_entry_amount(
+    session: Session,
+    user_id: UUID,
+    year: int,
+    month: int,
+    broker: str,
+    amount: Decimal,
+) -> FinanceInvestmentEntry | None:
+    validate_investment_broker(broker)
+    if amount == 0:
+        raise ValueError("Amount cannot be zero.")
+
+    existing = session.exec(
+        select(FinanceInvestmentEntry)
+        .where(FinanceInvestmentEntry.user_id == user_id)
+        .where(FinanceInvestmentEntry.year == year)
+        .where(FinanceInvestmentEntry.month == month)
+        .where(FinanceInvestmentEntry.broker == broker)
+    ).first()
+
+    if existing:
+        new_amount = existing.amount + amount
+        if new_amount <= 0:
+            session.delete(existing)
+            return None
+        existing.amount = new_amount
+        existing.updated_at = datetime.utcnow()
+        session.add(existing)
+        return existing
+
+    if amount < 0:
+        return None
+
+    entry = FinanceInvestmentEntry(
+        user_id=user_id,
+        year=year,
+        month=month,
+        broker=broker,
+        amount=amount,
+    )
+    session.add(entry)
     return entry
 
 

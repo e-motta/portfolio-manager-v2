@@ -10,15 +10,15 @@ from app.services.cumbuca_oauth import (
     user_has_cumbuca,
 )
 from app.services.cumbuca_sync import (
-    build_account_deposit_import_rows,
+    build_account_credit_import_rows,
     build_account_expense_import_rows,
     build_credit_card_expense_import_rows,
     build_investment_import_rows,
     fetch_open_finance_error,
     get_access_token_for_user,
+    import_selected_account_credits,
     import_selected_account_debits,
     import_selected_expenses,
-    import_selected_income,
     import_selected_investments,
     pop_stashed_finance_import,
     pop_stashed_income_import,
@@ -32,6 +32,7 @@ from app.services.finance import (
     BILLS_SUBCATEGORIES,
     EXPENSE_CATEGORIES,
     EXPENSE_CATEGORY_GROUPS,
+    INVESTMENT_BROKERS,
     MONTH_LABELS,
     TRANSFER_ACCOUNTS,
     resolve_month,
@@ -207,6 +208,7 @@ def _preview_expense_import(
             ),
             "allow_transfer_import": allow_transfer_import,
             "transfer_accounts": TRANSFER_ACCOUNTS,
+            "investment_brokers": INVESTMENT_BROKERS,
             "sync_tab": "open-finance",
         },
     )
@@ -295,7 +297,23 @@ def _parse_import_kind_overrides(form) -> dict[str, str]:
     return {
         key.removeprefix("import_kind_"): value
         for key, value in form.items()
-        if key.startswith("import_kind_") and value in {"expense", "transfer"}
+        if key.startswith("import_kind_") and value in {"expense", "transfer", "investment"}
+    }
+
+
+def _parse_broker_overrides(form) -> dict[str, str]:
+    return {
+        key.removeprefix("broker_"): value
+        for key, value in form.items()
+        if key.startswith("broker_") and value
+    }
+
+
+def _parse_credit_import_kind_overrides(form) -> dict[str, str]:
+    return {
+        key.removeprefix("import_kind_"): value
+        for key, value in form.items()
+        if key.startswith("import_kind_") and value in {"income", "investment"}
     }
 
 
@@ -320,13 +338,14 @@ async def _confirm_account_debits_import(
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
     try:
-        expense_created, transfer_created = import_selected_account_debits(
+        expense_created, transfer_created, investment_created = import_selected_account_debits(
             session,
             user.id,
             rows,
             set(selected_rows),
             kind_overrides=_parse_import_kind_overrides(form),
             to_account_overrides=_parse_to_account_overrides(form),
+            broker_overrides=_parse_broker_overrides(form),
             category_overrides=_parse_expense_category_overrides(form),
             subcategory_overrides=_parse_expense_subcategory_overrides(form),
             period_overrides=_parse_period_overrides(form),
@@ -335,15 +354,24 @@ async def _confirm_account_debits_import(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if transfer_created and not expense_created:
+    if investment_created and not expense_created and not transfer_created:
+        url = f"/finance/investments?imported={investment_created}"
+    elif transfer_created and not expense_created and not investment_created:
         url = f"/finance/transfers?imported={transfer_created}"
-    elif expense_created and not transfer_created:
+    elif expense_created and not transfer_created and not investment_created:
         url = f"/finance/expenses?imported={expense_created}"
-    elif transfer_created and expense_created:
-        url = (
-            f"/finance/transfers?imported={transfer_created}"
-            f"&expenses={expense_created}"
-        )
+    elif transfer_created or expense_created or investment_created:
+        params: list[str] = []
+        if expense_created:
+            params.append(f"expenses={expense_created}")
+        if transfer_created:
+            params.append(f"transfers={transfer_created}")
+        if investment_created:
+            params.append(f"investments={investment_created}")
+        base = "/finance/expenses" if expense_created else "/finance/transfers"
+        if not expense_created and not transfer_created:
+            base = "/finance/investments"
+        url = f"{base}?{'&'.join(params)}"
     else:
         url = "/finance/expenses?imported=0"
     return RedirectResponse(url=url, status_code=303)
@@ -410,7 +438,7 @@ def preview_account_debits_sync(
         period_label="Month",
         expense_mapping=(
             f"Debits default to {month_label} {resolved_year}. "
-            "Import each row as an expense or a transfer between accounts."
+            "All amounts are outflows. Import as expense, transfer, or investment."
         ),
         year=year,
         month=month,
@@ -429,8 +457,8 @@ async def confirm_account_debits_sync(
     return await _confirm_account_debits_import(request, session, user)
 
 
-@router.post("/sync/account-deposits/preview", response_class=HTMLResponse)
-def preview_account_deposits_sync(
+@router.post("/sync/account-credits/preview", response_class=HTMLResponse)
+def preview_account_credits_sync(
     request: Request,
     session: SessionDep,
     templates: TemplatesDep,
@@ -451,7 +479,7 @@ def preview_account_deposits_sync(
 
     try:
         access_token = get_access_token_for_user(session, user)
-        rows, warnings = build_account_deposit_import_rows(
+        rows, warnings = build_account_credit_import_rows(
             session,
             user,
             year=resolved_year,
@@ -471,7 +499,7 @@ def preview_account_deposits_sync(
 
     return templates.TemplateResponse(
         request=request,
-        name="pages/open_finance_deposit_preview.html",
+        name="pages/open_finance_credit_preview.html",
         context={
             "error": error,
             "warnings": warnings,
@@ -482,19 +510,32 @@ def preview_account_deposits_sync(
             "month_label": month_label,
             "new_count": new_count,
             "existing_count": existing_count,
-            "confirm_action": "/open-finance/sync/account-deposits/confirm",
+            "confirm_action": "/open-finance/sync/account-credits/confirm",
             "month_labels": MONTH_LABELS,
             "year_options": _preview_year_options(resolved_year, rows),
             "default_import_year": resolved_year,
             "default_import_month": resolved_month,
             "default_import_label": f"{month_label} {resolved_year}",
+            "investment_brokers": INVESTMENT_BROKERS,
             "sync_tab": "open-finance",
         },
     )
 
 
-@router.post("/sync/account-deposits/confirm")
-async def confirm_account_deposits_sync(
+@router.post("/sync/account-deposits/preview", response_class=HTMLResponse)
+def preview_account_deposits_sync(
+    request: Request,
+    session: SessionDep,
+    templates: TemplatesDep,
+    user: CurrentUserDep,
+    year: int = Form(default=0),
+    month: int = Form(default=0),
+) -> HTMLResponse:
+    return preview_account_credits_sync(request, session, templates, user, year, month)
+
+
+@router.post("/sync/account-credits/confirm")
+async def confirm_account_credits_sync(
     request: Request,
     session: SessionDep,
     user: CurrentUserDep,
@@ -506,17 +547,40 @@ async def confirm_account_deposits_sync(
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
-    created = import_selected_income(
-        session,
-        user.id,
-        rows,
-        set(selected_rows),
-        period_overrides=_parse_period_overrides(form),
-    )
-    return RedirectResponse(
-        url=f"/finance/income?imported={created}",
-        status_code=303,
-    )
+    try:
+        income_created, investment_created = import_selected_account_credits(
+            session,
+            user.id,
+            rows,
+            set(selected_rows),
+            kind_overrides=_parse_credit_import_kind_overrides(form),
+            broker_overrides=_parse_broker_overrides(form),
+            period_overrides=_parse_period_overrides(form),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if investment_created and not income_created:
+        url = f"/finance/investments?imported={investment_created}"
+    elif income_created and not investment_created:
+        url = f"/finance/income?imported={income_created}"
+    elif investment_created and income_created:
+        url = (
+            f"/finance/income?imported={income_created}"
+            f"&investments={investment_created}"
+        )
+    else:
+        url = "/finance/income?imported=0"
+    return RedirectResponse(url=url, status_code=303)
+
+
+@router.post("/sync/account-deposits/confirm")
+async def confirm_account_deposits_sync(
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+) -> RedirectResponse:
+    return await confirm_account_credits_sync(request, session, user)
 
 
 @router.post("/sync/investments/preview", response_class=HTMLResponse)

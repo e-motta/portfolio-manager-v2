@@ -8,6 +8,8 @@ from sqlmodel import select
 from app.models.finance import (
     FinanceExpenseEntry,
     FinanceIncomeEntry,
+    FinanceInvestmentEntry,
+    FinanceInvestmentOpenFinanceImport,
     FinanceTransferEntry,
     FinanceVendorCategory,
 )
@@ -20,11 +22,12 @@ from app.services.cumbuca_oauth import (
     user_has_cumbuca,
 )
 from app.services.cumbuca_sync import (
-    build_account_deposit_import_rows,
+    build_account_credit_import_rows,
     build_account_expense_import_rows,
     build_credit_card_expense_import_rows,
     build_expense_import_rows,
     build_investment_import_rows,
+    import_selected_account_credits,
     import_selected_account_debits,
     import_selected_expenses,
     import_selected_income,
@@ -32,12 +35,14 @@ from app.services.cumbuca_sync import (
     map_category,
     map_payment_account,
     resolve_import_period,
+    suggest_account_credit_import_kind,
     suggest_account_debit_import_kind,
     suggest_transfer_to_account,
     _transaction_amount,
 )
 from app.services.finance import (
     BILLS_CATEGORY,
+    suggest_investment_broker,
     BILLS_SUBCATEGORY_ALUGUEL,
     load_vendor_category_map,
     load_vendor_rule_map,
@@ -170,7 +175,7 @@ def test_credit_card_uses_brazilian_amount_for_usd(session):
 def test_bank_transactions_use_import_month(session):
     user = session.exec(select(User)).one()
     rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
-    assert len(rows) == 4
+    assert len(rows) == 5
     assert all(row.month == 6 for row in rows)
 
 
@@ -181,6 +186,30 @@ def test_account_debit_transfer_suggestions():
     }
     assert suggest_account_debit_import_kind(tx, tx["transactionName"]) == "transfer"
     assert suggest_transfer_to_account(tx["transactionName"], "Nuconta", tx) == "Nubank"
+
+
+def test_account_debit_investment_suggestions():
+    tx = {
+        "type": "APLICACAO",
+        "transactionName": "Aplicacao em CDB",
+    }
+    assert suggest_account_debit_import_kind(tx, tx["transactionName"]) == "investment"
+    assert suggest_investment_broker("Nuconta", tx["transactionName"]) == "nubank"
+
+    resgate = {
+        "type": "RESGATE_APLIC_FINANCEIRA",
+        "transactionName": "Resgate CDB",
+    }
+    assert suggest_account_debit_import_kind(resgate, resgate["transactionName"]) == "investment"
+
+
+def test_account_credit_investment_suggestions():
+    tx = {
+        "type": "RESGATE_APLIC_FINANCEIRA",
+        "transactionName": "Resgate CDB",
+    }
+    assert suggest_account_credit_import_kind(tx, tx["transactionName"]) == "investment"
+    assert suggest_investment_broker("Nuconta", tx["transactionName"]) == "nubank"
 
 
 def test_pagamento_de_fatura_suggested_as_transfer():
@@ -202,6 +231,10 @@ def test_account_debit_import_marks_transfer_rows(session):
     fatura = next(row for row in rows if row.external_id == "tx-fatura")
     assert fatura.import_kind == "transfer"
     assert fatura.to_account == "Nubank"
+    aplicacao = next(row for row in rows if row.external_id == "tx-aplicacao")
+    assert aplicacao.import_kind == "investment"
+    assert aplicacao.broker == "nubank"
+    assert aplicacao.amount == Decimal("-2500.00")
 
 
 def test_imported_transfer_shows_as_transfer_in_preview(session):
@@ -229,13 +262,17 @@ def test_imported_transfer_shows_as_transfer_in_preview(session):
     assert row.payment_account == "Nuconta"
 
 
-def test_account_deposits_import_credits(session):
+def test_account_credits_import_credits(session):
     user = session.exec(select(User)).one()
-    rows, _ = build_account_deposit_import_rows(session, user, year=2026, month=6)
-    assert len(rows) == 1
-    assert rows[0].external_id == "tx-005"
-    assert rows[0].description == "SALARIO EMPRESA XYZ"
-    assert rows[0].amount == Decimal("15000.00")
+    rows, _ = build_account_credit_import_rows(session, user, year=2026, month=6)
+    assert len(rows) == 2
+    salary = next(row for row in rows if row.external_id == "tx-005")
+    assert salary.amount == Decimal("15000.00")
+    assert salary.import_kind == "income"
+    resgate = next(row for row in rows if row.external_id == "tx-resgate")
+    assert resgate.amount == Decimal("1200.00")
+    assert resgate.import_kind == "investment"
+    assert resgate.broker == "nubank"
 
 
 def test_build_expense_import_rows_from_fixtures(session):
@@ -245,8 +282,8 @@ def test_build_expense_import_rows_from_fixtures(session):
     rows, warnings = build_expense_import_rows(session, user, year=2026, month=6)
     assert not warnings
     assert len(cc_rows) == 6
-    assert len(bank_rows) == 4
-    assert len(rows) == 10
+    assert len(bank_rows) == 5
+    assert len(rows) == 11
     charges = [row for row in rows if not row.is_reversal]
     assert all(row.amount < 0 for row in charges)
     reversals = [row for row in rows if row.is_reversal]
@@ -295,7 +332,7 @@ def test_import_selected_expenses(session):
         rows,
         {row.row_key for row in rows if not row.already_exists},
     )
-    assert created == 4
+    assert created == 5
 
     again, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
     assert all(row.already_exists for row in again)
@@ -306,7 +343,7 @@ def test_import_selected_account_debits_as_transfer(session):
     rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
     transfer = next(row for row in rows if row.external_id == "tx-006")
 
-    expense_created, transfer_created = import_selected_account_debits(
+    expense_created, transfer_created, investment_created = import_selected_account_debits(
         session,
         user.id,
         rows,
@@ -315,6 +352,7 @@ def test_import_selected_account_debits_as_transfer(session):
     )
     assert expense_created == 0
     assert transfer_created == 1
+    assert investment_created == 0
 
     entry = session.exec(
         select(FinanceTransferEntry).where(FinanceTransferEntry.external_id == "tx-006")
@@ -335,7 +373,7 @@ def test_import_selected_account_debits_mixed(session):
     expense_row = next(row for row in rows if row.external_id == "tx-003")
     transfer_row = next(row for row in rows if row.external_id == "tx-006")
 
-    expense_created, transfer_created = import_selected_account_debits(
+    expense_created, transfer_created, investment_created = import_selected_account_debits(
         session,
         user.id,
         rows,
@@ -344,6 +382,47 @@ def test_import_selected_account_debits_mixed(session):
     )
     assert expense_created == 1
     assert transfer_created == 1
+    assert investment_created == 0
+
+
+def test_import_selected_account_debits_as_investment(session):
+    user = session.exec(select(User)).one()
+    rows, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    aplicacao = next(row for row in rows if row.external_id == "tx-aplicacao")
+    expense_row = next(row for row in rows if row.external_id == "tx-003")
+
+    expense_created, transfer_created, investment_created = import_selected_account_debits(
+        session,
+        user.id,
+        rows,
+        {aplicacao.row_key, expense_row.row_key},
+        kind_overrides={aplicacao.row_key: "investment"},
+    )
+    assert expense_created == 1
+    assert transfer_created == 0
+    assert investment_created == 1
+
+    entry = session.exec(
+        select(FinanceInvestmentEntry)
+        .where(FinanceInvestmentEntry.user_id == user.id)
+        .where(FinanceInvestmentEntry.year == 2026)
+        .where(FinanceInvestmentEntry.month == 6)
+        .where(FinanceInvestmentEntry.broker == "nubank")
+    ).one()
+    assert entry.amount == Decimal("2500.00")
+
+    import_row = session.exec(
+        select(FinanceInvestmentOpenFinanceImport).where(
+            FinanceInvestmentOpenFinanceImport.external_id == "tx-aplicacao"
+        )
+    ).one()
+    assert import_row.amount == Decimal("2500.00")
+
+    again, _ = build_account_expense_import_rows(session, user, year=2026, month=6)
+    matched = next(row for row in again if row.external_id == "tx-aplicacao")
+    assert matched.already_exists
+    assert matched.import_kind == "investment"
+    assert matched.broker == "nubank"
 
 
 def test_import_selected_expenses_saves_vendor_category(session):
@@ -636,12 +715,13 @@ def test_vendor_category_falls_back_to_expense_history(session):
 
 def test_import_selected_income(session):
     user = session.exec(select(User)).one()
-    rows, _ = build_account_deposit_import_rows(session, user, year=2026, month=6)
+    rows, _ = build_account_credit_import_rows(session, user, year=2026, month=6)
+    salary = next(row for row in rows if row.external_id == "tx-005")
     created = import_selected_income(
         session,
         user.id,
         rows,
-        {row.row_key for row in rows},
+        {salary.row_key},
     )
     assert created == 1
 
@@ -651,8 +731,57 @@ def test_import_selected_income(session):
     assert income.source == OPEN_FINANCE_SOURCE
     assert income.amount == Decimal("15000.00")
 
-    again, _ = build_account_deposit_import_rows(session, user, year=2026, month=6)
-    assert again[0].already_exists
+    again, _ = build_account_credit_import_rows(session, user, year=2026, month=6)
+    imported = next(row for row in again if row.external_id == "tx-005")
+    assert imported.already_exists
+
+
+def test_import_selected_account_credits_as_investment(session):
+    user = session.exec(select(User)).one()
+    session.add(
+        FinanceInvestmentEntry(
+            user_id=user.id,
+            year=2026,
+            month=6,
+            broker="nubank",
+            amount=Decimal("5000.00"),
+        )
+    )
+    session.commit()
+
+    rows, _ = build_account_credit_import_rows(session, user, year=2026, month=6)
+    resgate = next(row for row in rows if row.external_id == "tx-resgate")
+
+    income_created, investment_created = import_selected_account_credits(
+        session,
+        user.id,
+        rows,
+        {resgate.row_key},
+        kind_overrides={resgate.row_key: "investment"},
+    )
+    assert income_created == 0
+    assert investment_created == 1
+
+    entry = session.exec(
+        select(FinanceInvestmentEntry)
+        .where(FinanceInvestmentEntry.user_id == user.id)
+        .where(FinanceInvestmentEntry.year == 2026)
+        .where(FinanceInvestmentEntry.month == 6)
+        .where(FinanceInvestmentEntry.broker == "nubank")
+    ).one()
+    assert entry.amount == Decimal("3800.00")
+
+    import_row = session.exec(
+        select(FinanceInvestmentOpenFinanceImport).where(
+            FinanceInvestmentOpenFinanceImport.external_id == "tx-resgate"
+        )
+    ).one()
+    assert import_row.amount == Decimal("-1200.00")
+
+    again, _ = build_account_credit_import_rows(session, user, year=2026, month=6)
+    matched = next(row for row in again if row.external_id == "tx-resgate")
+    assert matched.already_exists
+    assert matched.import_kind == "investment"
 
 
 def test_import_selected_expenses_with_period_override(session):
@@ -681,7 +810,7 @@ def test_import_selected_expenses_with_period_override(session):
 
 def test_import_selected_income_with_period_override(session):
     user = session.exec(select(User)).one()
-    rows, _ = build_account_deposit_import_rows(session, user, year=2026, month=6)
+    rows, _ = build_account_credit_import_rows(session, user, year=2026, month=6)
     target = rows[0]
     assert target.month == 6
 

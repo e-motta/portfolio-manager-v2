@@ -67,6 +67,7 @@
                   aria-label="Import as">
             <option value="expense">Expense</option>
             <option value="transfer">Transfer</option>
+            <option value="investment">Investment</option>
           </select>
           <button type="button"
                   class="btn btn-secondary btn-small"
@@ -138,7 +139,7 @@
       </thead>
       <tbody>
         {% for row in rows %}
-        <tr class="import-row{% if row.already_exists %} import-row--existing{% else %} import-row--new{% endif %}{% if not row.already_exists and row.category == 'Outros' and row.import_kind != 'transfer' %} import-row--needs-category{% endif %}"
+        <tr class="import-row{% if row.already_exists %} import-row--existing{% else %} import-row--new{% endif %}{% if not row.already_exists and row.category == 'Outros' and row.import_kind == 'expense' %} import-row--needs-category{% endif %}"
             data-import-row
             data-row-category="{{ row.category }}"
             data-row-amount="{{ row.amount }}"
@@ -189,6 +190,7 @@
                     aria-label="Import {{ row.vendor }} as">
               <option value="expense"{% if row.import_kind == 'expense' %} selected{% endif %}>Expense</option>
               <option value="transfer"{% if row.import_kind == 'transfer' %} selected{% endif %}>Transfer</option>
+              <option value="investment"{% if row.import_kind == 'investment' %} selected{% endif %}>Investment</option>
             </select>
             {% endif %}
           </td>
@@ -202,6 +204,8 @@
                 <span class="of-transfer-route__arrow" aria-hidden="true">→</span>
                 <span>{{ row.to_account or '—' }}</span>
               </span>
+              {% elif row.import_kind == 'investment' %}
+              <span class="status-pill ok">{{ row.broker|investment_broker_label }}</span>
               {% else %}
               <div class="of-import-details of-import-details--static">
                 {{ category_badge(row.category) }}
@@ -214,7 +218,7 @@
             <div class="of-import-details">
               <div class="of-import-details__expense"
                    data-of-expense-details
-                   {% if row.import_kind == 'transfer' %}hidden{% endif %}>
+                   {% if row.import_kind != 'expense' %}hidden{% endif %}>
                 <div class="of-import-details__expense-fields">
                   {{ category_picker("category_" ~ row.row_key, row.category, row_key=row.row_key) }}
                   <div class="of-subcategory-slot"
@@ -243,6 +247,18 @@
                     {% endfor %}
                   </select>
                 </div>
+              </div>
+              <div class="of-import-details__investment"
+                   data-of-investment-details
+                   {% if row.import_kind != 'investment' %}hidden{% endif %}>
+                <select name="broker_{{ row.row_key }}"
+                        class="input-md"
+                        data-of-broker
+                        aria-label="Investment broker for {{ row.vendor }}">
+                  {% for broker_key, broker_label in investment_brokers %}
+                  <option value="{{ broker_key }}"{% if broker_key == row.broker %} selected{% endif %}>{{ broker_label }}</option>
+                  {% endfor %}
+                </select>
               </div>
             </div>
             {% endif %}
@@ -278,9 +294,12 @@
           <td class="num">
             {% if allow_transfer_import %}
             <div data-of-transfer-amount{% if row.import_kind != 'transfer' %} hidden{% endif %}>
-              <span class="money pl-positive">{{ (-row.amount)|brl }}</span>
+              <span class="money pl-negative">{{ row.amount|pl_brl }}</span>
             </div>
-            <div data-of-expense-amount{% if row.import_kind == 'transfer' %} hidden{% endif %}>
+            <div data-of-investment-amount{% if row.import_kind != 'investment' %} hidden{% endif %}>
+              <span class="money pl-investment">{{ (-row.amount)|pl_brl }}</span>
+            </div>
+            <div data-of-expense-amount{% if row.import_kind == 'expense' %}{% else %} hidden{% endif %}>
             {% endif %}
             {% set active_subcategory = row.subcategory if row.category == bills_category else none %}
             {% set row_effective = row.amount|effective_expense_amount_for(active_subcategory) %}
@@ -305,6 +324,8 @@
             <span class="status-pill status-pill--reversal">Reversal</span>
             {% elif allow_transfer_import and row.import_kind == 'transfer' %}
             <span class="status-pill ok">Transfer</span>
+            {% elif allow_transfer_import and row.import_kind == 'investment' %}
+            <span class="status-pill ok">Investment</span>
             {% elif row.category == 'Outros' %}
             <span class="status-pill warn">Review</span>
             {% else %}

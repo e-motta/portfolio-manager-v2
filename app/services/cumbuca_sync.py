@@ -11,7 +11,12 @@ from sqlmodel import Session, select
 
 from fastapi import HTTPException
 
-from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry, FinanceTransferEntry
+from app.models.finance import (
+    FinanceExpenseEntry,
+    FinanceIncomeEntry,
+    FinanceInvestmentOpenFinanceImport,
+    FinanceTransferEntry,
+)
 from app.models.investment import Investment
 from app.models.user import User
 from app.services.cumbuca_mcp import (
@@ -25,12 +30,15 @@ from app.services.finance import (
     EXPENSE_CATEGORIES,
     PAYMENT_ACCOUNTS,
     TRANSFER_ACCOUNTS,
+    add_investment_entry_amount,
     load_import_vendor_rule_map,
     load_vendor_rule_map,
     normalize_vendor_key,
     resolve_expense_subcategory,
     save_vendor_category,
     suggest_expense_category,
+    suggest_investment_broker,
+    validate_investment_broker,
     validate_transfer_accounts,
     VendorRule,
 )
@@ -122,6 +130,7 @@ class ImportExpenseRow:
     subcategory: str | None = None
     import_kind: str = "expense"
     to_account: str | None = None
+    broker: str | None = None
     description: str = ""
 
 
@@ -137,6 +146,8 @@ class ImportIncomeRow:
     payment_account: str
     already_exists: bool
     selected: bool
+    import_kind: str = "income"
+    broker: str | None = None
 
 
 @dataclass
@@ -244,12 +255,21 @@ def _transfer_vendor_haystacks(vendor: str) -> tuple[str, ...]:
 
 def suggest_account_debit_import_kind(tx: dict[str, Any], vendor: str) -> str:
     tx_type = str(tx.get("type") or "").upper()
+    if tx_type in INVESTMENT_TRANSACTION_TYPES:
+        return "investment"
     if tx_type in TRANSFER_TRANSACTION_TYPES:
         return "transfer"
     for haystack in _transfer_vendor_haystacks(vendor):
         if any(keyword in haystack for keyword in TRANSFER_VENDOR_KEYWORDS):
             return "transfer"
     return "expense"
+
+
+def suggest_account_credit_import_kind(tx: dict[str, Any], description: str) -> str:
+    tx_type = str(tx.get("type") or "").upper()
+    if tx_type in INVESTMENT_TRANSACTION_TYPES:
+        return "investment"
+    return "income"
 
 
 def suggest_transfer_to_account(
@@ -378,8 +398,10 @@ def _existing_transfer_ids(session: Session, user_id: UUID) -> set[str]:
 
 
 def _existing_open_finance_debit_ids(session: Session, user_id: UUID) -> set[str]:
-    return _existing_expense_ids(session, user_id) | _existing_transfer_ids(
-        session, user_id
+    return (
+        _existing_expense_ids(session, user_id)
+        | _existing_transfer_ids(session, user_id)
+        | _existing_investment_import_ids(session, user_id)
     )
 
 
@@ -407,11 +429,31 @@ def _existing_open_finance_transfer_map(
     return {entry.external_id: entry for entry in entries if entry.external_id}
 
 
+def _existing_investment_import_ids(session: Session, user_id: UUID) -> set[str]:
+    rows = session.exec(
+        select(FinanceInvestmentOpenFinanceImport.external_id)
+        .where(FinanceInvestmentOpenFinanceImport.user_id == user_id)
+    ).all()
+    return {row for row in rows if row}
+
+
+def _existing_open_finance_investment_import_map(
+    session: Session, user_id: UUID
+) -> dict[str, FinanceInvestmentOpenFinanceImport]:
+    entries = session.exec(
+        select(FinanceInvestmentOpenFinanceImport).where(
+            FinanceInvestmentOpenFinanceImport.user_id == user_id
+        )
+    ).all()
+    return {entry.external_id: entry for entry in entries}
+
+
 def _apply_imported_open_finance_debit(
     row: ImportExpenseRow,
     *,
     expenses: dict[str, FinanceExpenseEntry],
     transfers: dict[str, FinanceTransferEntry],
+    investments: dict[str, FinanceInvestmentOpenFinanceImport],
 ) -> None:
     imported_transfer = transfers.get(row.external_id)
     if imported_transfer is not None:
@@ -420,6 +462,14 @@ def _apply_imported_open_finance_debit(
         row.payment_account = imported_transfer.from_account
         row.year = imported_transfer.year
         row.month = imported_transfer.month
+        return
+
+    imported_investment = investments.get(row.external_id)
+    if imported_investment is not None:
+        row.import_kind = "investment"
+        row.broker = imported_investment.broker
+        row.year = imported_investment.year
+        row.month = imported_investment.month
         return
 
     imported_expense = expenses.get(row.external_id)
@@ -442,6 +492,47 @@ def _existing_income_ids(session: Session, user_id: UUID) -> set[str]:
         .where(FinanceIncomeEntry.external_id.is_not(None))  # type: ignore[union-attr]
     ).all()
     return {row for row in rows if row}
+
+
+def _existing_open_finance_income_map(
+    session: Session, user_id: UUID
+) -> dict[str, FinanceIncomeEntry]:
+    entries = session.exec(
+        select(FinanceIncomeEntry)
+        .where(FinanceIncomeEntry.user_id == user_id)
+        .where(FinanceIncomeEntry.source == OPEN_FINANCE_SOURCE)
+        .where(FinanceIncomeEntry.external_id.is_not(None))  # type: ignore[union-attr]
+    ).all()
+    return {entry.external_id: entry for entry in entries if entry.external_id}
+
+
+def _existing_open_finance_credit_ids(session: Session, user_id: UUID) -> set[str]:
+    return _existing_income_ids(session, user_id) | _existing_investment_import_ids(
+        session, user_id
+    )
+
+
+def _apply_imported_open_finance_credit(
+    row: ImportIncomeRow,
+    *,
+    incomes: dict[str, FinanceIncomeEntry],
+    investments: dict[str, FinanceInvestmentOpenFinanceImport],
+) -> None:
+    imported_investment = investments.get(row.external_id)
+    if imported_investment is not None:
+        row.import_kind = "investment"
+        row.broker = imported_investment.broker
+        row.year = imported_investment.year
+        row.month = imported_investment.month
+        return
+
+    imported_income = incomes.get(row.external_id)
+    if imported_income is None:
+        return
+
+    row.import_kind = "income"
+    row.year = imported_income.year
+    row.month = imported_income.month
 
 
 def _existing_investment_map(session: Session) -> dict[str, Investment]:
@@ -521,11 +612,11 @@ def _normalize_expense_transaction(
         return None
 
     tx_type = str(tx.get("type") or "").upper()
-    if tx_type in INVESTMENT_TRANSACTION_TYPES:
+    if tx_type in INVESTMENT_TRANSACTION_TYPES and source_kind != "bank":
         return None
 
     amount_raw = _transaction_amount(tx)
-    if amount_raw is None or amount_raw <= 0:
+    if amount_raw is None or amount_raw == 0:
         return None
     amount = abs(amount_raw) if is_reversal else -abs(amount_raw)
 
@@ -598,7 +689,7 @@ def _normalize_expense_transaction(
     )
 
 
-def _normalize_deposit_transaction(
+def _normalize_credit_transaction(
     tx: dict[str, Any],
     account_lookup: dict[str, dict[str, Any]],
 ) -> ImportIncomeRow | None:
@@ -612,12 +703,8 @@ def _normalize_deposit_transaction(
     if str(tx.get("creditDebitType", "")).upper() != "CREDITO":
         return None
 
-    tx_type = str(tx.get("type") or "").upper()
-    if tx_type in INVESTMENT_TRANSACTION_TYPES:
-        return None
-
     amount_raw = _transaction_amount(tx)
-    if amount_raw is None or amount_raw <= 0:
+    if amount_raw is None or amount_raw == 0:
         return None
 
     tx_date = _parse_date(tx.get("transactionDateTime") or tx.get("transactionDate"))
@@ -648,6 +735,13 @@ def _normalize_deposit_transaction(
         already_exists=False,
         selected=True,
     )
+
+
+def _normalize_deposit_transaction(
+    tx: dict[str, Any],
+    account_lookup: dict[str, dict[str, Any]],
+) -> ImportIncomeRow | None:
+    return _normalize_credit_transaction(tx, account_lookup)
 
 
 def _normalize_transaction(
@@ -800,7 +894,10 @@ def build_account_expense_import_rows(
     account_lookup = _account_lookup(accounts, credit_cards)
     existing_expenses = _existing_open_finance_expense_map(session, user.id)
     existing_transfers = _existing_open_finance_transfer_map(session, user.id)
-    existing_ids = set(existing_expenses) | set(existing_transfers)
+    existing_investments = _existing_open_finance_investment_import_map(session, user.id)
+    existing_ids = (
+        set(existing_expenses) | set(existing_transfers) | set(existing_investments)
+    )
     vendor_rules = load_import_vendor_rule_map(session, user.id)
     rows: list[ImportExpenseRow] = []
 
@@ -822,11 +919,14 @@ def build_account_expense_import_rows(
                 row.payment_account,
                 tx,
             )
+        elif row.import_kind == "investment":
+            row.broker = suggest_investment_broker(row.payment_account, row.vendor)
         if row.external_id in existing_ids:
             _apply_imported_open_finance_debit(
                 row,
                 expenses=existing_expenses,
                 transfers=existing_transfers,
+                investments=existing_investments,
             )
         row.already_exists = row.external_id in existing_ids
         row.selected = not row.already_exists
@@ -836,7 +936,7 @@ def build_account_expense_import_rows(
     return rows, warnings
 
 
-def build_account_deposit_import_rows(
+def build_account_credit_import_rows(
     session: Session,
     user: User,
     *,
@@ -850,21 +950,49 @@ def build_account_deposit_import_rows(
         month=month,
     )
     account_lookup = _account_lookup(accounts, credit_cards)
-    existing_ids = _existing_income_ids(session, user.id)
+    existing_incomes = _existing_open_finance_income_map(session, user.id)
+    existing_investments = _existing_open_finance_investment_import_map(session, user.id)
+    existing_ids = set(existing_incomes) | set(existing_investments)
     rows: list[ImportIncomeRow] = []
 
     for tx in transactions:
-        row = _normalize_deposit_transaction(tx, account_lookup)
+        row = _normalize_credit_transaction(tx, account_lookup)
         if row is None:
             continue
         if row.year != year or row.month != month:
             continue
+        row.import_kind = suggest_account_credit_import_kind(tx, row.description)
+        if row.import_kind == "investment":
+            row.broker = suggest_investment_broker(row.payment_account, row.description)
+        if row.external_id in existing_ids:
+            _apply_imported_open_finance_credit(
+                row,
+                incomes=existing_incomes,
+                investments=existing_investments,
+            )
         row.already_exists = row.external_id in existing_ids
         row.selected = not row.already_exists
         rows.append(row)
 
     rows.sort(key=lambda item: (item.transaction_date, item.description))
     return rows, warnings
+
+
+def build_account_deposit_import_rows(
+    session: Session,
+    user: User,
+    *,
+    year: int,
+    month: int,
+    access_token: str | None = None,
+) -> tuple[list[ImportIncomeRow], list[str]]:
+    return build_account_credit_import_rows(
+        session,
+        user,
+        year=year,
+        month=month,
+        access_token=access_token,
+    )
 
 
 def build_expense_import_rows(
@@ -1100,6 +1228,57 @@ def import_selected_transfers(
     return created
 
 
+def import_selected_finance_investments(
+    session: Session,
+    user_id: UUID,
+    rows: list[ImportExpenseRow],
+    selected_keys: set[str],
+    *,
+    kind_overrides: dict[str, str] | None = None,
+    broker_overrides: dict[str, str] | None = None,
+    period_overrides: dict[str, tuple[int, int]] | None = None,
+) -> int:
+    kind_overrides = kind_overrides or {}
+    broker_overrides = broker_overrides or {}
+    created = 0
+    for row in rows:
+        if row.row_key not in selected_keys or row.already_exists:
+            continue
+        import_kind = kind_overrides.get(row.row_key, row.import_kind)
+        if import_kind != "investment":
+            continue
+
+        broker = broker_overrides.get(row.row_key, row.broker)
+        if not broker:
+            raise ValueError(f"Missing broker for {row.vendor}.")
+        validate_investment_broker(broker)
+
+        import_year, import_month = resolve_import_period(row.row_key, row, period_overrides)
+        amount = abs(row.amount)
+        add_investment_entry_amount(
+            session,
+            user_id,
+            import_year,
+            import_month,
+            broker,
+            amount,
+        )
+        session.add(
+            FinanceInvestmentOpenFinanceImport(
+                user_id=user_id,
+                external_id=row.external_id,
+                year=import_year,
+                month=import_month,
+                broker=broker,
+                amount=amount,
+            )
+        )
+        created += 1
+    if created:
+        session.commit()
+    return created
+
+
 def import_selected_account_debits(
     session: Session,
     user_id: UUID,
@@ -1108,23 +1287,30 @@ def import_selected_account_debits(
     *,
     kind_overrides: dict[str, str] | None = None,
     to_account_overrides: dict[str, str] | None = None,
+    broker_overrides: dict[str, str] | None = None,
     category_overrides: dict[str, str] | None = None,
     subcategory_overrides: dict[str, str | None] | None = None,
     period_overrides: dict[str, tuple[int, int]] | None = None,
     description_overrides: dict[str, str] | None = None,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     kind_overrides = kind_overrides or {}
     expense_rows: list[ImportExpenseRow] = []
     transfer_rows: list[ImportExpenseRow] = []
+    investment_rows: list[ImportExpenseRow] = []
     expense_keys: set[str] = set()
     transfer_keys: set[str] = set()
+    investment_keys: set[str] = set()
 
     for row in rows:
         if row.row_key not in selected_keys or row.already_exists:
             continue
-        if kind_overrides.get(row.row_key, row.import_kind) == "transfer":
+        import_kind = kind_overrides.get(row.row_key, row.import_kind)
+        if import_kind == "transfer":
             transfer_rows.append(row)
             transfer_keys.add(row.row_key)
+        elif import_kind == "investment":
+            investment_rows.append(row)
+            investment_keys.add(row.row_key)
         else:
             expense_rows.append(row)
             expense_keys.add(row.row_key)
@@ -1148,7 +1334,16 @@ def import_selected_account_debits(
         to_account_overrides=to_account_overrides,
         period_overrides=period_overrides,
     )
-    return expense_created, transfer_created
+    investment_created = import_selected_finance_investments(
+        session,
+        user_id,
+        investment_rows,
+        investment_keys,
+        kind_overrides=kind_overrides,
+        broker_overrides=broker_overrides,
+        period_overrides=period_overrides,
+    )
+    return expense_created, transfer_created, investment_created
 
 
 def import_selected_income(
@@ -1156,11 +1351,16 @@ def import_selected_income(
     user_id: UUID,
     rows: list[ImportIncomeRow],
     selected_keys: set[str],
+    *,
+    kind_overrides: dict[str, str] | None = None,
     period_overrides: dict[str, tuple[int, int]] | None = None,
 ) -> int:
+    kind_overrides = kind_overrides or {}
     created = 0
     for row in rows:
         if row.row_key not in selected_keys or row.already_exists:
+            continue
+        if kind_overrides.get(row.row_key, row.import_kind) != "income":
             continue
         import_year, import_month = resolve_import_period(row.row_key, row, period_overrides)
         session.add(
@@ -1179,6 +1379,104 @@ def import_selected_income(
     if created:
         session.commit()
     return created
+
+
+def import_selected_finance_investment_credits(
+    session: Session,
+    user_id: UUID,
+    rows: list[ImportIncomeRow],
+    selected_keys: set[str],
+    *,
+    kind_overrides: dict[str, str] | None = None,
+    broker_overrides: dict[str, str] | None = None,
+    period_overrides: dict[str, tuple[int, int]] | None = None,
+) -> int:
+    kind_overrides = kind_overrides or {}
+    broker_overrides = broker_overrides or {}
+    created = 0
+    for row in rows:
+        if row.row_key not in selected_keys or row.already_exists:
+            continue
+        import_kind = kind_overrides.get(row.row_key, row.import_kind)
+        if import_kind != "investment":
+            continue
+
+        broker = broker_overrides.get(row.row_key, row.broker)
+        if not broker:
+            raise ValueError(f"Missing broker for {row.description}.")
+        validate_investment_broker(broker)
+
+        import_year, import_month = resolve_import_period(row.row_key, row, period_overrides)
+        amount = -abs(row.amount)
+        add_investment_entry_amount(
+            session,
+            user_id,
+            import_year,
+            import_month,
+            broker,
+            amount,
+        )
+        session.add(
+            FinanceInvestmentOpenFinanceImport(
+                user_id=user_id,
+                external_id=row.external_id,
+                year=import_year,
+                month=import_month,
+                broker=broker,
+                amount=amount,
+            )
+        )
+        created += 1
+    if created:
+        session.commit()
+    return created
+
+
+def import_selected_account_credits(
+    session: Session,
+    user_id: UUID,
+    rows: list[ImportIncomeRow],
+    selected_keys: set[str],
+    *,
+    kind_overrides: dict[str, str] | None = None,
+    broker_overrides: dict[str, str] | None = None,
+    period_overrides: dict[str, tuple[int, int]] | None = None,
+) -> tuple[int, int]:
+    kind_overrides = kind_overrides or {}
+    income_rows: list[ImportIncomeRow] = []
+    investment_rows: list[ImportIncomeRow] = []
+    income_keys: set[str] = set()
+    investment_keys: set[str] = set()
+
+    for row in rows:
+        if row.row_key not in selected_keys or row.already_exists:
+            continue
+        import_kind = kind_overrides.get(row.row_key, row.import_kind)
+        if import_kind == "investment":
+            investment_rows.append(row)
+            investment_keys.add(row.row_key)
+        else:
+            income_rows.append(row)
+            income_keys.add(row.row_key)
+
+    income_created = import_selected_income(
+        session,
+        user_id,
+        income_rows,
+        income_keys,
+        kind_overrides=kind_overrides,
+        period_overrides=period_overrides,
+    )
+    investment_created = import_selected_finance_investment_credits(
+        session,
+        user_id,
+        investment_rows,
+        investment_keys,
+        kind_overrides=kind_overrides,
+        broker_overrides=broker_overrides,
+        period_overrides=period_overrides,
+    )
+    return income_created, investment_created
 
 
 def import_selected_investments(

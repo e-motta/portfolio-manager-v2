@@ -1057,6 +1057,11 @@ body {
   color: var(--muted);
 }
 
+.pl-investment,
+.value.pl-investment {
+  color: var(--primary);
+}
+
 .value-chip {
   display: inline-flex;
   align-items: baseline;
@@ -4683,7 +4688,7 @@ body.form-modal-open {
   border-top: 3px solid var(--primary);
 }
 
-.open-finance-card--account-deposits {
+.open-finance-card--account-credits {
   border-top: 3px solid var(--buy);
 }
 
@@ -4728,7 +4733,7 @@ body.form-modal-open {
   color: var(--primary);
 }
 
-.open-finance-card--account-deposits .open-finance-card__icon {
+.open-finance-card--account-credits .open-finance-card__icon {
   background: var(--buy-soft);
   color: var(--buy);
 }
