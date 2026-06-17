@@ -31,13 +31,13 @@ def test_suggest_expense_category_maps_vendors():
 
     assert expense_category_slug("Supermercado") == "grocery"
     assert suggest_expense_category("Example Grocery", "Supermercado + online") == "Supermercado"
-    assert suggest_expense_category("Example Cafe", "Outros") == "Supermercado"
+    assert suggest_expense_category("Example Cafe", "Outros") == "Alimentação fora"
     assert suggest_expense_category("Example Gym", "Fixos") == "Academia e treino"
     assert suggest_expense_category("RD", "Fixos") == "Assinaturas digitais"
     assert suggest_expense_category("EON", "Fixos") == "Corrida"
     assert suggest_expense_category("Coco", "Outros") == "Bar e lazer"
-    assert suggest_expense_category("Capa celular", "Outros") == "Compras online"
-    assert suggest_expense_category("Netshoes Boston 13", "Outros") == "Corrida"
+    assert suggest_expense_category("Shopee item", "Outros") == "Compras online"
+    assert suggest_expense_category("Netshoes Example", "Outros") == "Corrida"
     assert suggest_expense_category("UBER *TRIP", "") == "Transporte"
     assert suggest_expense_category("Random merchant", "Outros") == "Outros"
 
@@ -49,7 +49,7 @@ def test_normalize_vendor_key_strips_installment_suffix():
     assert normalize_vendor_key("Pura Vida 6/6") == "pura vida"
     assert normalize_vendor_key("Centauro Ce64 6/8") == "centauro ce64"
     assert normalize_vendor_key("Merchant (3/10)") == "merchant"
-    assert normalize_vendor_key("Netshoes Boston 13") == "netshoes example 13"
+    assert normalize_vendor_key("Netshoes Example") == "netshoes example"
 
 
 def _test_user(session) -> User:
@@ -85,7 +85,7 @@ def test_income_entry_totals(session, client):
 
     response = client.get("/finance/income?year=2026")
     assert response.status_code == 200
-    assert "MH" in response.text
+    assert "Client payment" in response.text
 
 
 def test_expense_entry_stored_negative(session, client):

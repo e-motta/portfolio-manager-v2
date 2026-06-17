@@ -222,17 +222,7 @@ def normalize_vendor_key(vendor: str) -> str:
 def suggest_expense_category(vendor: str, current_category: str = "") -> str:
     vendor_key = normalize_vendor_key(vendor)
 
-    if any(
-        keyword in vendor_key
-        for keyword in (
-            "example accessory",
-            "pulseiras relógio",
-            "pulseiras relogio",
-            "capa celular",
-        )
-    ):
-        return "Compras online"
-    if vendor_key in {"amazon", "mercado livre"}:
+    if vendor_key in {"amazon", "mercado livre"} or "shopee" in vendor_key:
         return "Compras online"
     if any(
         keyword in vendor_key
@@ -241,33 +231,20 @@ def suggest_expense_category(vendor: str, current_category: str = "") -> str:
             "growth",
             "hydrolite",
             "gel dobro",
+            "suplemento",
         )
     ):
         return "Suplementos"
     if vendor_key == "eon" or vendor_key.startswith("corrida") or any(
         keyword in vendor_key
-        for keyword in ("safety run", "foto corrida", "netshoes example", "asics superblast")
-    ):
-        return "Corrida"
-    if any(
-        keyword in vendor_key
-        for keyword in (
-            "regata tf",
-            "bermuda+boné",
-            "bermuda+bone",
-            "meias netshoes",
-            "luva shopee",
-            "garrafa shopee",
-            "elásticos exercício",
-            "elasticos exercicio",
-        )
+        for keyword in ("safety run", "foto corrida", "netshoes", "asics")
     ):
         return "Corrida"
     if any(keyword in vendor_key for keyword in ("dentista", "fisio", "cabelo")):
         return "Saúde"
-    if any(keyword in vendor_key for keyword in ("anuidade oab", "udemy", "curso ")):
+    if any(keyword in vendor_key for keyword in ("anuidade", "udemy", "curso ")):
         return "Profissional"
-    if vendor_key == "coco":
+    if vendor_key == "coco" or "bar" in vendor_key:
         return "Bar e lazer"
     if "presente" in vendor_key:
         return "Presentes"
@@ -275,39 +252,44 @@ def suggest_expense_category(vendor: str, current_category: str = "") -> str:
         keyword in vendor_key
         for keyword in (
             "panela",
-            "mop shopee",
-            "pegador panela",
-            "rodo pia",
-            "suporte ",
-            "lâmpada shopee",
-            "lampada shopee",
-            "isolamento porta",
-            "funil",
+            "mop",
+            "casa",
+            "home",
         )
     ):
         return "Casa"
     if vendor_key == "rd":
         return "Assinaturas digitais"
-    if vendor_key == "gogood":
+    if any(keyword in vendor_key for keyword in ("example gym", "gogood", "academia")):
         return "Academia e treino"
     if any(keyword in vendor_key for keyword in ("spotify", "youtube", "cursor")):
         return "Assinaturas digitais"
-    if "nucel" in vendor_key:
+    if "nucel" in vendor_key or "telecom" in vendor_key:
         return "Telecom"
     if "seguro" in vendor_key:
         return "Seguros"
-    if "contabilizei" in vendor_key:
+    if "contabilizei" in vendor_key or "contador" in vendor_key:
         return "Contabilidade / PJ"
     if any(
         keyword in vendor_key
-        for keyword in ("angeloni", "hiperbom", "nativa", "imperatriz", "baggio")
+        for keyword in (
+            "example grocery",
+            "angeloni",
+            "hiperbom",
+            "supermarket",
+            "grocery",
+            "baggio",
+        )
     ):
         return "Supermercado"
-    if vendor_key == "example cafe":
+    if any(
+        keyword in vendor_key
+        for keyword in ("example cafe", "falah", "cafe", "restaurante")
+    ):
         return "Alimentação fora"
     if "uber" in vendor_key:
         return "Transporte"
-    if "outback" in vendor_key or "restaurante" in vendor_key:
+    if "outback" in vendor_key:
         return "Alimentação fora"
 
     migrated = LEGACY_EXPENSE_CATEGORY_MIGRATION.get(current_category, current_category)
