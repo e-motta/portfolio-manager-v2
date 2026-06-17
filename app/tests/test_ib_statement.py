@@ -23,8 +23,8 @@ from app.tests.conftest import make_lot
 
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-EXAMPLE_CSV = FIXTURES / "U00000001_2024_2024.csv"
-POSITIONS_ONLY_CSV = FIXTURES / "U00000001_20260101_20260609.csv"
+EXAMPLE_CSV = FIXTURES / "ib_example_2024_2024.csv"
+POSITIONS_ONLY_CSV = FIXTURES / "ib_example_20260101_20260609.csv"
 
 
 @pytest.fixture(autouse=True)

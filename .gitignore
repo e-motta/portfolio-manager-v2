@@ -1,4 +1,5 @@
 .DS_Store
+temp_examples/
 __pycache__/
 *.py[cod]
 *.db

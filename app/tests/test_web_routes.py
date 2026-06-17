@@ -310,7 +310,7 @@ def test_statement_import_preview(client, session, exchange_type):
     from app.tests.conftest import make_lot
 
     csv_path = (
-        Path(__file__).resolve().parent / "fixtures" / "U00000001_2024_2024.csv"
+        Path(__file__).resolve().parent / "fixtures" / "ib_example_2024_2024.csv"
     )
     make_lot(
         session,
@@ -347,7 +347,7 @@ def test_statement_import_preview_positions_only_has_no_lots(client):
     csv_path = (
         Path(__file__).resolve().parent
         / "fixtures"
-        / "U00000001_20260101_20260609.csv"
+        / "ib_example_20260101_20260609.csv"
     )
 
     with csv_path.open("rb") as handle:
@@ -376,7 +376,7 @@ def test_statement_import_confirm_adds_positions(client, session, exchange_type)
 
     clear_import_stash()
     csv_path = (
-        Path(__file__).resolve().parent / "fixtures" / "U00000001_2024_2024.csv"
+        Path(__file__).resolve().parent / "fixtures" / "ib_example_2024_2024.csv"
     )
     statement = parse_ib_statement(csv_path.read_text(encoding="utf-8"))
     token = stash_import(statement)
@@ -409,7 +409,7 @@ def test_dividend_import_preview(client, session, exchange_type):
     from app.services.ib_statement import dividend_selection_key
 
     csv_path = (
-        Path(__file__).resolve().parent / "fixtures" / "U00000001_2024_2024.csv"
+        Path(__file__).resolve().parent / "fixtures" / "ib_example_2024_2024.csv"
     )
     session.add(
         Dividend(
