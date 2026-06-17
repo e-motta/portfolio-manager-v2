@@ -7,6 +7,7 @@ Create Date: 2026-06-12
 
 from typing import Sequence, Union
 
+import sqlalchemy as sa
 from alembic import op
 
 revision: str = "019"
@@ -16,17 +17,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    from sqlmodel import Session
-
-    from app.services.finance_seed import seed_fixos_outros_if_missing
-
-    bind = op.get_bind()
-    with Session(bind) as session:
-        seed_fixos_outros_if_missing(session)
+    pass
 
 
 def downgrade() -> None:
     bind = op.get_bind()
     bind.execute(
-        "DELETE FROM finance_expense_entries WHERE category IN ('Fixos', 'Outros')"
+        sa.text(
+            "DELETE FROM finance_expense_entries WHERE category IN ('Fixos', 'Outros')"
+        )
     )
