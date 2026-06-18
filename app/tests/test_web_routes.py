@@ -316,8 +316,8 @@ def test_statement_import_preview(client, session, exchange_type):
         session,
         exchange_type.id,
         "VTI",
-        Decimal("24"),
-        Decimal("295.61"),
+        Decimal("8"),
+        Decimal("100.00"),
         purchase_date=date(2024, 11, 14),
     )
 
@@ -416,14 +416,14 @@ def test_dividend_import_preview(client, session, exchange_type):
             asset_type_id=exchange_type.id,
             symbol="VTI",
             pay_date=date(2024, 12, 26),
-            gross_amount_usd=Decimal("23.76"),
-            withholding_tax_usd=Decimal("7.13"),
-            net_amount_usd=Decimal("16.63"),
+            gross_amount_usd=Decimal("20.00"),
+            withholding_tax_usd=Decimal("6.00"),
+            net_amount_usd=Decimal("14.00"),
             source="ib_statement",
             import_key=dividend_selection_key(
                 "VTI",
                 date(2024, 12, 26),
-                Decimal("23.76"),
+                Decimal("20.00"),
             ),
         )
     )
@@ -454,8 +454,8 @@ def test_create_manual_dividend(client, session, exchange_type):
         data={
             "symbol": "VTI",
             "pay_date": "2024-12-26",
-            "gross_amount_usd": "23.76",
-            "withholding_tax_usd": "7.13",
+            "gross_amount_usd": "20.00",
+            "withholding_tax_usd": "6.00",
         },
         follow_redirects=False,
     )
@@ -468,7 +468,7 @@ def test_create_manual_dividend(client, session, exchange_type):
         )
     ).one()
     assert dividend.source == "manual"
-    assert dividend.net_amount_usd == Decimal("16.63")
+    assert dividend.net_amount_usd == Decimal("14.00")
 
 
 def test_holdings_page_shows_dividends_section(client):

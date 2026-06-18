@@ -1,4 +1,4 @@
-"""seed finance data from synthetic placeholder
+"""finance seed migration placeholder
 
 Revision ID: 018
 Revises: 017

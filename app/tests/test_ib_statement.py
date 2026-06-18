@@ -46,8 +46,8 @@ def test_parse_example_statement():
     assert len(statement.trades) == 12
 
     vti = next(position for position in statement.positions if position.symbol == "VTI")
-    assert vti.quantity == Decimal("25.2478")
-    assert vti.close_price_usd == Decimal("289.81")
+    assert vti.quantity == Decimal("10.0000")
+    assert vti.close_price_usd == Decimal("100.00")
 
 
 def test_build_import_lot_rows_marks_matching_lots(session, exchange_type):
@@ -57,8 +57,8 @@ def test_build_import_lot_rows_marks_matching_lots(session, exchange_type):
         session,
         exchange_type.id,
         "VTI",
-        Decimal("24"),
-        Decimal("295.61"),
+        Decimal("8"),
+        Decimal("100.00"),
         purchase_date=date(2024, 11, 14),
     )
 
@@ -68,8 +68,8 @@ def test_build_import_lot_rows_marks_matching_lots(session, exchange_type):
             lot_selection_key(
                 "VTI",
                 date(2024, 11, 14),
-                Decimal("24"),
-                Decimal("295.61"),
+                Decimal("8"),
+                Decimal("100.00"),
             )
         },
     )
@@ -79,7 +79,7 @@ def test_build_import_lot_rows_marks_matching_lots(session, exchange_type):
     imported = next(
         row
         for row in vti_rows
-        if row.trade_date == date(2024, 11, 14) and row.quantity == Decimal("24")
+        if row.trade_date == date(2024, 11, 14) and row.quantity == Decimal("8")
     )
     new_lot = next(
         row
@@ -99,16 +99,16 @@ def test_import_selected_lots_can_add_second_lot_for_existing_symbol(session, ex
         session,
         exchange_type.id,
         "VTI",
-        Decimal("24"),
-        Decimal("295.61"),
+        Decimal("8"),
+        Decimal("100.00"),
         purchase_date=date(2024, 11, 14),
     )
 
     second_vti_key = lot_selection_key(
         "VTI",
         date(2024, 12, 16),
-        Decimal("1.2478"),
-        Decimal("301.312787306"),
+        Decimal("2"),
+        Decimal("105.00"),
     )
     created = import_selected_lots(
         session,
@@ -167,9 +167,9 @@ def test_parse_example_statement_dividends():
     assert len(statement.dividends) == 6
     vti = next(dividend for dividend in statement.dividends if dividend.symbol == "VTI")
     assert vti.pay_date == date(2024, 12, 26)
-    assert vti.gross_amount_usd == Decimal("23.76")
-    assert vti.withholding_tax_usd == Decimal("7.13")
-    assert vti.net_amount_usd == Decimal("16.63")
+    assert vti.gross_amount_usd == Decimal("20.00")
+    assert vti.withholding_tax_usd == Decimal("6.00")
+    assert vti.net_amount_usd == Decimal("14.00")
 
 
 def test_positions_only_statement_has_dividends():
@@ -184,7 +184,7 @@ def test_positions_only_statement_has_dividends():
 def test_build_import_dividend_rows_marks_existing(session, exchange_type):
     content = EXAMPLE_CSV.read_text(encoding="utf-8")
     statement = parse_ib_statement(content)
-    existing_key = dividend_selection_key("VTI", date(2024, 12, 26), Decimal("23.76"))
+    existing_key = dividend_selection_key("VTI", date(2024, 12, 26), Decimal("20.00"))
 
     rows = build_import_dividend_rows(statement, {existing_key})
     vti = next(row for row in rows if row.symbol == "VTI")
@@ -213,7 +213,7 @@ def test_import_selected_dividends_creates_records(session, exchange_type):
         )
     ).all()
     assert len(dividends) == 1
-    assert dividends[0].gross_amount_usd == Decimal("23.76")
+    assert dividends[0].gross_amount_usd == Decimal("20.00")
     assert dividends[0].source == "ib_statement"
 
 

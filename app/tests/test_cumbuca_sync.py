@@ -97,9 +97,9 @@ def test_map_category_transport():
 def test_transaction_amount_prefers_brazilian_amount():
     tx = {
         "amount": {"amount": "20.0000", "currency": "USD"},
-        "brazilianAmount": {"amount": "112.4500", "currency": "BRL"},
+        "brazilianAmount": {"amount": "100.0000", "currency": "BRL"},
     }
-    assert _transaction_amount(tx) == Decimal("112.45")
+    assert _transaction_amount(tx) == Decimal("100.00")
 
 
 def test_transaction_amount_skips_foreign_without_brl():
@@ -160,16 +160,16 @@ def test_credit_card_uses_statement_month(session):
     assert all(row.payment_account == "Nubank" for row in rows)
     reversal = next(row for row in rows if row.external_id == "tx-002-r")
     assert reversal.is_reversal
-    assert reversal.amount == Decimal("28.90")
+    assert reversal.amount == Decimal("30.00")
     assert all(row.external_id != "tx-cc-payment" for row in rows)
 
 
 def test_credit_card_uses_brazilian_amount_for_usd(session):
     user = session.exec(select(User)).one()
     rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
-    cursor = next(row for row in rows if row.external_id == "tx-cursor-usd")
-    assert cursor.vendor == "Cursor, Ai Powered Ide"
-    assert cursor.amount == Decimal("-112.45")
+    saas = next(row for row in rows if row.external_id == "tx-saas-usd")
+    assert saas.vendor == "SAAS SUBSCRIPTION"
+    assert saas.amount == Decimal("-100.00")
 
 
 def test_bank_transactions_use_import_month(session):
@@ -246,7 +246,7 @@ def test_imported_transfer_shows_as_transfer_in_preview(session):
             month=6,
             from_account="Nuconta",
             to_account="Nubank",
-            amount=Decimal("4768.15"),
+            amount=Decimal("5000.00"),
             description="Pagamento de fatura",
             source=OPEN_FINANCE_SOURCE,
             external_id="tx-fatura",
@@ -308,9 +308,9 @@ def test_build_expense_import_rows_skip_existing(session):
             year=2026,
             month=6,
             category="Transporte",
-            vendor="UBER *TRIP",
+            vendor="TAXI EXAMPLE",
             payment_account="Nubank",
-            amount=Decimal("-28.90"),
+            amount=Decimal("-30.00"),
             source=OPEN_FINANCE_SOURCE,
             external_id="tx-001",
         )
@@ -448,7 +448,7 @@ def test_import_prefills_bills_subcategory_from_vendor_rule(session):
     save_vendor_category(
         session,
         user.id,
-        "PIX ENVIADO - ALUGUEL",
+        "PIX SENT - RENT",
         BILLS_CATEGORY,
         subcategory=BILLS_SUBCATEGORY_ALUGUEL,
     )
@@ -465,7 +465,7 @@ def test_import_prefills_description_from_vendor_rule(session):
     save_vendor_category(
         session,
         user.id,
-        "PIX ENVIADO - ALUGUEL",
+        "PIX SENT - RENT",
         BILLS_CATEGORY,
         description="Monthly rent",
     )
@@ -484,7 +484,7 @@ def test_import_prefills_description_from_previous_expense(session):
             year=2026,
             month=5,
             category=BILLS_CATEGORY,
-            vendor="PIX ENVIADO - ALUGUEL",
+            vendor="PIX SENT - RENT",
             description="Apartment rent",
             payment_account="Nuconta",
             amount=Decimal("-3000.00"),
@@ -505,7 +505,7 @@ def test_import_prefills_subcategory_from_previous_expense(session):
             year=2026,
             month=5,
             category=BILLS_CATEGORY,
-            vendor="PIX ENVIADO - ALUGUEL",
+            vendor="PIX SENT - RENT",
             subcategory=BILLS_SUBCATEGORY_ALUGUEL,
             payment_account="Nuconta",
             amount=Decimal("-3000.00"),
@@ -525,7 +525,7 @@ def test_import_prefills_subcategory_from_previous_expense_when_vendor_rule_lack
     save_vendor_category(
         session,
         user.id,
-        "PIX ENVIADO - ALUGUEL",
+        "PIX SENT - RENT",
         BILLS_CATEGORY,
     )
     session.add(
@@ -534,7 +534,7 @@ def test_import_prefills_subcategory_from_previous_expense_when_vendor_rule_lack
             year=2026,
             month=5,
             category=BILLS_CATEGORY,
-            vendor="PIX ENVIADO - ALUGUEL",
+            vendor="PIX SENT - RENT",
             subcategory=BILLS_SUBCATEGORY_ALUGUEL,
             payment_account="Nuconta",
             amount=Decimal("-3000.00"),
@@ -656,22 +656,22 @@ def test_import_ignores_subcategory_when_category_not_bills(session):
 
 def test_vendor_category_suggested_on_future_import(session):
     user = session.exec(select(User)).one()
-    save_vendor_category(session, user.id, "UBER *TRIP", "Transporte")
+    save_vendor_category(session, user.id, "TAXI EXAMPLE", "Transporte")
     session.commit()
 
     rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
-    uber_row = next(row for row in rows if "UBER" in row.vendor.upper())
-    assert uber_row.category == "Transporte"
+    taxi_row = next(row for row in rows if "TAXI" in row.vendor.upper())
+    assert taxi_row.category == "Transporte"
 
 
 def test_vendor_category_matches_installment_suffixes(session):
     user = session.exec(select(User)).one()
-    save_vendor_category(session, user.id, "Samsung 7/12", "Compras online")
+    save_vendor_category(session, user.id, "Vendor Installment 1/3", "Compras online")
     session.commit()
 
     rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
-    later = next(row for row in rows if row.external_id == "tx-samsung-8")
-    assert later.vendor == "Samsung 8/12"
+    later = next(row for row in rows if row.external_id == "tx-installment-2")
+    assert later.vendor == "Vendor Installment 2/3"
     assert later.category == "Compras online"
 
 
@@ -680,14 +680,14 @@ def test_vendor_category_matches_legacy_installment_key(session):
     session.add(
         FinanceVendorCategory(
             user_id=user.id,
-            vendor_key="samsung 11/12",
+            vendor_key="vendor installment",
             category="Compras online",
         )
     )
     session.commit()
 
     rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
-    later = next(row for row in rows if row.external_id == "tx-samsung-8")
+    later = next(row for row in rows if row.external_id == "tx-installment-2")
     assert later.category == "Compras online"
 
 
@@ -699,17 +699,17 @@ def test_vendor_category_falls_back_to_expense_history(session):
             year=2026,
             month=4,
             category="Compras online",
-            vendor="Samsung 10/12",
+            vendor="Vendor Installment 3/3",
             payment_account="Nubank",
-            amount=Decimal("-250.00"),
+            amount=Decimal("-300.00"),
             source=OPEN_FINANCE_SOURCE,
-            external_id="legacy-samsung-10",
+            external_id="legacy-installment-3",
         )
     )
     session.commit()
 
     rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
-    later = next(row for row in rows if row.external_id == "tx-samsung-8")
+    later = next(row for row in rows if row.external_id == "tx-installment-2")
     assert later.category == "Compras online"
 
 
