@@ -2,6 +2,8 @@
 
 Personal portfolio and finance tracker built with FastAPI and HTMX. One portfolio per user: manage asset-class and security allocation, track Brazilian personal finance, import bank data via Open Finance, and back up everything to Google Drive.
 
+![Portfolio dashboard](docs/images/dashboard.png)
+
 ## Setup
 
 ```bash
