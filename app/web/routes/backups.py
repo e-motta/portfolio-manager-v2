@@ -79,7 +79,8 @@ def backups_list_partial(
     try:
         _, _, backups = _load_drive_backups(user)
     except HTTPException as exc:
-        drive_error = exc.detail
+        detail = exc.detail
+        drive_error = detail if isinstance(detail, str) else str(detail)
 
     return templates.TemplateResponse(
         request=request,

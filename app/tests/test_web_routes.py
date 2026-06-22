@@ -569,3 +569,39 @@ def test_holdings_page_hides_update_ptax_button_without_provisional_fx(client, s
     partial = client.get("/portfolio/holdings/partials/content")
     assert partial.status_code == 200
     assert "Update PTAX rates" not in partial.text
+
+
+def test_backups_page_loads(client):
+    response = client.get("/backups")
+    assert response.status_code == 200
+    assert "Google Drive backups" in response.text
+
+
+def test_backups_list_partial_shows_drive_error_on_token_refresh_failure(
+    client, session, monkeypatch
+):
+    from sqlmodel import select
+
+    from app.models.user import User
+    from fastapi import HTTPException
+
+    user = session.exec(select(User)).one()
+    user.google_refresh_token = "expired-token"
+    session.add(user)
+    session.commit()
+
+    def _fail_refresh(_refresh_token: str) -> str:
+        raise HTTPException(
+            status_code=503,
+            detail="Google Drive access expired. Reconnect Google Drive and try again.",
+        )
+
+    monkeypatch.setattr(
+        "app.web.routes.backups.refresh_access_token",
+        _fail_refresh,
+    )
+
+    response = client.get("/backups/partials/list")
+    assert response.status_code == 200
+    assert "Google Drive access expired" in response.text
+    assert "Reconnect Google Drive" in response.text
