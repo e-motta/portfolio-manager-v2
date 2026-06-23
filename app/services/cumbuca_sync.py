@@ -348,19 +348,10 @@ def _month_bounds(year: int, month: int) -> tuple[str, str]:
     return start, end
 
 
-def _previous_month(year: int, month: int) -> tuple[int, int]:
-    if month == 1:
-        return year - 1, 12
-    return year, month - 1
-
-
 def _expense_period_for_import(
-    source_kind: str,
     import_year: int,
     import_month: int,
 ) -> tuple[int, int]:
-    if source_kind == "credit_card":
-        return _previous_month(import_year, import_month)
     return import_year, import_month
 
 
@@ -370,10 +361,7 @@ def _row_matches_import(
     import_year: int,
     import_month: int,
 ) -> bool:
-    source_kind = str(tx.get("_source_kind") or "bank")
-    target_year, target_month = _expense_period_for_import(
-        source_kind, import_year, import_month
-    )
+    target_year, target_month = _expense_period_for_import(import_year, import_month)
     return row.year == target_year and row.month == target_month
 
 
@@ -655,10 +643,8 @@ def _normalize_expense_transaction(
         statement_year = tx.get("_statement_year")
         statement_month = tx.get("_statement_month")
         if statement_year and statement_month:
-            row_year, row_month = _previous_month(
-                int(statement_year),
-                int(statement_month),
-            )
+            row_year = int(statement_year)
+            row_month = int(statement_month)
 
     subcategory = None
     description = ""

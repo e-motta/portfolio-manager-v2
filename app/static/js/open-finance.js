@@ -5,13 +5,6 @@
     return (form?.dataset.ofMonthLabels || "").split("|");
   }
 
-  function ccExpensePeriod(year, month) {
-    if (month === 1) {
-      return { year: year - 1, month: 12 };
-    }
-    return { year, month: month - 1 };
-  }
-
   function monthLabel(form, month) {
     return monthLabels(form)[month - 1] || String(month);
   }
@@ -25,14 +18,6 @@
     const year = Number(form.querySelector('[name="year"]')?.value);
     const month = Number(form.querySelector('[name="month"]:checked')?.value);
     if (!year || !month) {
-      return;
-    }
-
-    const mode = preview.dataset.ofPeriodMode || "calendar";
-    if (mode === "credit_card") {
-      const cc = ccExpensePeriod(year, month);
-      preview.textContent =
-        `Statement ${monthLabel(form, month)} ${year} → expenses in ${monthLabel(form, cc.month)} ${cc.year}`;
       return;
     }
 

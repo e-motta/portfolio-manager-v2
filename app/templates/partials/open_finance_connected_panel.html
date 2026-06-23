@@ -21,7 +21,6 @@
           <p class="open-finance-card__desc">
             Import card statement charges into
             <a href="/finance/expenses">Finance expenses</a>.
-            Posted to the previous month.
           </p>
         </div>
       </div>
@@ -31,7 +30,7 @@
             class="open-finance-card__form"
             data-of-finance-form
             data-of-month-labels="{{ month_labels|join('|') }}">
-        {% with form_id="open-finance-cc", period_label="Statement month", period_mode="credit_card" %}
+        {% with form_id="open-finance-cc", period_label="Statement month" %}
         {% include "partials/open_finance_period_fields.html" %}
         {% endwith %}
         <button type="submit" class="btn btn-primary open-finance-card__submit">Preview charges</button>
@@ -62,7 +61,7 @@
             class="open-finance-card__form"
             data-of-finance-form
             data-of-month-labels="{{ month_labels|join('|') }}">
-        {% with form_id="open-finance-debits", period_label="Month", period_mode="calendar" %}
+        {% with form_id="open-finance-debits", period_label="Month" %}
         {% include "partials/open_finance_period_fields.html" %}
         {% endwith %}
         <button type="submit" class="btn btn-primary open-finance-card__submit">Preview debits</button>
@@ -92,7 +91,7 @@
             class="open-finance-card__form"
             data-of-finance-form
             data-of-month-labels="{{ month_labels|join('|') }}">
-        {% with form_id="open-finance-credits", period_label="Month", period_mode="calendar" %}
+        {% with form_id="open-finance-credits", period_label="Month" %}
         {% include "partials/open_finance_period_fields.html" %}
         {% endwith %}
         <button type="submit" class="btn btn-primary open-finance-card__submit">Preview credits</button>

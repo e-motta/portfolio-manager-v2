@@ -21,9 +21,5 @@
       {% endfor %}
     </div>
   </fieldset>
-  {% if period_mode == "credit_card" %}
-  <p class="open-finance-card__period-hint" data-of-period-preview data-of-period-mode="credit_card" aria-live="polite"></p>
-  {% else %}
-  <p class="open-finance-card__period-hint" data-of-period-preview data-of-period-mode="calendar" aria-live="polite"></p>
-  {% endif %}
+  <p class="open-finance-card__period-hint" data-of-period-preview aria-live="polite"></p>
 </div>

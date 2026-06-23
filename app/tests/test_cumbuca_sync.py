@@ -156,7 +156,7 @@ def test_credit_card_uses_statement_month(session):
     user = session.exec(select(User)).one()
     rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
     assert len(rows) == 6
-    assert all(row.month == 5 for row in rows)
+    assert all(row.month == 6 for row in rows)
     assert all(row.payment_account == "Nubank" for row in rows)
     reversal = next(row for row in rows if row.external_id == "tx-002-r")
     assert reversal.is_reversal
@@ -788,14 +788,14 @@ def test_import_selected_expenses_with_period_override(session):
     user = session.exec(select(User)).one()
     rows, _ = build_credit_card_expense_import_rows(session, user, year=2026, month=6)
     target = next(row for row in rows if row.external_id == "tx-001")
-    assert target.month == 5
+    assert target.month == 6
 
     created = import_selected_expenses(
         session,
         user.id,
         rows,
         {target.row_key},
-        period_overrides={target.row_key: (2026, 6)},
+        period_overrides={target.row_key: (2026, 5)},
     )
     assert created == 1
 
@@ -805,7 +805,7 @@ def test_import_selected_expenses_with_period_override(session):
         )
     ).one()
     assert entry.year == 2026
-    assert entry.month == 6
+    assert entry.month == 5
 
 
 def test_import_selected_income_with_period_override(session):

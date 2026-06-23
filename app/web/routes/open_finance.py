@@ -65,11 +65,7 @@ def _has_any_tool(tool_names: list[str], candidates: set[str]) -> bool:
 
 
 def _cc_expense_period(year: int, month: int) -> tuple[int, int, str]:
-    if month == 1:
-        expense_year, expense_month = year - 1, 12
-    else:
-        expense_year, expense_month = year, month - 1
-    return expense_year, expense_month, MONTH_LABELS[expense_month - 1]
+    return year, month, MONTH_LABELS[month - 1]
 
 
 def _open_finance_tools_context(session, user) -> dict:

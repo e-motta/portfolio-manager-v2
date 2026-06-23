@@ -349,7 +349,7 @@ async def fetch_all_transactions_async(
 
         if credit_cards and relevant_bills == 0 and not warnings:
             warnings.append(
-                "No credit card bills matched the selected month. Try the previous month if charges look missing."
+                "No credit card bills matched the selected month. Check that the statement has closed for that period."
             )
 
         return accounts, credit_cards, transactions, warnings
