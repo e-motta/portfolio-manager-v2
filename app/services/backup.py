@@ -281,6 +281,7 @@ def export_portfolio_data(session: Session) -> dict[str, Any]:
             "month": entry.month,
             "broker": entry.broker,
             "amount": _serialize_decimal(entry.amount),
+            "source": entry.source,
             "created_at": _serialize_datetime(entry.created_at),
             "updated_at": _serialize_datetime(entry.updated_at),
         }
@@ -608,6 +609,7 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
             month=row["month"],
             broker=row["broker"],
             amount=_parse_decimal(row.get("amount")) or Decimal("0"),
+            source=row.get("source", "manual"),
         )
         if row.get("created_at"):
             entry.created_at = datetime.fromisoformat(row["created_at"])

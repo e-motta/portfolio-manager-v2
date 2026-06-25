@@ -38,7 +38,8 @@ from app.services.finance import (
     resolve_month,
     resolve_year,
     save_vendor_category,
-    upsert_investment_entry,
+    create_investment_entry as save_investment_entry,
+    update_investment_entry as apply_investment_entry_update,
     validate_income_category,
     validate_investment_broker,
     validate_transfer_accounts,
@@ -674,7 +675,7 @@ def create_investment_entry(
     parsed_month = _parse_month(month)
     try:
         parsed_broker = validate_investment_broker(broker.strip())
-        upsert_investment_entry(
+        save_investment_entry(
             session,
             current_user.id,
             parsed_year,
@@ -726,49 +727,28 @@ def update_investment_entry(
 
     parsed_amount = _parse_amount(amount, "amount") if amount else entry.amount
 
-    if parsed_broker != entry.broker or parsed_month != entry.month:
-        session.delete(entry)
-        session.commit()
-        try:
-            entry = upsert_investment_entry(
-                session,
-                current_user.id,
-                parsed_year,
-                parsed_month,
-                parsed_broker,
-                parsed_amount,
-            )
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=str(exc),
-            ) from exc
-        if entry is None:
-            return HTMLResponse("")
-    else:
-        try:
-            entry = upsert_investment_entry(
-                session,
-                current_user.id,
-                parsed_year,
-                parsed_month,
-                parsed_broker,
-                parsed_amount,
-            )
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=str(exc),
-            ) from exc
-        if entry is None:
-            return HTMLResponse("")
+    try:
+        updated = apply_investment_entry_update(
+            session,
+            entry,
+            month=parsed_month,
+            broker=parsed_broker,
+            amount=parsed_amount,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    if updated is None:
+        return HTMLResponse("")
 
     context = build_investments_context(session, current_user.id, parsed_year)
     return templates.TemplateResponse(
         request=request,
         name="partials/finance_investment_row.html",
         context={
-            "entry": entry,
+            "entry": updated,
             "month_labels": context["month_labels"],
             "investment_brokers": INVESTMENT_BROKERS,
             "show_month_column": context.get("selected_month") is None,

@@ -30,6 +30,9 @@
              value="{{ '%.2f'|format(entry.amount) }}"
              step="0.01" min="0" inputmode="decimal" required>
     </td>
+    <td>
+      <span class="finance-source-badge">{{ entry.source|finance_source }}</span>
+    </td>
     <td class="actions-cell">
       <div class="view-mode actions-inline">
         <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-edit"

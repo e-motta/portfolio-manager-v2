@@ -408,6 +408,7 @@ def test_import_selected_account_debits_as_investment(session):
         .where(FinanceInvestmentEntry.year == 2026)
         .where(FinanceInvestmentEntry.month == 6)
         .where(FinanceInvestmentEntry.broker == "nubank")
+        .where(FinanceInvestmentEntry.source == OPEN_FINANCE_SOURCE)
     ).one()
     assert entry.amount == Decimal("2500.00")
 
@@ -745,6 +746,7 @@ def test_import_selected_account_credits_as_investment(session):
             month=6,
             broker="nubank",
             amount=Decimal("5000.00"),
+            source="manual",
         )
     )
     session.commit()
@@ -762,14 +764,18 @@ def test_import_selected_account_credits_as_investment(session):
     assert income_created == 0
     assert investment_created == 1
 
-    entry = session.exec(
+    entries = session.exec(
         select(FinanceInvestmentEntry)
         .where(FinanceInvestmentEntry.user_id == user.id)
         .where(FinanceInvestmentEntry.year == 2026)
         .where(FinanceInvestmentEntry.month == 6)
         .where(FinanceInvestmentEntry.broker == "nubank")
-    ).one()
-    assert entry.amount == Decimal("3800.00")
+        .order_by(FinanceInvestmentEntry.created_at)
+    ).all()
+    assert len(entries) == 2
+    assert sum(entry.amount for entry in entries) == Decimal("3800.00")
+    imported = next(entry for entry in entries if entry.source == OPEN_FINANCE_SOURCE)
+    assert imported.amount == Decimal("-1200.00")
 
     import_row = session.exec(
         select(FinanceInvestmentOpenFinanceImport).where(

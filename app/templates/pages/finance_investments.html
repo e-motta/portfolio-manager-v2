@@ -78,6 +78,7 @@
           {% if not filter_month %}<th>Month</th>{% endif %}
           <th>Broker</th>
           <th class="num">Amount</th>
+          <th>Source</th>
           <th class="actions-cell">Actions</th>
         </tr>
       </thead>
@@ -86,7 +87,7 @@
         {% for entry in entries %}
         {% include "partials/finance_investment_row.html" %}
         {% else %}
-        <tr><td colspan="{% if filter_month %}3{% else %}4{% endif %}" class="empty-state">No contributions yet.</td></tr>
+        <tr><td colspan="{% if filter_month %}4{% else %}5{% endif %}" class="empty-state">No contributions yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

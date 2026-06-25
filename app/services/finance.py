@@ -789,29 +789,19 @@ def migrate_finance_summary_to_entries(session: Session) -> int:
             inserted += 1
         elif row.line_key in SUMMARY_INVESTMENT_BROKERS:
             broker = SUMMARY_INVESTMENT_BROKERS[row.line_key]
-            existing = session.exec(
-                select(FinanceInvestmentEntry)
-                .where(FinanceInvestmentEntry.user_id == row.user_id)
-                .where(FinanceInvestmentEntry.year == row.year)
-                .where(FinanceInvestmentEntry.month == row.month)
-                .where(FinanceInvestmentEntry.broker == broker)
-            ).first()
             amount = abs(row.amount)
             if amount == 0:
                 continue
-            if existing:
-                existing.amount = amount
-                session.add(existing)
-            else:
-                session.add(
-                    FinanceInvestmentEntry(
-                        user_id=row.user_id,
-                        year=row.year,
-                        month=row.month,
-                        broker=broker,
-                        amount=amount,
-                    )
+            session.add(
+                FinanceInvestmentEntry(
+                    user_id=row.user_id,
+                    year=row.year,
+                    month=row.month,
+                    broker=broker,
+                    amount=amount,
+                    source=MIGRATED_SUMMARY_SOURCE,
                 )
+            )
             inserted += 1
 
     session.commit()
@@ -956,6 +946,7 @@ def _load_investment_entries(
             .order_by(
                 FinanceInvestmentEntry.month,
                 FinanceInvestmentEntry.broker,
+                FinanceInvestmentEntry.created_at,
             )
         ).all()
     )
@@ -1520,39 +1511,21 @@ def build_investments_context(
     }
 
 
-def upsert_investment_entry(
+def create_investment_entry(
     session: Session,
     user_id: UUID,
     year: int,
     month: int,
     broker: str,
     amount: Decimal,
-) -> FinanceInvestmentEntry | None:
+    *,
+    source: str = "manual",
+) -> FinanceInvestmentEntry:
     validate_investment_broker(broker)
-    if amount < 0:
-        raise ValueError("Amount cannot be negative.")
-
-    existing = session.exec(
-        select(FinanceInvestmentEntry)
-        .where(FinanceInvestmentEntry.user_id == user_id)
-        .where(FinanceInvestmentEntry.year == year)
-        .where(FinanceInvestmentEntry.month == month)
-        .where(FinanceInvestmentEntry.broker == broker)
-    ).first()
-
     if amount == 0:
-        if existing:
-            session.delete(existing)
-            session.commit()
-        return None
-
-    if existing:
-        existing.amount = amount
-        existing.updated_at = datetime.utcnow()
-        session.add(existing)
-        session.commit()
-        session.refresh(existing)
-        return existing
+        raise ValueError("Amount cannot be zero.")
+    if source == "manual" and amount < 0:
+        raise ValueError("Amount cannot be negative.")
 
     entry = FinanceInvestmentEntry(
         user_id=user_id,
@@ -1560,6 +1533,7 @@ def upsert_investment_entry(
         month=month,
         broker=broker,
         amount=amount,
+        source=source,
     )
     session.add(entry)
     session.commit()
@@ -1567,38 +1541,45 @@ def upsert_investment_entry(
     return entry
 
 
-def add_investment_entry_amount(
+def update_investment_entry(
     session: Session,
-    user_id: UUID,
-    year: int,
+    entry: FinanceInvestmentEntry,
+    *,
     month: int,
     broker: str,
     amount: Decimal,
 ) -> FinanceInvestmentEntry | None:
     validate_investment_broker(broker)
     if amount == 0:
-        raise ValueError("Amount cannot be zero.")
-
-    existing = session.exec(
-        select(FinanceInvestmentEntry)
-        .where(FinanceInvestmentEntry.user_id == user_id)
-        .where(FinanceInvestmentEntry.year == year)
-        .where(FinanceInvestmentEntry.month == month)
-        .where(FinanceInvestmentEntry.broker == broker)
-    ).first()
-
-    if existing:
-        new_amount = existing.amount + amount
-        if new_amount <= 0:
-            session.delete(existing)
-            return None
-        existing.amount = new_amount
-        existing.updated_at = datetime.utcnow()
-        session.add(existing)
-        return existing
-
-    if amount < 0:
+        session.delete(entry)
+        session.commit()
         return None
+    if amount < 0:
+        raise ValueError("Amount cannot be negative.")
+
+    entry.month = month
+    entry.broker = broker
+    entry.amount = amount
+    entry.updated_at = datetime.utcnow()
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+    return entry
+
+
+def record_investment_import(
+    session: Session,
+    user_id: UUID,
+    year: int,
+    month: int,
+    broker: str,
+    amount: Decimal,
+    *,
+    source: str = "open_finance",
+) -> FinanceInvestmentEntry:
+    validate_investment_broker(broker)
+    if amount == 0:
+        raise ValueError("Amount cannot be zero.")
 
     entry = FinanceInvestmentEntry(
         user_id=user_id,
@@ -1606,6 +1587,7 @@ def add_investment_entry_amount(
         month=month,
         broker=broker,
         amount=amount,
+        source=source,
     )
     session.add(entry)
     return entry

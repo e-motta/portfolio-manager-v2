@@ -44,7 +44,6 @@ class FinanceExpenseEntry(SQLModel, table=True):
 
 class FinanceInvestmentEntry(SQLModel, table=True):
     __tablename__ = "finance_investment_entries"
-    __table_args__ = (UniqueConstraint("user_id", "year", "month", "broker"),)
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(foreign_key="users.id", ondelete="CASCADE", index=True)
@@ -52,6 +51,7 @@ class FinanceInvestmentEntry(SQLModel, table=True):
     month: int = Field(ge=1, le=12)
     broker: str = Field(index=True)
     amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=2)
+    source: str = Field(default="manual", index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

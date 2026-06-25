@@ -15,7 +15,7 @@ from app.services.finance import (
     build_transfers_context,
     format_finance_source,
     migrate_pro_labore_lucro_to_pj,
-    upsert_investment_entry,
+    create_investment_entry,
     validate_transfer_accounts,
 )
 
@@ -947,10 +947,10 @@ def test_investments_annual_target(session):
             amount=Decimal("10000"),
         )
     )
-    upsert_investment_entry(
+    create_investment_entry(
         session, user.id, 2026, 1, "xp", Decimal("1000")
     )
-    upsert_investment_entry(
+    create_investment_entry(
         session, user.id, 2026, 2, "nubank", Decimal("500")
     )
 

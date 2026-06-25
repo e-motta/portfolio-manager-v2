@@ -20,6 +20,8 @@ from app.models.finance import (
 from app.models.investment import Investment
 from app.models.user import User
 from app.services.cumbuca_mcp import (
+    BANK_TRANSACTION_SOURCES,
+    CREDIT_CARD_TRANSACTION_SOURCES,
     CumbucaMcpError,
     fetch_all_transactions,
     fetch_investments,
@@ -30,7 +32,7 @@ from app.services.finance import (
     EXPENSE_CATEGORIES,
     PAYMENT_ACCOUNTS,
     TRANSFER_ACCOUNTS,
-    add_investment_entry_amount,
+    record_investment_import,
     load_import_vendor_rule_map,
     load_vendor_rule_map,
     normalize_vendor_key,
@@ -780,6 +782,7 @@ def _fetch_live_transactions(
     *,
     year: int,
     month: int,
+    sources: frozenset[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
     start, end = _month_bounds(year, month)
     return fetch_all_transactions(
@@ -788,6 +791,7 @@ def _fetch_live_transactions(
         end_date=end,
         year=year,
         month=month,
+        sources=sources,
     )
 
 
@@ -796,18 +800,20 @@ def _load_transaction_bundle(
     *,
     year: int,
     month: int,
+    sources: frozenset[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
     if use_fixture_mode() or access_token is None:
         fixture = _load_fixture("cumbuca_transactions.json")
-        return (
-            fixture.get("accounts", []),
-            fixture.get("credit_cards", []),
-            fixture.get("transactions", []),
-            [],
-        )
+        accounts = fixture.get("accounts", []) if "bank" in sources else []
+        credit_cards = fixture.get("credit_cards", []) if "credit_card" in sources else []
+        transactions = [
+            tx
+            for tx in fixture.get("transactions", [])
+            if str(tx.get("_source_kind") or "bank") in sources
+        ]
+        return accounts, credit_cards, transactions, []
 
-    start, end = _month_bounds(year, month)
-    return _fetch_live_transactions(access_token, year=year, month=month)
+    return _fetch_live_transactions(access_token, year=year, month=month, sources=sources)
 
 
 def _account_lookup(
@@ -839,6 +845,7 @@ def build_credit_card_expense_import_rows(
         access_token,
         year=year,
         month=month,
+        sources=CREDIT_CARD_TRANSACTION_SOURCES,
     )
     account_lookup = _account_lookup(accounts, credit_cards)
     existing_ids = _existing_expense_ids(session, user.id)
@@ -876,6 +883,7 @@ def build_account_expense_import_rows(
         access_token,
         year=year,
         month=month,
+        sources=BANK_TRANSACTION_SOURCES,
     )
     account_lookup = _account_lookup(accounts, credit_cards)
     existing_expenses = _existing_open_finance_expense_map(session, user.id)
@@ -934,6 +942,7 @@ def build_account_credit_import_rows(
         access_token,
         year=year,
         month=month,
+        sources=BANK_TRANSACTION_SOURCES,
     )
     account_lookup = _account_lookup(accounts, credit_cards)
     existing_incomes = _existing_open_finance_income_map(session, user.id)
@@ -1241,13 +1250,14 @@ def import_selected_finance_investments(
 
         import_year, import_month = resolve_import_period(row.row_key, row, period_overrides)
         amount = abs(row.amount)
-        add_investment_entry_amount(
+        record_investment_import(
             session,
             user_id,
             import_year,
             import_month,
             broker,
             amount,
+            source=OPEN_FINANCE_SOURCE,
         )
         session.add(
             FinanceInvestmentOpenFinanceImport(
@@ -1394,13 +1404,14 @@ def import_selected_finance_investment_credits(
 
         import_year, import_month = resolve_import_period(row.row_key, row, period_overrides)
         amount = -abs(row.amount)
-        add_investment_entry_amount(
+        record_investment_import(
             session,
             user_id,
             import_year,
             import_month,
             broker,
             amount,
+            source=OPEN_FINANCE_SOURCE,
         )
         session.add(
             FinanceInvestmentOpenFinanceImport(

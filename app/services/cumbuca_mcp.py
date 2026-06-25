@@ -16,6 +16,12 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+TRANSACTION_SOURCE_BANK = "bank"
+TRANSACTION_SOURCE_CREDIT_CARD = "credit_card"
+BANK_TRANSACTION_SOURCES = frozenset({TRANSACTION_SOURCE_BANK})
+CREDIT_CARD_TRANSACTION_SOURCES = frozenset({TRANSACTION_SOURCE_CREDIT_CARD})
+ALL_TRANSACTION_SOURCES = BANK_TRANSACTION_SOURCES | CREDIT_CARD_TRANSACTION_SOURCES
+
 # Cumbuca MCP tool names (https://mcp.cumbuca.com/mcp)
 TOOL_CANDIDATES = {
     "list_accounts": ("list_accounts",),
@@ -241,53 +247,65 @@ async def fetch_all_transactions_async(
     end_date: str,
     year: int,
     month: int,
+    sources: frozenset[str] = ALL_TRANSACTION_SOURCES,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    include_bank = TRANSACTION_SOURCE_BANK in sources
+    include_credit_card = TRANSACTION_SOURCE_CREDIT_CARD in sources
+
     async def _run(
         session: ClientSession,
         tool_names: set[str],
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
         warnings: list[str] = []
         transactions: list[dict[str, Any]] = []
+        accounts: list[dict[str, Any]] = []
+        credit_cards: list[dict[str, Any]] = []
 
-        accounts_payload = await _call_named_tool(
-            session, tool_names, "list_accounts", {}, required=False
-        )
-        accounts = _unwrap_collection(accounts_payload, "accounts", "results", "items")
-        if not accounts:
-            warnings.append("Could not load bank accounts from Open Finance.")
+        if include_bank:
+            accounts_payload = await _call_named_tool(
+                session, tool_names, "list_accounts", {}, required=False
+            )
+            accounts = _unwrap_collection(accounts_payload, "accounts", "results", "items")
+            if not accounts:
+                warnings.append("Could not load bank accounts from Open Finance.")
 
-        cards_payload = await _call_named_tool(
-            session, tool_names, "list_credit_cards", {}, required=False
-        )
-        credit_cards = _unwrap_collection(
-            cards_payload, "credit_cards", "creditCards", "results"
-        )
+        if include_credit_card:
+            cards_payload = await _call_named_tool(
+                session, tool_names, "list_credit_cards", {}, required=False
+            )
+            credit_cards = _unwrap_collection(
+                cards_payload, "credit_cards", "creditCards", "results"
+            )
 
-        for account in accounts:
-            account_id = str(account.get("accountId") or account.get("account_id") or "")
-            if not account_id:
-                continue
-            try:
-                payload = await _call_named_tool(
-                    session,
-                    tool_names,
-                    "list_account_transactions",
-                    {
-                        "account_id": account_id,
-                        "from_date": start_date,
-                        "to_date": end_date,
-                    },
-                )
-            except CumbucaMcpError as exc:
-                label = account.get("brandName") or account_id
-                warnings.append(f"Bank account ({label}): {exc}")
-                continue
-            if payload is None:
-                continue
-            for tx in _unwrap_collection(payload, "transactions", "results", "items"):
-                tx["_source_account"] = account
-                tx["_source_kind"] = "bank"
-                transactions.append(tx)
+        if include_bank:
+            for account in accounts:
+                account_id = str(account.get("accountId") or account.get("account_id") or "")
+                if not account_id:
+                    continue
+                try:
+                    payload = await _call_named_tool(
+                        session,
+                        tool_names,
+                        "list_account_transactions",
+                        {
+                            "account_id": account_id,
+                            "from_date": start_date,
+                            "to_date": end_date,
+                        },
+                    )
+                except CumbucaMcpError as exc:
+                    label = account.get("brandName") or account_id
+                    warnings.append(f"Bank account ({label}): {exc}")
+                    continue
+                if payload is None:
+                    continue
+                for tx in _unwrap_collection(payload, "transactions", "results", "items"):
+                    tx["_source_account"] = account
+                    tx["_source_kind"] = TRANSACTION_SOURCE_BANK
+                    transactions.append(tx)
+
+        if not include_credit_card:
+            return accounts, credit_cards, transactions, warnings
 
         relevant_bills = 0
         for card in credit_cards:
@@ -342,7 +360,7 @@ async def fetch_all_transactions_async(
                     bill_payload, "transactions", "results", "items"
                 ):
                     tx["_source_account"] = card
-                    tx["_source_kind"] = "credit_card"
+                    tx["_source_kind"] = TRANSACTION_SOURCE_CREDIT_CARD
                     tx["_statement_year"] = statement_year
                     tx["_statement_month"] = statement_month
                     transactions.append(tx)
@@ -401,6 +419,7 @@ def fetch_all_transactions(
     end_date: str,
     year: int,
     month: int,
+    sources: frozenset[str] = ALL_TRANSACTION_SOURCES,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
     return _run_async(
         fetch_all_transactions_async(
@@ -409,6 +428,7 @@ def fetch_all_transactions(
             end_date=end_date,
             year=year,
             month=month,
+            sources=sources,
         )
     )
 
