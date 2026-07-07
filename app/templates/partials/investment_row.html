@@ -29,7 +29,14 @@
              value="{{ '%.2f'|format(investment.current_value) }}"
              step="0.01" min="0" required>
     </td>
-    <td class="cell-sub">{{ investment.updated_at|datetime_fmt }}</td>
+    <td class="cell-sub">
+      <span class="investment-updated">
+        <span class="investment-updated__dot{% if investment.updated_at|current_month %} investment-updated__dot--recent{% endif %}"
+              title="{% if investment.updated_at|current_month %}Updated this month{% else %}Not updated this month{% endif %}"
+              aria-label="{% if investment.updated_at|current_month %}Updated this month{% else %}Not updated this month{% endif %}"></span>
+        <span>{{ investment.updated_at|datetime_fmt }}</span>
+      </span>
+    </td>
     <td class="actions-cell">
       <div class="view-mode actions-inline">
         <button type="button" class="btn btn-secondary btn-small btn-icon-only btn-edit"

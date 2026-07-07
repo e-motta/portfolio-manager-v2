@@ -51,16 +51,28 @@ def _format_date(value) -> str:
     return str(value)
 
 
+def _localize_datetime(value: datetime) -> datetime:
+    dt = value
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo(settings.DISPLAY_TIMEZONE))
+
+
 def _format_datetime(value) -> str:
     if not isinstance(value, datetime):
         return str(value)
 
-    dt = value
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-
-    local = dt.astimezone(ZoneInfo(settings.DISPLAY_TIMEZONE))
+    local = _localize_datetime(value)
     return f"{local.strftime('%d/%m/%Y %H:%M')} {settings.DISPLAY_TIMEZONE_LABEL}"
+
+
+def _is_current_month(value) -> bool:
+    if not isinstance(value, datetime):
+        return False
+
+    local = _localize_datetime(value)
+    now = datetime.now(ZoneInfo(settings.DISPLAY_TIMEZONE))
+    return local.year == now.year and local.month == now.month
 
 
 def _format_signed_usd(value) -> str:
@@ -121,6 +133,7 @@ def _build_templates() -> Jinja2Templates:
     jinja.env.filters["action_label"] = _format_action
     jinja.env.filters["date_fmt"] = _format_date
     jinja.env.filters["datetime_fmt"] = _format_datetime
+    jinja.env.filters["current_month"] = _is_current_month
     jinja.env.filters["finance_source"] = format_finance_source
     jinja.env.filters["investment_broker_label"] = investment_broker_label
     jinja.env.filters["expense_category_slug"] = expense_category_slug

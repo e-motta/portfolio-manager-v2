@@ -79,6 +79,7 @@ def test_investments_page_loads(client, session, exchange_type):
     assert "XP" in response.text
     assert "Updated" in response.text
     assert "BRT" in response.text
+    assert "investment-updated__dot" in response.text
 
 
 def test_create_investment(client, session, exchange_type):

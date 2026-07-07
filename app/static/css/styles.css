@@ -2216,6 +2216,24 @@ form.row-form-table {
   background: #f4f6f8;
 }
 
+.investment-updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.investment-updated__dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: #cbd5e1;
+  flex-shrink: 0;
+}
+
+.investment-updated__dot--recent {
+  background: var(--buy);
+}
+
 @media (max-width: 900px) {
   .nav-layout-sidebar .app-shell {
     flex-direction: column;
