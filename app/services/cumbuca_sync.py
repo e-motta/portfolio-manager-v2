@@ -345,9 +345,14 @@ def is_exchange_traded_investment(investment: dict[str, Any]) -> bool:
 
 def _month_bounds(year: int, month: int) -> tuple[str, str]:
     last_day = calendar.monthrange(year, month)[1]
-    start = date(year, month, 1).isoformat()
-    end = date(year, month, last_day).isoformat()
-    return start, end
+    start = date(year, month, 1)
+    end = date(year, month, last_day)
+    today = date.today()
+    if end > today:
+        end = today
+    if end < start:
+        end = start
+    return start.isoformat(), end.isoformat()
 
 
 def _expense_period_for_import(

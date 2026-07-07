@@ -3,7 +3,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, TypeVar
 
 import httpx
@@ -21,6 +21,54 @@ TRANSACTION_SOURCE_CREDIT_CARD = "credit_card"
 BANK_TRANSACTION_SOURCES = frozenset({TRANSACTION_SOURCE_BANK})
 CREDIT_CARD_TRANSACTION_SOURCES = frozenset({TRANSACTION_SOURCE_CREDIT_CARD})
 ALL_TRANSACTION_SOURCES = BANK_TRANSACTION_SOURCES | CREDIT_CARD_TRANSACTION_SOURCES
+
+# Open Finance account transaction queries are limited to 30-day windows.
+MAX_ACCOUNT_TRANSACTION_WINDOW_DAYS = 30
+
+
+def _parse_iso_date(value: str) -> date:
+    return date.fromisoformat(value[:10])
+
+
+def _clamp_account_transaction_range(start: date, end: date) -> tuple[date, date]:
+    today = date.today()
+    if end > today:
+        end = today
+    if end < start:
+        end = start
+    return start, end
+
+
+def _iter_account_transaction_windows(
+    start: date,
+    end: date,
+    *,
+    max_window_days: int = MAX_ACCOUNT_TRANSACTION_WINDOW_DAYS,
+) -> list[tuple[date, date]]:
+    start, end = _clamp_account_transaction_range(start, end)
+    windows: list[tuple[date, date]] = []
+    cursor = start
+    while cursor <= end:
+        window_end = min(cursor + timedelta(days=max_window_days), end)
+        windows.append((cursor, window_end))
+        if window_end >= end:
+            break
+        cursor = window_end
+    return windows
+
+
+def _dedupe_transactions(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for tx in transactions:
+        tx_id = str(tx.get("transactionId") or tx.get("id") or "")
+        if tx_id:
+            if tx_id in seen:
+                continue
+            seen.add(tx_id)
+        deduped.append(tx)
+    return deduped
+
 
 # Cumbuca MCP tool names (https://mcp.cumbuca.com/mcp)
 TOOL_CANDIDATES = {
@@ -278,28 +326,40 @@ async def fetch_all_transactions_async(
             )
 
         if include_bank:
+            range_start, range_end = _clamp_account_transaction_range(
+                _parse_iso_date(start_date),
+                _parse_iso_date(end_date),
+            )
+            account_windows = _iter_account_transaction_windows(range_start, range_end)
             for account in accounts:
                 account_id = str(account.get("accountId") or account.get("account_id") or "")
                 if not account_id:
                     continue
-                try:
-                    payload = await _call_named_tool(
-                        session,
-                        tool_names,
-                        "list_account_transactions",
-                        {
-                            "account_id": account_id,
-                            "from_date": start_date,
-                            "to_date": end_date,
-                        },
+                account_transactions: list[dict[str, Any]] = []
+                label = account.get("brandName") or account_id
+                for window_start, window_end in account_windows:
+                    try:
+                        payload = await _call_named_tool(
+                            session,
+                            tool_names,
+                            "list_account_transactions",
+                            {
+                                "account_id": account_id,
+                                "from_date": window_start.isoformat(),
+                                "to_date": window_end.isoformat(),
+                            },
+                        )
+                    except CumbucaMcpError as exc:
+                        warnings.append(
+                            f"Bank account ({label}, {window_start} to {window_end}): {exc}"
+                        )
+                        continue
+                    if payload is None:
+                        continue
+                    account_transactions.extend(
+                        _unwrap_collection(payload, "transactions", "results", "items")
                     )
-                except CumbucaMcpError as exc:
-                    label = account.get("brandName") or account_id
-                    warnings.append(f"Bank account ({label}): {exc}")
-                    continue
-                if payload is None:
-                    continue
-                for tx in _unwrap_collection(payload, "transactions", "results", "items"):
+                for tx in _dedupe_transactions(account_transactions):
                     tx["_source_account"] = account
                     tx["_source_kind"] = TRANSACTION_SOURCE_BANK
                     transactions.append(tx)

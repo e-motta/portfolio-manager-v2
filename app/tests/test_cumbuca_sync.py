@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -38,6 +38,7 @@ from app.services.cumbuca_sync import (
     suggest_account_credit_import_kind,
     suggest_account_debit_import_kind,
     suggest_transfer_to_account,
+    _month_bounds,
     _transaction_amount,
 )
 from app.services.finance import (
@@ -51,6 +52,7 @@ from app.services.finance import (
 )
 from app.services.cumbuca_mcp import (
     _extract_json_payload,
+    _iter_account_transaction_windows,
     _unwrap_collection,
     format_mcp_error_message,
     _bill_relevant_to_month,
@@ -150,6 +152,57 @@ def test_bill_relevant_to_month():
     assert _bill_relevant_to_month(bill, 2026, 6)
     assert not _bill_relevant_to_month(bill, 2026, 7)
     assert not _bill_relevant_to_month(bill, 2026, 5)
+
+
+def test_month_bounds_caps_end_date_to_today_for_current_month(monkeypatch):
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 7, 7)
+
+    monkeypatch.setattr("app.services.cumbuca_sync.date", FixedDate)
+    start, end = _month_bounds(2026, 7)
+    assert start == "2026-07-01"
+    assert end == "2026-07-07"
+
+
+def test_month_bounds_uses_last_day_for_completed_month(monkeypatch):
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 7, 7)
+
+    monkeypatch.setattr("app.services.cumbuca_sync.date", FixedDate)
+    start, end = _month_bounds(2026, 6)
+    assert start == "2026-06-01"
+    assert end == "2026-06-30"
+
+
+def test_account_transaction_windows_keep_short_ranges_in_one_request(monkeypatch):
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 7, 7)
+
+    monkeypatch.setattr("app.services.cumbuca_mcp.date", FixedDate)
+    start = date(2026, 7, 1)
+    end = date(2026, 7, 7)
+    assert _iter_account_transaction_windows(start, end) == [(start, end)]
+
+
+def test_account_transaction_windows_split_ranges_longer_than_thirty_days(monkeypatch):
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 7, 7)
+
+    monkeypatch.setattr("app.services.cumbuca_mcp.date", FixedDate)
+    start = date(2026, 6, 1)
+    end = date(2026, 7, 7)
+    assert _iter_account_transaction_windows(start, end) == [
+        (date(2026, 6, 1), date(2026, 7, 1)),
+        (date(2026, 7, 1), date(2026, 7, 7)),
+    ]
 
 
 def test_credit_card_uses_statement_month(session):
