@@ -238,13 +238,59 @@ def test_unweighted_asset_class_excluded_from_suggestions(session, exchange_type
         session.exec(select(Investment).where(Investment.asset_type_id == tracked.id)).all()
     )
 
-    suggestions = calculate_type_suggestions(
-        [tracked, untracked],
-        mode=SuggestionMode.BUY_AND_SELL,
-    )
-    assert len(suggestions) == 1
-    assert suggestions[0].label == "Tracked"
+    for mode in (SuggestionMode.BUY_ONLY, SuggestionMode.BUY_AND_SELL):
+        suggestions = calculate_type_suggestions(
+            [tracked, untracked],
+            mode=mode,
+        )
+        assert len(suggestions) == 1
+        assert suggestions[0].label == "Tracked"
     assert not has_type_target(untracked)
+
+
+def test_buy_and_sell_zero_cash_adjustments_net_to_zero(session, exchange_type):
+    portfolio_id = exchange_type.portfolio_id
+    bonds = make_asset_type(
+        session,
+        portfolio_id,
+        "Bonds",
+        Decimal("0.5"),
+        Decimal("0"),
+    )
+    stocks = make_asset_type(
+        session,
+        portfolio_id,
+        "Stocks",
+        Decimal("0.5"),
+        Decimal("0"),
+    )
+    cash = make_asset_type(
+        session,
+        portfolio_id,
+        "Cash",
+        None,
+        Decimal("0"),
+    )
+    make_investment(session, bonds.id, "CDB", Decimal("8000"))
+    make_investment(session, stocks.id, "Fund", Decimal("2000"))
+    make_investment(session, cash.id, "Savings", Decimal("5000"))
+    bonds.investments = list(
+        session.exec(select(Investment).where(Investment.asset_type_id == bonds.id)).all()
+    )
+    stocks.investments = list(
+        session.exec(select(Investment).where(Investment.asset_type_id == stocks.id)).all()
+    )
+
+    suggestions = calculate_type_suggestions(
+        [bonds, stocks, cash],
+        mode=SuggestionMode.BUY_AND_SELL,
+        new_cash=Decimal("0"),
+    )
+    by_label = {item.label: item for item in suggestions}
+    assert len(suggestions) == 2
+    assert by_label["Bonds"].delta == Decimal("-500.00")
+    assert by_label["Stocks"].delta == Decimal("500.00")
+    assert sum(item.delta for item in suggestions) == Decimal("0")
 
 
 def test_dashboard_skips_drift_for_unweighted_classes(session, exchange_type):

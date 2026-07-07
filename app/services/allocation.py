@@ -59,6 +59,35 @@ def _scale_buys(
     return scaled
 
 
+def _net_buys_to_sells(
+    items: list[SuggestionItem], reduction: Decimal
+) -> list[SuggestionItem]:
+    if reduction <= 0:
+        return items
+
+    total_buys = sum(item.delta for item in items if item.delta > 0)
+    if total_buys <= 0:
+        return items
+
+    amount = min(reduction, total_buys)
+    ratio = (total_buys - amount) / total_buys
+    scaled: list[SuggestionItem] = []
+    for item in items:
+        if item.delta > 0:
+            scaled_delta = round_decimal(item.delta * ratio, 2)
+            scaled.append(
+                item.model_copy(
+                    update={
+                        "delta": scaled_delta,
+                        "action": _action_from_delta(scaled_delta),
+                    }
+                )
+            )
+        else:
+            scaled.append(item)
+    return scaled
+
+
 def has_type_target(asset_type: AssetType) -> bool:
     return asset_type.target_pct is not None
 
@@ -169,6 +198,11 @@ def calculate_type_suggestions(
                 action=_action_from_delta(delta),
             )
         )
+
+    if mode == SuggestionMode.BUY_AND_SELL:
+        unallocated = total_portfolio - sleeve_value
+        if unallocated > 0:
+            items = _net_buys_to_sells(items, unallocated)
 
     if mode == SuggestionMode.BUY_ONLY:
         items = _scale_buys(items, new_cash)
