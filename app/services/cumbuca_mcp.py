@@ -54,7 +54,18 @@ def _iter_account_transaction_windows(
         if window_end >= end:
             break
         cursor = window_end
+    if end not in {window_start for window_start, _window_end in windows}:
+        windows.append((end, end))
     return windows
+
+
+def _account_transaction_query_end(window_end: date) -> date:
+    """Extend the API to_date by one day; the provider omits the window end date."""
+    today = date.today()
+    query_end = window_end + timedelta(days=1)
+    if query_end > today:
+        return today
+    return query_end
 
 
 def _dedupe_transactions(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -346,7 +357,7 @@ async def fetch_all_transactions_async(
                             {
                                 "account_id": account_id,
                                 "from_date": window_start.isoformat(),
-                                "to_date": window_end.isoformat(),
+                                "to_date": _account_transaction_query_end(window_end).isoformat(),
                             },
                         )
                     except CumbucaMcpError as exc:
