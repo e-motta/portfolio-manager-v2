@@ -215,14 +215,14 @@ def calculate_security_suggestions(
     new_cash: Decimal = Decimal("0"),
 ) -> list[SuggestionItem]:
     bucket_value = sum(
-        (item.current_value_brl for item in consolidated),
+        (item.current_value_usd for item in consolidated),
         start=Decimal("0"),
     )
     future_bucket = bucket_value + new_cash
 
     items: list[SuggestionItem] = []
     for item in consolidated:
-        current_value = item.current_value_brl
+        current_value = item.current_value_usd
         target_weight = item.target_pct
         ideal_value = round_decimal(future_bucket * target_weight, 2)
         current_weight = (

@@ -115,6 +115,25 @@ def test_pl_pct_handles_zero_cost_basis():
     assert pl_pct(Decimal("100"), Decimal("1000")) == Decimal("10")
 
 
+def test_security_suggestions_use_usd_values(session, exchange_type):
+    make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"), target_pct=Decimal("0.6"))
+    make_lot(session, exchange_type.id, "BBB", Decimal("5"), Decimal("100"), target_pct=Decimal("0.4"))
+
+    lots = session.exec(select(SecurityLot).where(SecurityLot.asset_type_id == exchange_type.id)).all()
+    targets = session.exec(select(SymbolTarget).where(SymbolTarget.asset_type_id == exchange_type.id)).all()
+    consolidated = consolidate_securities(list(lots), list(targets))
+
+    suggestions = calculate_security_suggestions(
+        consolidated,
+        mode=SuggestionMode.BUY_AND_SELL,
+    )
+    by_label = {item.label: item for item in suggestions}
+    assert by_label["AAA"].current_value == Decimal("1000.00")
+    assert by_label["BBB"].current_value == Decimal("500.00")
+    assert by_label["AAA"].delta == Decimal("-100.00")
+    assert by_label["BBB"].delta == Decimal("100.00")
+
+
 def test_security_suggestions_use_consolidated_symbols(session, exchange_type):
     make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"), target_pct=Decimal("0.6"))
     make_lot(session, exchange_type.id, "AAA", Decimal("5"), Decimal("100"), target_pct=Decimal("0.6"))

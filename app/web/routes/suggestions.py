@@ -6,9 +6,11 @@ from fastapi.responses import HTMLResponse
 
 from app.core.db import SessionDep
 from app.schemas.allocation import SuggestionMode
+from app.services import prices
 from app.services.allocation import (
     calculate_security_suggestions,
     calculate_type_suggestions,
+    round_decimal,
 )
 from app.web.dependencies import TemplatesDep
 from app.web.helpers import get_asset_types, get_consolidated_securities
@@ -63,10 +65,17 @@ def security_suggestions(
     new_cash: Annotated[str, Query()] = "0",
 ) -> HTMLResponse:
     consolidated = get_consolidated_securities(session)
+    cash_brl = Decimal(new_cash or "0")
+    usd_brl_rate = prices.fetch_usd_brl_rate()
+    cash_usd = (
+        round_decimal(cash_brl / usd_brl_rate, 2)
+        if usd_brl_rate > 0
+        else Decimal("0")
+    )
     suggestions = calculate_security_suggestions(
         consolidated,
         mode=mode,
-        new_cash=Decimal(new_cash or "0"),
+        new_cash=cash_usd,
     )
     return templates.TemplateResponse(
         request=request,

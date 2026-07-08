@@ -220,6 +220,19 @@ def test_type_suggestions_partial(client):
     assert "Asset class" in response.text
 
 
+def test_security_suggestions_partial_uses_usd(client, session, exchange_type):
+    from decimal import Decimal
+
+    from app.tests.conftest import make_lot, make_symbol_target
+
+    make_symbol_target(session, exchange_type.id, "AAA", Decimal("1"))
+    make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"))
+    response = client.get("/allocation/rebalance/securities?mode=buy_only&new_cash=0")
+    assert response.status_code == 200
+    assert "$1,000.00" in response.text
+    assert "R$" not in response.text
+
+
 def test_update_symbol_target_returns_row_only(client, session, exchange_type):
     from decimal import Decimal
 
