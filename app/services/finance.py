@@ -299,20 +299,46 @@ def suggest_expense_category(vendor: str, current_category: str = "") -> str:
 
 
 def migrate_expense_categories(session: Session) -> int:
+    """Legacy migration helper for alembic 023/024.
+
+    Reads and writes via raw SQL so it stays decoupled from the live ORM
+    schema. The models have since grown columns that do not exist at those
+    revisions, so selecting the full ORM entity here would fail on a fresh
+    ``alembic upgrade head``.
+    """
+    from sqlalchemy import text
+
+    bind = session.get_bind()
     updated = 0
 
-    for entry in session.exec(select(FinanceExpenseEntry)).all():
-        new_category = suggest_expense_category(entry.vendor, entry.category)
-        if new_category != entry.category:
-            entry.category = new_category
-            session.add(entry)
+    expense_rows = bind.execute(
+        text("SELECT id, vendor, category FROM finance_expense_entries")
+    ).all()
+    for row in expense_rows:
+        new_category = suggest_expense_category(row.vendor or "", row.category or "")
+        if new_category != row.category:
+            bind.execute(
+                text(
+                    "UPDATE finance_expense_entries SET category = :category "
+                    "WHERE id = :id"
+                ),
+                {"category": new_category, "id": row.id},
+            )
             updated += 1
 
-    for rule in session.exec(select(FinanceVendorCategory)).all():
-        new_category = suggest_expense_category(rule.vendor_key, rule.category)
-        if new_category != rule.category:
-            rule.category = new_category
-            session.add(rule)
+    vendor_rows = bind.execute(
+        text("SELECT id, vendor_key, category FROM finance_vendor_categories")
+    ).all()
+    for row in vendor_rows:
+        new_category = suggest_expense_category(row.vendor_key or "", row.category or "")
+        if new_category != row.category:
+            bind.execute(
+                text(
+                    "UPDATE finance_vendor_categories SET category = :category "
+                    "WHERE id = :id"
+                ),
+                {"category": new_category, "id": row.id},
+            )
             updated += 1
 
     if updated:
