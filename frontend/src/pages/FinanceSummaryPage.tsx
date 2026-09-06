@@ -39,6 +39,10 @@ export function FinanceSummaryPage() {
   });
   if (dataQuery.isLoading) return <p className="empty">Loading finance summary…</p>;
   const data = dataQuery.data!;
+  const yearView = month == null;
+  const income = yearView ? data.year_income : data.month_income;
+  const expenses = yearView ? data.year_expenses : data.month_expenses;
+  const balance = yearView ? data.year_balance : data.month_balance;
 
   return (
     <>
@@ -46,9 +50,21 @@ export function FinanceSummaryPage() {
       <QueryFlash />
       <PeriodBar year={data.year} month={month} yearOptions={data.year_options} basePath="/finance/summary" />
       <dl className="stats">
-        <div className="stat is-positive"><dt>Income</dt><dd>{formatBrl(data.month_income)}</dd><div className="meta">YTD {formatBrl(data.year_income)}</div></div>
-        <div className="stat is-negative"><dt>Expenses</dt><dd>{formatBrl(data.month_expenses)}</dd><div className="meta">YTD {formatBrl(data.year_expenses)}</div></div>
-        <div className={`stat ${plClass(data.month_balance)}`}><dt>Balance</dt><dd>{formatBrl(data.month_balance)}</dd><div className="meta">YTD {formatBrl(data.year_balance)}</div></div>
+        <div className="stat is-positive">
+          <dt>Income</dt>
+          <dd>{formatBrl(income)}</dd>
+          {yearView ? <div className="meta">Full year</div> : <div className="meta">YTD {formatBrl(data.year_income)}</div>}
+        </div>
+        <div className="stat is-negative">
+          <dt>Expenses</dt>
+          <dd>{formatBrl(expenses)}</dd>
+          {yearView ? <div className="meta">Full year</div> : <div className="meta">YTD {formatBrl(data.year_expenses)}</div>}
+        </div>
+        <div className={`stat ${plClass(balance)}`}>
+          <dt>Balance</dt>
+          <dd>{formatBrl(balance)}</dd>
+          {yearView ? <div className="meta">Full year</div> : <div className="meta">YTD {formatBrl(data.year_balance)}</div>}
+        </div>
       </dl>
       <section className="panel">
         <div className="panel-head"><h2>Monthly trend</h2></div>
