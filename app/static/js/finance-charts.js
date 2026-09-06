@@ -18,12 +18,12 @@ function formatSignedBrl(value) {
     maximumFractionDigits: 2,
   });
   if (amount > 0) {
-    return `+R$ ${formatted}`;
+    return `+R$\u00a0${formatted}`;
   }
   if (amount < 0) {
-    return `-R$ ${formatted}`;
+    return `-R$\u00a0${formatted}`;
   }
-  return `R$ ${formatted}`;
+  return `R$\u00a0${formatted}`;
 }
 
 function chartBarValue(point, variant) {

@@ -25,13 +25,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def _format_brl(value) -> str:
-    amount = f"{Decimal(value):,.2f}"
-    return f"R$\u00a0{amount}"
+    amount = Decimal(value)
+    absolute = f"{abs(amount):,.2f}"
+    if amount < 0:
+        return f"-R$\u00a0{absolute}"
+    return f"R$\u00a0{absolute}"
 
 
 def _format_usd(value) -> str:
-    amount = f"{Decimal(value):,.2f}"
-    return f"${amount}"
+    amount = Decimal(value)
+    absolute = f"{abs(amount):,.2f}"
+    if amount < 0:
+        return f"-${absolute}"
+    return f"${absolute}"
 
 
 def _format_num(value, places: int = 4) -> str:
@@ -77,16 +83,22 @@ def _is_current_month(value) -> bool:
 
 def _format_signed_usd(value) -> str:
     amount = Decimal(value)
+    absolute = f"{abs(amount):,.2f}"
     if amount > 0:
-        return f"+${amount:,.2f}"
-    return f"${amount:,.2f}"
+        return f"+${absolute}"
+    if amount < 0:
+        return f"-${absolute}"
+    return f"${absolute}"
 
 
 def _format_signed_brl(value) -> str:
     amount = Decimal(value)
+    absolute = f"{abs(amount):,.2f}"
     if amount > 0:
-        return f"+R$\u00a0{amount:,.2f}"
-    return f"R$\u00a0{amount:,.2f}"
+        return f"+R$\u00a0{absolute}"
+    if amount < 0:
+        return f"-R$\u00a0{absolute}"
+    return f"R$\u00a0{absolute}"
 
 
 def _format_signed_pct(value) -> str:

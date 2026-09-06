@@ -28,6 +28,10 @@
         <label for="suggestion-cash">Cash to deploy (BRL)</label>
         <input id="suggestion-cash" type="number" name="new_cash" value="0" min="0" step="0.01">
       </div>
+      <div class="field">
+        <label for="suggestion-cash-usd">Cash to deploy (USD)</label>
+        <input id="suggestion-cash-usd" type="number" name="new_cash" value="0" min="0" step="0.01">
+      </div>
     </div>
   </div>
 </div>
@@ -46,8 +50,8 @@
   <div class="panel__header"><h2 class="panel__title">By holding</h2></div>
   <div id="security-suggestions-panel"
        hx-get="/allocation/rebalance/securities?mode=buy_only&new_cash=0"
-       hx-trigger="load, change from:.btn-group, change from:#suggestion-cash"
-       hx-include=".btn-group, #suggestion-cash">
+       hx-trigger="load, change from:.btn-group, change from:#suggestion-cash-usd"
+       hx-include=".btn-group, #suggestion-cash-usd">
     <div class="htmx-indicator"><span class="spinner"></span> Loading…</div>
   </div>
 </div>

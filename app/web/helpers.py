@@ -17,6 +17,7 @@ from app.services.allocation import (
     get_effective_type_value,
     has_type_target,
     normalize_allocation_target,
+    round_decimal,
     weight_of_allocation_sleeve,
     weight_of_total,
 )
@@ -266,16 +267,25 @@ def build_dashboard_rows(session: Session) -> list[dict]:
         if has_type_target(asset_type):
             target_weight = asset_type.target_pct
             assert target_weight is not None
-            drift = current_weight - target_weight
             current_weight_allocation = weight_of_allocation_sleeve(
                 current_value, sleeve_value
             )
             target_weight_allocation = normalize_allocation_target(
                 target_weight, target_total
             )
+            if (
+                current_weight_allocation is not None
+                and target_weight_allocation is not None
+            ):
+                drift = current_weight_allocation - target_weight_allocation
+                drift_value = round_decimal(drift * sleeve_value, 2)
+            else:
+                drift = None
+                drift_value = None
         else:
             target_weight = None
             drift = None
+            drift_value = None
             current_weight_allocation = None
             target_weight_allocation = None
         rows.append(
@@ -287,7 +297,9 @@ def build_dashboard_rows(session: Session) -> list[dict]:
                 "target_weight": target_weight,
                 "target_weight_allocation": target_weight_allocation,
                 "drift": drift,
+                "drift_value": drift_value,
                 "has_target": has_type_target(asset_type),
             }
         )
+    rows.sort(key=lambda row: (not row["has_target"],))
     return rows

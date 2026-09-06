@@ -134,6 +134,23 @@ def test_security_suggestions_use_usd_values(session, exchange_type):
     assert by_label["BBB"].delta == Decimal("100.00")
 
 
+def test_security_buy_only_scales_when_exceeds_new_cash_usd(session, exchange_type):
+    make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"), target_pct=Decimal("0.3"))
+    make_lot(session, exchange_type.id, "BBB", Decimal("5"), Decimal("100"), target_pct=Decimal("0.7"))
+
+    lots = session.exec(select(SecurityLot).where(SecurityLot.asset_type_id == exchange_type.id)).all()
+    targets = session.exec(select(SymbolTarget).where(SymbolTarget.asset_type_id == exchange_type.id)).all()
+    consolidated = consolidate_securities(list(lots), list(targets))
+
+    suggestions = calculate_security_suggestions(
+        consolidated,
+        mode=SuggestionMode.BUY_ONLY,
+        new_cash=Decimal("200"),
+    )
+    total_buys = sum(item.delta for item in suggestions)
+    assert total_buys == Decimal("200.00")
+
+
 def test_security_suggestions_use_consolidated_symbols(session, exchange_type):
     make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"), target_pct=Decimal("0.6"))
     make_lot(session, exchange_type.id, "AAA", Decimal("5"), Decimal("100"), target_pct=Decimal("0.6"))
@@ -328,6 +345,40 @@ def test_dashboard_skips_drift_for_unweighted_classes(session, exchange_type):
     assert row["has_target"] is False
     assert row["target_weight"] is None
     assert row["drift"] is None
+    assert row["drift_value"] is None
+
+
+def test_dashboard_drift_value_uses_allocation_sleeve(session, exchange_type):
+    portfolio_id = exchange_type.portfolio_id
+    for asset_type in session.exec(select(AssetType)).all():
+        asset_type.target_pct = None
+        session.add(asset_type)
+    session.commit()
+
+    overweight = make_asset_type(
+        session,
+        portfolio_id,
+        "Over",
+        Decimal("0.5"),
+        Decimal("0"),
+    )
+    underweight = make_asset_type(
+        session,
+        portfolio_id,
+        "Under",
+        Decimal("0.5"),
+        Decimal("0"),
+    )
+    make_investment(session, overweight.id, "Heavy", Decimal("70000"))
+    make_investment(session, underweight.id, "Light", Decimal("30000"))
+
+    rows = build_dashboard_rows(session)
+    by_name = {row["asset_type"].name: row for row in rows}
+
+    assert by_name["Over"]["drift"] == Decimal("0.2")
+    assert by_name["Over"]["drift_value"] == Decimal("20000.00")
+    assert by_name["Under"]["drift"] == Decimal("-0.2")
+    assert by_name["Under"]["drift_value"] == Decimal("-20000.00")
 
 
 def test_dashboard_dual_weights(session, exchange_type):
@@ -369,9 +420,16 @@ def test_dashboard_dual_weights(session, exchange_type):
     assert row_a["current_weight"] == Decimal("0.6")
     assert row_a["current_weight_allocation"] == Decimal("0.75")
     assert row_a["target_weight_allocation"] == Decimal("0.75")
+    assert row_a["drift"] == Decimal("0")
+    assert row_a["drift_value"] == Decimal("0.00")
     assert row_untracked["current_weight"] == Decimal("0.2")
     assert row_untracked["current_weight_allocation"] is None
+    assert row_untracked["drift_value"] is None
     assert row_untracked["has_target"] is False
+    assert [row["has_target"] for row in rows] == sorted(
+        (row["has_target"] for row in rows),
+        reverse=True,
+    )
 
 
 def test_suggestions_include_allocation_weights(session, exchange_type):

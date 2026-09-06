@@ -519,7 +519,10 @@
     if (amount > 0) {
       return `+R$\u00a0${absolute}`;
     }
-    return `R$\u00a0-${absolute}`;
+    if (amount < 0) {
+      return `-R$\u00a0${absolute}`;
+    }
+    return `R$\u00a0${absolute}`;
   }
 
   function plClass(amount) {

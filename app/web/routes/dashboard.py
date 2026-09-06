@@ -28,12 +28,12 @@ def dashboard(
     overweight = sum(
         1
         for row in rows
-        if row["has_target"] and row["drift"] > Decimal("0.005")
+        if row["drift"] is not None and row["drift"] > Decimal("0.005")
     )
     underweight = sum(
         1
         for row in rows
-        if row["has_target"] and row["drift"] < Decimal("-0.005")
+        if row["drift"] is not None and row["drift"] < Decimal("-0.005")
     )
     return templates.TemplateResponse(
         request=request,

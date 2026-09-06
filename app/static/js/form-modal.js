@@ -40,26 +40,26 @@ function closeAllFormModals() {
 }
 
 function bindFormModals() {
-  document.querySelectorAll("[data-form-modal-open]").forEach((trigger) => {
-    if (trigger.dataset.formModalBound === "1") {
-      return;
-    }
-    trigger.dataset.formModalBound = "1";
-    trigger.addEventListener("click", (event) => {
+  if (document.body.dataset.formModalDelegated === "1") {
+    return;
+  }
+  document.body.dataset.formModalDelegated = "1";
+
+  document.body.addEventListener("click", (event) => {
+    const openTrigger = event.target.closest("[data-form-modal-open]");
+    if (openTrigger) {
       event.preventDefault();
-      openFormModal(trigger.dataset.formModalOpen);
-    });
-  });
-
-  document.querySelectorAll(".form-modal").forEach((modal) => {
-    if (modal.dataset.formModalBound === "1") {
+      openFormModal(openTrigger.dataset.formModalOpen);
       return;
     }
-    modal.dataset.formModalBound = "1";
 
-    modal.querySelectorAll("[data-form-modal-dismiss]").forEach((element) => {
-      element.addEventListener("click", () => closeFormModal(modal));
-    });
+    const dismissTrigger = event.target.closest("[data-form-modal-dismiss]");
+    if (dismissTrigger) {
+      const modal = dismissTrigger.closest(".form-modal");
+      if (modal) {
+        closeFormModal(modal);
+      }
+    }
   });
 
   document.addEventListener("keydown", (event) => {

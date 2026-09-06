@@ -212,6 +212,10 @@ def test_suggestions_page_loads(client):
     response = client.get("/allocation/rebalance")
     assert response.status_code == 200
     assert "Rebalancing" in response.text
+    assert 'id="suggestion-cash"' in response.text
+    assert 'id="suggestion-cash-usd"' in response.text
+    assert "Cash to deploy (BRL)" in response.text
+    assert "Cash to deploy (USD)" in response.text
 
 
 def test_type_suggestions_partial(client):
@@ -231,6 +235,18 @@ def test_security_suggestions_partial_uses_usd(client, session, exchange_type):
     assert response.status_code == 200
     assert "$1,000.00" in response.text
     assert "R$" not in response.text
+
+
+def test_security_suggestions_partial_scales_usd_cash(client, session, exchange_type):
+    from decimal import Decimal
+
+    from app.tests.conftest import make_lot, make_symbol_target
+
+    make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"), target_pct=Decimal("0.3"))
+    make_lot(session, exchange_type.id, "BBB", Decimal("5"), Decimal("100"), target_pct=Decimal("0.7"))
+    response = client.get("/allocation/rebalance/securities?mode=buy_only&new_cash=200")
+    assert response.status_code == 200
+    assert "+$200.00" in response.text
 
 
 def test_update_symbol_target_returns_row_only(client, session, exchange_type):

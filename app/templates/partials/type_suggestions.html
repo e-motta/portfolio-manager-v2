@@ -45,9 +45,7 @@
         </td>
         <td class="num">{{ item.ideal_value|brl }}</td>
         <td><span class="badge badge-{{ item.action }}">{{ item.action|action_label }}</span></td>
-        <td class="num">
-          {% if item.delta > 0 %}+{% endif %}{{ item.delta|brl }}
-        </td>
+        <td class="num">{{ item.delta|pl_brl }}</td>
       </tr>
       {% else %}
       <tr>

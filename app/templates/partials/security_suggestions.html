@@ -20,9 +20,7 @@
         <td class="num">{{ "%.1f"|format(item.target_weight * 100) }}%</td>
         <td class="num">{{ item.ideal_value|usd }}</td>
         <td><span class="badge badge-{{ item.action }}">{{ item.action|action_label }}</span></td>
-        <td class="num">
-          {% if item.delta > 0 %}+{% endif %}{{ item.delta|usd }}
-        </td>
+        <td class="num">{{ item.delta|pl_usd }}</td>
       </tr>
       {% else %}
       <tr>
