@@ -206,6 +206,7 @@ def _preview_expense_import(
             "allow_transfer_import": allow_transfer_import,
             "transfer_accounts": TRANSFER_ACCOUNTS,
             "investment_brokers": INVESTMENT_BROKERS,
+            "preview_kind": "account_debits" if allow_transfer_import else "credit_card",
         }
     )
 
@@ -498,12 +499,18 @@ def preview_account_credits_sync(
             "new_count": new_count,
             "existing_count": existing_count,
             "confirm_action": "/api/open-finance/sync/account-credits/confirm",
+            "import_title": "Review account credits",
+            "import_subtitle": (
+                f"Credits default to {month_label} {resolved_year}. "
+                "Import as income or an investment contribution."
+            ),
             "month_labels": MONTH_LABELS,
             "year_options": _preview_year_options(resolved_year, rows),
             "default_import_year": resolved_year,
             "default_import_month": resolved_month,
             "default_import_label": f"{month_label} {resolved_year}",
             "investment_brokers": INVESTMENT_BROKERS,
+            "preview_kind": "account_credits",
         }
     )
 
@@ -599,6 +606,12 @@ def preview_investment_sync(
             "import_token": import_token,
             "new_count": new_count,
             "update_count": update_count,
+            "confirm_action": "/api/open-finance/sync/investments/confirm",
+            "import_title": "Review investment sync",
+            "import_subtitle": (
+                "Non-exchange positions only · updates existing matches by external ID"
+            ),
+            "preview_kind": "investments",
         }
     )
 

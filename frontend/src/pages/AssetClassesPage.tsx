@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 import { deleteJson, getJson, sendForm } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { EmptyState } from "../components/EmptyState";
 import { Modal } from "../components/Modal";
 import { formatPct } from "../lib/format";
 
@@ -90,6 +91,9 @@ export function AssetClassesPage() {
               </tr>
             </thead>
             <tbody>
+              {!data.asset_types.length ? (
+                <tr><td colSpan={4}><EmptyState title="No asset classes" /></td></tr>
+              ) : null}
               {data.asset_types.map((row) => {
                 const isEditing = editing === row.asset_type.id;
                 return (

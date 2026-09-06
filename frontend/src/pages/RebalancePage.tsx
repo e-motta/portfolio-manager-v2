@@ -1,6 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { getJson } from "../api/client";
+import { ComparisonChart } from "../components/ComparisonChart";
+import { EmptyState } from "../components/EmptyState";
+import { Segmented } from "../components/Segmented";
 import { asNumber, formatBrl, formatSignedBrl, formatSignedUsd, formatUsd } from "../lib/format";
 
 type Suggestion = {
@@ -52,18 +55,24 @@ export function RebalancePage() {
       </p>
       <div className="toolbar">
         <div className="btn-row">
-          <button type="button" className={`btn ${level === "types" ? "" : "btn--ghost"}`} onClick={() => setLevel("types")}>
-            By asset class
-          </button>
-          <button type="button" className={`btn ${level === "securities" ? "" : "btn--ghost"}`} onClick={() => setLevel("securities")}>
-            By holding
-          </button>
-          <button type="button" className={`btn ${mode === "buy_only" ? "" : "btn--ghost"}`} onClick={() => setMode("buy_only")}>
-            Cash only
-          </button>
-          <button type="button" className={`btn ${mode === "buy_and_sell" ? "" : "btn--ghost"}`} onClick={() => setMode("buy_and_sell")}>
-            Full rebalance
-          </button>
+          <Segmented
+            label="Rebalance level"
+            value={level}
+            onChange={setLevel}
+            options={[
+              { value: "types", label: "By asset class" },
+              { value: "securities", label: "By holding" },
+            ]}
+          />
+          <Segmented
+            label="Rebalance mode"
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: "buy_only", label: "Cash only" },
+              { value: "buy_and_sell", label: "Full rebalance" },
+            ]}
+          />
         </div>
         <div className="btn-row">
           <label className="field">
@@ -76,6 +85,20 @@ export function RebalancePage() {
           </label>
         </div>
       </div>
+      {(query.data?.suggestions || []).length ? (
+        <section className="panel">
+          <div className="panel-head"><h2>Current vs target</h2></div>
+          <div className="panel-body">
+            <ComparisonChart
+              rows={(query.data?.suggestions || []).map((item) => ({
+                label: item.label,
+                current: item.current_weight,
+                target: item.target_weight,
+              }))}
+            />
+          </div>
+        </section>
+      ) : null}
       <section className="panel">
         <div className="table-wrap">
           <table className="data">
@@ -91,6 +114,9 @@ export function RebalancePage() {
               </tr>
             </thead>
             <tbody>
+              {!(query.data?.suggestions || []).length ? (
+                <tr><td colSpan={7}><EmptyState title="No suggestions" body="Set target weights on asset classes or holdings first." /></td></tr>
+              ) : null}
               {(query.data?.suggestions || []).map((item) => (
                 <tr key={item.id}>
                   <td>{item.label}</td>
