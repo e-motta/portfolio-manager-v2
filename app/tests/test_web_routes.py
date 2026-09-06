@@ -1,8 +1,9 @@
 def test_snapshots_page_loads(client):
-    response = client.get("/history")
+    response = client.get("/api/history")
     assert response.status_code == 200
-    assert "Portfolio history" in response.text
-    assert "Capture" in response.text
+    payload = response.json()
+    assert "snapshots" in payload
+    assert "today" in payload
 
 
 def test_create_snapshot_captures_portfolio(client, session, exchange_type):
@@ -20,7 +21,7 @@ def test_create_snapshot_captures_portfolio(client, session, exchange_type):
     make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"), target_pct=Decimal("1"))
 
     response = client.post(
-        "/history",
+        "/api/history",
         data={"snapshot_date": "2026-06-08"},
         follow_redirects=False,
     )
@@ -37,22 +38,22 @@ def test_create_snapshot_captures_portfolio(client, session, exchange_type):
     assert len(asset_classes) >= 2
     assert any(row.name == "Listed Securities" for row in asset_classes)
 
-    detail = client.get(f"/history/{snapshot.id}")
+    detail = client.get(f"/api/history/{snapshot.id}")
     assert detail.status_code == 200
-    assert "AAA" in detail.text
-    assert "Captured" in detail.text
-    assert "BRT" in detail.text
+    body = detail.json()
+    assert any(row["symbol"] == "AAA" for row in body["holdings"])
+    assert body["snapshot"]["created_at"]
 
-    delete_response = client.delete(f"/history/{snapshot.id}")
+    delete_response = client.delete(f"/api/history/{snapshot.id}")
     assert delete_response.status_code == 200
 
 
 def test_dashboard_loads(client):
-    response = client.get("/")
+    response = client.get("/api/dashboard")
     assert response.status_code == 200
-    assert "Portfolio overview" in response.text
-    assert "data-layout-value" in response.text
-    assert "layout.js" in response.text
+    payload = response.json()
+    assert "rows" in payload
+    assert "total_value" in payload
 
 
 def test_investments_page_loads(client, session, exchange_type):
@@ -67,19 +68,13 @@ def test_investments_page_loads(client, session, exchange_type):
     make_investment(session, cash.id, "Savings", Decimal("1000"), institution="Nubank")
     make_investment(session, cash.id, "CDB", Decimal("2500"), institution="Nubank")
     make_investment(session, cash.id, "Fund", Decimal("1500"), institution="XP")
-    response = client.get("/portfolio/investments")
+    response = client.get("/api/portfolio/investments")
     assert response.status_code == 200
-    assert "Other" in response.text
-    assert "positions outside securities" in response.text
-    assert "Add investment" in response.text
-    assert 'id="add-investment-modal"' in response.text
-    assert "/static/js/form-modal.js" in response.text
-    assert "By bank / institution" in response.text
-    assert "Nubank" in response.text
-    assert "XP" in response.text
-    assert "Updated" in response.text
-    assert "BRT" in response.text
-    assert "investment-updated__dot" in response.text
+    payload = response.json()
+    assert payload["investment_count"] == 3
+    institutions = {row["institution"] for row in payload["institution_summaries"]}
+    assert "Nubank" in institutions
+    assert "XP" in institutions
 
 
 def test_create_investment(client, session, exchange_type):
@@ -96,7 +91,7 @@ def test_create_investment(client, session, exchange_type):
         )
     ).one()
     response = client.post(
-        "/portfolio/investments",
+        "/api/portfolio/investments",
         data={
             "asset_type_id": str(bonds.id),
             "institution": "Nubank",
@@ -113,7 +108,7 @@ def test_create_investment(client, session, exchange_type):
     assert investment.institution == "Nubank"
     assert investment.current_value == Decimal("10500.00")
 
-    delete_response = client.delete(f"/portfolio/investments/{investment.id}")
+    delete_response = client.delete(f"/api/portfolio/investments/{investment.id}")
     assert delete_response.status_code == 200
 
 
@@ -131,37 +126,30 @@ def test_clear_asset_type_target_after_create(client, session, exchange_type):
         Decimal("0"),
     )
     response = client.post(
-        f"/allocation/classes/{asset_type.id}",
+        f"/api/allocation/classes/{asset_type.id}",
         data={"name": "Clearable", "target_pct": ""},
     )
     assert response.status_code == 200
-    assert "—" in response.text
-    assert "15.0%" not in response.text
+    payload = response.json()
+    assert payload["asset_type"]["target_pct"] is None
 
     session.refresh(asset_type)
     assert asset_type.target_pct is None
 
 
 def test_asset_types_page_loads(client):
-    response = client.get("/allocation/classes")
+    response = client.get("/api/allocation/classes")
     assert response.status_code == 200
-    assert "Asset classes" in response.text
-    assert "Add class" in response.text
-    assert 'id="add-asset-class-modal"' in response.text
-    assert "/static/js/form-modal.js" in response.text
-    assert "Assets" in response.text
-    assert "Actions" in response.text
-    listed_idx = response.text.index("Listed Securities")
-    cash_idx = response.text.index("Cash")
-    assert listed_idx < cash_idx
-    main_end = response.text.index("</main>")
-    modal_start = response.text.index('id="add-asset-class-modal"')
-    assert modal_start > main_end
+    payload = response.json()
+    names = [row["asset_type"]["name"] for row in payload["asset_types"]]
+    assert names[0] == "Listed Securities"
+    assert "Cash" in names
+    assert names.index("Listed Securities") < names.index("Cash")
 
 
 def test_create_asset_type_redirects(client, session, exchange_type):
     response = client.post(
-        "/allocation/classes",
+        "/api/allocation/classes",
         data={"name": "Commodities", "target_pct": ""},
         follow_redirects=False,
     )
@@ -184,44 +172,31 @@ def test_securities_page_loads(client, session, exchange_type):
     from decimal import Decimal
 
     make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"))
-    response = client.get("/portfolio/holdings")
+    response = client.get("/api/portfolio/holdings")
     assert response.status_code == 200
-    assert 'id="securities-content"' in response.text
-    assert 'hx-get="/portfolio/holdings/partials/content"' in response.text
-    assert "Loading securities and market data" in response.text
-    assert "Add trade" in response.text
-    assert 'id="add-trade-modal"' in response.text
-    assert 'id="add-dividend-modal"' in response.text
-    assert "/static/js/form-modal.js" in response.text
-    assert "Record trade" not in response.text
-    assert 'class="panel panel--import"' not in response.text
+    payload = response.json()
+    assert payload["symbol_count"] == 1
+    assert payload["consolidated"][0]["symbol"] == "AAA"
 
-    partial = client.get("/portfolio/holdings/partials/content")
+    partial = client.get("/api/portfolio/holdings/partials/content")
     assert partial.status_code == 200
-    assert "Positions by ticker" in partial.text
-    assert "Performance by ticker" in partial.text
-    assert "Total return (USD)" in partial.text
-    assert "Dividends net (USD)" in partial.text
-    assert "Prices " in partial.text
-    assert "BRT" in partial.text
-    assert 'id="securities-subtitle"' in partial.text
-    assert 'hx-swap-oob="true"' in partial.text
+    body = partial.json()
+    assert body["return_totals"]["total_return_usd"] is not None
+    assert body["dividend_net_usd"] is not None
 
 
 def test_suggestions_page_loads(client):
-    response = client.get("/allocation/rebalance")
+    response = client.get("/api/allocation/rebalance")
     assert response.status_code == 200
-    assert "Rebalancing" in response.text
-    assert 'id="suggestion-cash"' in response.text
-    assert 'id="suggestion-cash-usd"' in response.text
-    assert "Cash to deploy (BRL)" in response.text
-    assert "Cash to deploy (USD)" in response.text
+    assert "usd_brl_rate" in response.json()
 
 
 def test_type_suggestions_partial(client):
-    response = client.get("/allocation/rebalance/types?mode=buy_only&new_cash=0")
+    response = client.get("/api/allocation/rebalance/types?mode=buy_only&new_cash=0")
     assert response.status_code == 200
-    assert "Asset class" in response.text
+    payload = response.json()
+    assert payload["level"] == "types"
+    assert payload["currency"] == "BRL"
 
 
 def test_security_suggestions_partial_uses_usd(client, session, exchange_type):
@@ -231,10 +206,12 @@ def test_security_suggestions_partial_uses_usd(client, session, exchange_type):
 
     make_symbol_target(session, exchange_type.id, "AAA", Decimal("1"))
     make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"))
-    response = client.get("/allocation/rebalance/securities?mode=buy_only&new_cash=0")
+    response = client.get("/api/allocation/rebalance/securities?mode=buy_only&new_cash=0")
     assert response.status_code == 200
-    assert "$1,000.00" in response.text
-    assert "R$" not in response.text
+    payload = response.json()
+    assert payload["currency"] == "USD"
+    values = [item["current_value"] for item in payload["suggestions"]]
+    assert any(value in {"1000", "1000.00", "1000.0"} or float(value) == 1000 for value in values)
 
 
 def test_security_suggestions_partial_scales_usd_cash(client, session, exchange_type):
@@ -244,9 +221,11 @@ def test_security_suggestions_partial_scales_usd_cash(client, session, exchange_
 
     make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"), target_pct=Decimal("0.3"))
     make_lot(session, exchange_type.id, "BBB", Decimal("5"), Decimal("100"), target_pct=Decimal("0.7"))
-    response = client.get("/allocation/rebalance/securities?mode=buy_only&new_cash=200")
+    response = client.get("/api/allocation/rebalance/securities?mode=buy_only&new_cash=200")
     assert response.status_code == 200
-    assert "+$200.00" in response.text
+    payload = response.json()
+    deltas = [float(item["delta"]) for item in payload["suggestions"] if float(item["delta"]) > 0]
+    assert abs(sum(deltas) - 200) < 0.05
 
 
 def test_update_symbol_target_returns_row_only(client, session, exchange_type):
@@ -256,17 +235,12 @@ def test_update_symbol_target_returns_row_only(client, session, exchange_type):
 
     make_symbol_target(session, exchange_type.id, "AAA", Decimal("0.1"))
     make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"))
-    response = client.post("/portfolio/holdings/symbols/AAA", data={"target_pct": "10.0"})
+    response = client.post("/api/portfolio/holdings/symbols/AAA", data={"target_pct": "10.0"})
     assert response.status_code == 200
-    assert response.text.strip().startswith("<tr")
-    assert "hx-swap-oob" not in response.text
-    assert "target-weight-status" not in response.text
-    assert "btn-edit" in response.text
-    assert "view-mode" in response.text
-    assert "hx-trigger-after-settle" in {
-        k.lower(): v for k, v in response.headers.items()
-    }
-    assert "targetTotalRefresh" in response.headers.get("HX-Trigger-After-Settle", "")
+    payload = response.json()
+    assert payload["item"]["symbol"] == "AAA"
+    assert float(payload["item"]["target_pct"]) == 0.1
+    assert "target_total_display" in payload
 
 
 def test_update_symbol_target_allows_total_over_100(client, session, exchange_type):
@@ -278,7 +252,7 @@ def test_update_symbol_target_allows_total_over_100(client, session, exchange_ty
     make_symbol_target(session, exchange_type.id, "BBB", Decimal("0.5"))
     make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"))
     make_lot(session, exchange_type.id, "BBB", Decimal("10"), Decimal("100"))
-    response = client.post("/portfolio/holdings/symbols/AAA", data={"target_pct": "50.0"})
+    response = client.post("/api/portfolio/holdings/symbols/AAA", data={"target_pct": "50.0"})
     assert response.status_code == 200
 
 
@@ -289,17 +263,17 @@ def test_update_symbol_target_rejects_over_100_for_single_holding(client, sessio
 
     make_symbol_target(session, exchange_type.id, "AAA", Decimal("0.1"))
     make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"))
-    response = client.post("/portfolio/holdings/symbols/AAA", data={"target_pct": "100.1"})
+    response = client.post("/api/portfolio/holdings/symbols/AAA", data={"target_pct": "100.1"})
     assert response.status_code == 422
     assert "between 0% and 100%" in response.json()["detail"]
 
 
 def test_target_weight_total_partial(client):
-    response = client.get("/portfolio/holdings/partials/target-weight-total")
+    response = client.get("/api/portfolio/holdings/partials/target-weight-total")
     assert response.status_code == 200
-    assert "No target weights set" in response.text
-    assert 'id="target-weight-status"' in response.text
-    assert "status-pill warn" in response.text
+    payload = response.json()
+    assert float(payload["target_total_display"]) == 0
+    assert payload["target_total_balanced"] is False
 
 
 def test_target_weight_total_shows_over_100(client, session, exchange_type):
@@ -309,27 +283,17 @@ def test_target_weight_total_shows_over_100(client, session, exchange_type):
 
     make_symbol_target(session, exchange_type.id, "AAA", Decimal("0.6"))
     make_symbol_target(session, exchange_type.id, "BBB", Decimal("0.5"))
-    response = client.get("/portfolio/holdings/partials/target-weight-total")
+    response = client.get("/api/portfolio/holdings/partials/target-weight-total")
     assert response.status_code == 200
-    assert "Targets = 110.0%" in response.text
-    assert "status-pill warn" in response.text
-    assert "status-pill ok" not in response.text
+    payload = response.json()
+    assert float(payload["target_total_display"]) == 110.0
+    assert payload["target_total_balanced"] is False
 
 
 def test_holdings_page_import_modal_is_outside_main_content(client):
-    response = client.get("/portfolio/holdings")
+    response = client.get("/api/portfolio/holdings")
     assert response.status_code == 200
-    assert 'id="import-modal"' in response.text
-    assert 'id="import-modal-body"' in response.text
-    assert 'id="add-trade-modal"' in response.text
-    assert 'id="add-dividend-modal"' in response.text
-    assert "/static/js/import.js" in response.text
-    assert "/static/js/form-modal.js" in response.text
-    main_end = response.text.index("</main>")
-    modal_start = response.text.index('id="import-modal"')
-    assert modal_start > main_end
-    trade_modal_start = response.text.index('id="add-trade-modal"')
-    assert trade_modal_start > main_end
+    assert "consolidated" in response.json()
 
 
 def test_statement_import_preview(client, session, exchange_type):
@@ -353,22 +317,19 @@ def test_statement_import_preview(client, session, exchange_type):
 
     with csv_path.open("rb") as handle:
         response = client.post(
-            "/portfolio/holdings/import/preview",
+            "/api/portfolio/holdings/import/preview",
             files={"statement": ("statement.csv", handle, "text/csv")},
         )
 
     assert response.status_code == 200
-    assert "VTI" in response.text
-    assert "Trade date" in response.text
-    assert "In portfolio" in response.text
-    assert "New" in response.text
-    assert "already imported" in response.text
-    assert 'name="lots"' in response.text
-    assert "14/11/2024" in response.text
-    assert "checked" in response.text
-    assert "disabled" in response.text
-    assert "data-import-select-all" in response.text
-    assert "Add selected tax lots" in response.text
+    payload = response.json()
+    symbols = [row["symbol"] for row in payload["rows"]]
+    assert "VTI" in symbols
+    assert payload["existing_count"] >= 1
+    assert payload["new_count"] >= 1
+    vti = next(row for row in payload["rows"] if row["symbol"] == "VTI")
+    assert vti["already_exists"] is True
+    assert vti["trade_date"] == "2024-11-14"
 
 
 def test_statement_import_preview_positions_only_has_no_lots(client):
@@ -382,13 +343,14 @@ def test_statement_import_preview_positions_only_has_no_lots(client):
 
     with csv_path.open("rb") as handle:
         response = client.post(
-            "/portfolio/holdings/import/preview",
+            "/api/portfolio/holdings/import/preview",
             files={"statement": ("statement.csv", handle, "text/csv")},
         )
 
     assert response.status_code == 200
-    assert "No trades found in this statement" in response.text
-    assert 'name="lots"' not in response.text
+    payload = response.json()
+    assert payload["has_trades"] is False
+    assert payload["rows"] == []
 
 
 def test_statement_import_confirm_adds_positions(client, session, exchange_type):
@@ -413,7 +375,7 @@ def test_statement_import_confirm_adds_positions(client, session, exchange_type)
     ijs_keys = [row.lot_key for row in build_import_lot_rows(statement, set()) if row.symbol == "IJS"]
 
     response = client.post(
-        "/portfolio/holdings/import/confirm",
+        "/api/portfolio/holdings/import/confirm",
         data={"import_token": token, "lots": ijs_keys},
         follow_redirects=False,
     )
@@ -461,15 +423,15 @@ def test_dividend_import_preview(client, session, exchange_type):
 
     with csv_path.open("rb") as handle:
         response = client.post(
-            "/portfolio/holdings/dividends/import/preview",
+            "/api/portfolio/holdings/dividends/import/preview",
             files={"statement": ("statement.csv", handle, "text/csv")},
         )
 
     assert response.status_code == 200
-    assert "VTI" in response.text
-    assert "already imported" in response.text
-    assert 'name="dividends"' in response.text
-    assert "Add selected dividends" in response.text
+    payload = response.json()
+    vti = next(row for row in payload["rows"] if row["symbol"] == "VTI")
+    assert vti["already_exists"] is True
+    assert payload["has_dividends"] is True
 
 
 def test_create_manual_dividend(client, session, exchange_type):
@@ -480,7 +442,7 @@ def test_create_manual_dividend(client, session, exchange_type):
     from app.models.dividend import Dividend
 
     response = client.post(
-        "/portfolio/holdings/dividends",
+        "/api/portfolio/holdings/dividends",
         data={
             "symbol": "VTI",
             "pay_date": "2024-12-26",
@@ -502,18 +464,19 @@ def test_create_manual_dividend(client, session, exchange_type):
 
 
 def test_holdings_page_shows_dividends_section(client):
-    response = client.get("/portfolio/holdings")
+    response = client.get("/api/portfolio/holdings")
     assert response.status_code == 200
-    assert "Preview dividends" in response.text
+    payload = response.json()
+    assert "dividends" in payload
 
-    partial = client.get("/portfolio/holdings/partials/content")
+    partial = client.get("/api/portfolio/holdings/partials/content")
     assert partial.status_code == 200
-    assert "Dividends" in partial.text
+    assert "dividends" in partial.json()
 
 
 def test_create_lot_with_provisional_fx(client, session, exchange_type):
     response = client.post(
-        "/portfolio/holdings/lots",
+        "/api/portfolio/holdings/lots",
         data={
             "symbol": "TEST",
             "purchase_date": "2024-01-15",
@@ -532,7 +495,7 @@ def test_create_lot_with_provisional_fx(client, session, exchange_type):
     assert lot.source == "manual"
     assert lot.purchase_price_usd == 100
 
-    delete_response = client.delete(f"/portfolio/holdings/lots/{lot.id}")
+    delete_response = client.delete(f"/api/portfolio/holdings/lots/{lot.id}")
     assert delete_response.status_code == 200
 
 
@@ -556,7 +519,7 @@ def test_refresh_ptax_rates_updates_provisional_lots(client, session, exchange_t
     )
 
     with patch.object(prices, "fetch_ptax_usd_brl_rate", return_value=Decimal("6.05")):
-        response = client.post("/portfolio/holdings/ptax/refresh", follow_redirects=False)
+        response = client.post("/api/portfolio/holdings/ptax/refresh", follow_redirects=False)
 
     assert response.status_code == 303
     assert response.headers["location"] == "/portfolio/holdings"
@@ -578,13 +541,13 @@ def test_holdings_page_shows_update_ptax_button_when_provisional_fx(client, sess
         Decimal("100"),
         provisional_fx=True,
     )
-    response = client.get("/portfolio/holdings")
+    response = client.get("/api/portfolio/holdings")
     assert response.status_code == 200
+    assert response.json()["provisional_fx_count"] > 0
 
-    partial = client.get("/portfolio/holdings/partials/content")
+    partial = client.get("/api/portfolio/holdings/partials/content")
     assert partial.status_code == 200
-    assert "Update PTAX rates" in partial.text
-    assert "/portfolio/holdings/ptax/refresh" in partial.text
+    assert partial.json()["provisional_fx_count"] > 0
 
 
 def test_holdings_page_hides_update_ptax_button_without_provisional_fx(client, session, exchange_type):
@@ -593,18 +556,21 @@ def test_holdings_page_hides_update_ptax_button_without_provisional_fx(client, s
     from app.tests.conftest import make_lot
 
     make_lot(session, exchange_type.id, "VTI", Decimal("10"), Decimal("100"))
-    response = client.get("/portfolio/holdings")
+    response = client.get("/api/portfolio/holdings")
     assert response.status_code == 200
+    assert response.json()["provisional_fx_count"] == 0
 
-    partial = client.get("/portfolio/holdings/partials/content")
+    partial = client.get("/api/portfolio/holdings/partials/content")
     assert partial.status_code == 200
-    assert "Update PTAX rates" not in partial.text
+    assert partial.json()["provisional_fx_count"] == 0
 
 
 def test_backups_page_loads(client):
-    response = client.get("/backups")
+    response = client.get("/api/backups")
     assert response.status_code == 200
-    assert "Google Drive backups" in response.text
+    payload = response.json()
+    assert "google_configured" in payload
+    assert payload["drive_connected"] is False
 
 
 def test_backups_list_partial_shows_drive_error_on_token_refresh_failure(
@@ -631,7 +597,8 @@ def test_backups_list_partial_shows_drive_error_on_token_refresh_failure(
         _fail_refresh,
     )
 
-    response = client.get("/backups/partials/list")
+    response = client.get("/api/backups/partials/list")
     assert response.status_code == 200
-    assert "Google Drive access expired" in response.text
-    assert "Reconnect Google Drive" in response.text
+    payload = response.json()
+    assert "Google Drive access expired" in payload["drive_error"]
+    assert payload["backups"] == []

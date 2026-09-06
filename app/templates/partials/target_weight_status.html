@@ -1,7 +1,0 @@
-{% if target_total == 0 %}
-<span id="target-weight-status" class="status-pill warn">No target weights set</span>
-{% elif target_total_balanced %}
-<span id="target-weight-status" class="status-pill ok">Targets = 100%</span>
-{% else %}
-<span id="target-weight-status" class="status-pill warn">Targets = {{ target_total_display }}%</span>
-{% endif %}

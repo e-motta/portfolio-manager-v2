@@ -3,13 +3,12 @@ from decimal import Decimal, InvalidOperation
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Form, HTTPException, status
+from fastapi.responses import RedirectResponse
 
 from app.core.db import SessionDep
 from app.models.asset_type import AssetType
 from app.services.allocation import has_type_target, validate_type_targets
-from app.web.dependencies import TemplatesDep
 from app.web.helpers import (
     enrich_asset_type,
     get_asset_type_asset_count,
@@ -17,6 +16,7 @@ from app.web.helpers import (
     get_portfolio,
     sort_asset_types_for_display,
 )
+from app.web.jsonutil import json_ok
 
 router = APIRouter(prefix="/allocation/classes", tags=["asset-types"])
 
@@ -52,25 +52,33 @@ def _target_total(asset_types: list[AssetType]) -> Decimal:
     )
 
 
-@router.get("", response_class=HTMLResponse)
-def list_asset_types(
-    request: Request,
-    session: SessionDep,
-    templates: TemplatesDep,
-) -> HTMLResponse:
+def _asset_type_payload(session, asset_type: AssetType) -> dict:
+    enrich_asset_type(session, asset_type)
+    return {
+        "asset_type": asset_type,
+        "asset_count": get_asset_type_asset_count(asset_type),
+        "has_target": has_type_target(asset_type),
+    }
+
+
+@router.get("")
+def list_asset_types(session: SessionDep):
     asset_types = sort_asset_types_for_display(get_asset_types(session))
     target_total = _target_total(asset_types)
     weighted_count = sum(1 for asset_type in asset_types if has_type_target(asset_type))
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/asset_types.html",
-        context={
-            "asset_types": asset_types,
+    return json_ok(
+        {
+            "asset_types": [
+                {
+                    "asset_type": asset_type,
+                    "asset_count": get_asset_type_asset_count(asset_type),
+                    "has_target": has_type_target(asset_type),
+                }
+                for asset_type in asset_types
+            ],
             "target_total": target_total,
             "weighted_count": weighted_count,
-            "get_asset_count": get_asset_type_asset_count,
-            "allocation_tab": "classes",
-        },
+        }
     )
 
 
@@ -105,15 +113,13 @@ def create_asset_type(
     return RedirectResponse(url="/allocation/classes", status_code=303)
 
 
-@router.post("/{asset_type_id}", response_class=HTMLResponse)
+@router.post("/{asset_type_id}")
 def update_asset_type(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     asset_type_id: UUID,
     name: str = Form(default=""),
     target_pct: str = Form(default=""),
-) -> HTMLResponse:
+):
     asset_type = session.get(AssetType, asset_type_id)
     if not asset_type:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -131,9 +137,9 @@ def update_asset_type(
                 exclude_id=asset_type.id,
                 new_target=target,
             )
-        except ValueError as exc:
+        except ValueError as ext:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(ext)
             )
     asset_type.target_pct = target
 
@@ -141,23 +147,14 @@ def update_asset_type(
     session.commit()
     session.refresh(asset_type)
 
-    enrich_asset_type(session, asset_type)
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/asset_type_row.html",
-        context={
-            "asset_type": asset_type,
-            "asset_count": get_asset_type_asset_count(asset_type),
-        },
-    )
+    return json_ok(_asset_type_payload(session, asset_type))
 
 
-@router.delete("/{asset_type_id}", response_class=HTMLResponse)
+@router.delete("/{asset_type_id}")
 def delete_asset_type(
-    request: Request,
     session: SessionDep,
     asset_type_id: UUID,
-) -> HTMLResponse:
+):
     asset_type = session.get(AssetType, asset_type_id)
     if not asset_type:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -168,4 +165,4 @@ def delete_asset_type(
         )
     session.delete(asset_type)
     session.commit()
-    return HTMLResponse("")
+    return json_ok({})

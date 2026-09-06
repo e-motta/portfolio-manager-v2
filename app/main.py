@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.config import settings
@@ -34,6 +33,13 @@ app.add_middleware(
     https_only=False,
 )
 
-static_dir = Path(__file__).resolve().parent / "static"
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.include_router(web_router)
+
+frontend_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if os.getenv("TESTING") != "1":
+    app.frontend(
+        "/",
+        directory=str(frontend_dir),
+        fallback="index.html",
+        check_dir=False,
+    )

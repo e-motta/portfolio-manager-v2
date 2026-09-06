@@ -1,6 +1,6 @@
 # Portfolio Manager v2
 
-Personal portfolio and finance tracker built with FastAPI and HTMX. One portfolio per user: manage asset-class and security allocation, track Brazilian personal finance, import bank data via Open Finance, and back up everything to Google Drive.
+Personal portfolio and finance tracker built with FastAPI and React. One portfolio per user: manage asset-class and security allocation, track Brazilian personal finance, import bank data via Open Finance, and back up everything to Google Drive.
 
 ![Portfolio dashboard](docs/images/dashboard.png)
 
@@ -9,11 +9,19 @@ Personal portfolio and finance tracker built with FastAPI and HTMX. One portfoli
 ```bash
 uv sync --extra dev
 cp .env.example .env   # fill in OAuth credentials
+cd frontend && npm install && npm run build && cd ..
 alembic upgrade head
 fastapi dev
 ```
 
 Open http://127.0.0.1:8000
+
+FastAPI serves the built SPA from `frontend/dist` via `app.frontend()`. For frontend-only work, run Vite alongside the API:
+
+```bash
+fastapi dev                  # API at :8000
+cd frontend && npm run dev   # UI at :5173, proxies /api and OAuth
+```
 
 ### Environment
 
@@ -41,7 +49,6 @@ External data (no config): Yahoo Finance for quotes and spot USD/BRL; Banco Cent
 - Dividend tracking: gross, withholding, net (USD); add manually or import
 - **Add trade** / **Add dividend** modals; inline edit and delete on lots and dividends
 - **Refresh prices** via Yahoo Finance; **Update PTAX rates** to replace provisional FX on lots with Banco Central official rates
-- Deferred page load with skeleton placeholders while market data is fetched
 
 ### Other investments
 
@@ -69,7 +76,7 @@ Year-scoped personal finance with month pills, year selector, and monthly charts
 
 - **Summary** — income, expenses, and balance (month + YTD); monthly chart; breakdown cards for income (PJ / Outros), Bills (paid/unpaid), and day-to-day spending by payment account
 - **Income** — PJ and Outros categories; add, edit, delete; period totals and monthly chart
-- **Expenses** — 17 categories (Bills, Alimentação, Esporte, Assinaturas, Vida, Outros) with Bills subcategories and effective-amount rules (e.g. shared rent split); payment accounts (Nubank, Nuconta, XP/BB credit and debit, Wise, cash); installments up to 48 months; vendor memory for category autocompletion; reversal linking for refunds; category and payment-account breakdowns; quick-add per section; Manual vs Open Finance source badges
+- **Expenses** — 17 categories (Bills, Alimentação, Esporte, Assinaturas, Vida, Outros) with Bills subcategories and effective-amount rules (e.g. shared rent split); payment accounts (Nubank, Nuconta, XP/BB credit and debit, Wise, cash); installments up to 48 months; vendor memory for category autocompletion; reversal linking for refunds; category and payment-account breakdowns; Manual vs Open Finance source badges
 - **Transfers** — move money between accounts with optional description and date
 - **Investments (cash flow)** — monthly contributions by broker (XP, IB, Nubank, MB); 30% annual target derived from year income; YTD progress and per-broker breakdown (distinct from portfolio Other investments balances)
 
@@ -96,7 +103,7 @@ Year-scoped personal finance with month pills, year selector, and monthly charts
 
 - Google OAuth sign-in; session cookie; sign out; first login creates an empty portfolio with default asset classes
 - Sidebar or top navigation layout (persisted in browser)
-- HTMX inline editing on tables; modal forms for adds; import dropzone with preview modal
+- Responsive tables, modal forms, and inline editing
 
 ## Tests
 
@@ -108,7 +115,7 @@ ruff check app
 ## Project layout
 
 - `app/services/` — allocation, prices, finance, Open Finance sync, backups
-- `app/web/routes/` — HTMX HTML endpoints
+- `app/web/routes/` — JSON API endpoints under `/api`
 - `app/models/` — SQLModel tables
-- `app/templates/` — Jinja2 pages and partials
+- `frontend/` — React SPA (Vite); production build is served by FastAPI
 - `AGENTS.md` — AI agent conventions

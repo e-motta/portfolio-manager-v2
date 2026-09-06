@@ -1,8 +1,8 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Form, HTTPException, status
+from fastapi.responses import RedirectResponse
 
 from app.core.db import SessionDep
 from app.services.snapshots import (
@@ -11,7 +11,7 @@ from app.services.snapshots import (
     get_snapshot,
     sort_snapshot_asset_classes,
 )
-from app.web.dependencies import TemplatesDep
+from app.web.jsonutil import json_ok
 
 router = APIRouter(prefix="/history", tags=["snapshots"])
 
@@ -26,25 +26,13 @@ def _parse_snapshot_date(value: str) -> date:
         ) from exc
 
 
-@router.get("", response_class=HTMLResponse)
-def snapshots_dashboard(
-    request: Request,
-    session: SessionDep,
-    templates: TemplatesDep,
-) -> HTMLResponse:
+@router.get("")
+def snapshots_dashboard(session: SessionDep):
     dashboard = build_snapshot_dashboard(session)
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/snapshots.html",
-        context={
-            "today": date.today().isoformat(),
-            "sync_tab": "history",
-            **dashboard,
-        },
-    )
+    return json_ok({"today": date.today().isoformat(), **dashboard})
 
 
-@router.post("", response_class=HTMLResponse)
+@router.post("")
 def create_snapshot(
     session: SessionDep,
     snapshot_date: str = Form(default=""),
@@ -54,21 +42,17 @@ def create_snapshot(
     return RedirectResponse(url="/history", status_code=303)
 
 
-@router.get("/{snapshot_id}", response_class=HTMLResponse)
+@router.get("/{snapshot_id}")
 def snapshot_detail(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     snapshot_id: UUID,
-) -> HTMLResponse:
+):
     snapshot = get_snapshot(session, snapshot_id)
     if not snapshot:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/snapshot_detail.html",
-        context={
+    return json_ok(
+        {
             "snapshot": snapshot,
             "asset_classes": sort_snapshot_asset_classes(snapshot.asset_classes),
             "investments": sorted(
@@ -76,19 +60,18 @@ def snapshot_detail(
                 key=lambda row: (row.institution.lower(), row.name.lower()),
             ),
             "holdings": sorted(snapshot.holdings, key=lambda row: row.symbol),
-            "sync_tab": "history",
-        },
+        }
     )
 
 
-@router.delete("/{snapshot_id}", response_class=HTMLResponse)
+@router.delete("/{snapshot_id}")
 def delete_snapshot(
     session: SessionDep,
     snapshot_id: UUID,
-) -> HTMLResponse:
+):
     snapshot = get_snapshot(session, snapshot_id)
     if not snapshot:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     session.delete(snapshot)
     session.commit()
-    return HTMLResponse("")
+    return json_ok({})

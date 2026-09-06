@@ -3,18 +3,18 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Form, HTTPException, status
+from fastapi.responses import RedirectResponse
 
 from app.core.db import SessionDep
 from app.models.asset_type import AssetType
 from app.models.investment import Investment
-from app.web.dependencies import TemplatesDep
 from app.web.helpers import (
     build_institution_summaries,
     get_investable_asset_types,
     get_investments,
 )
+from app.web.jsonutil import json_ok
 
 router = APIRouter(prefix="/portfolio/investments", tags=["investments"])
 
@@ -51,37 +51,34 @@ def _investments_context(session) -> dict:
     total_current = sum((item.current_value for item in investments), start=Decimal("0"))
     return {
         "investments": investments,
-        "institution_summaries": build_institution_summaries(investments, total_current),
+        "institution_summaries": [
+            {
+                "institution": row.institution,
+                "position_count": row.position_count,
+                "total_value": row.total_value,
+                "weight": row.weight,
+            }
+            for row in build_institution_summaries(investments, total_current)
+        ],
         "asset_types": get_investable_asset_types(session),
         "total_current": total_current,
         "investment_count": len(investments),
-        "portfolio_tab": "investments",
     }
 
 
-@router.get("", response_class=HTMLResponse)
-def list_investments(
-    request: Request,
-    session: SessionDep,
-    templates: TemplatesDep,
-) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/investments.html",
-        context=_investments_context(session),
-    )
+@router.get("")
+def list_investments(session: SessionDep):
+    return json_ok(_investments_context(session))
 
 
-@router.post("", response_class=HTMLResponse)
+@router.post("")
 def create_investment(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     asset_type_id: Annotated[str, Form()],
     institution: Annotated[str, Form()],
     name: Annotated[str, Form()],
     current_value: Annotated[str, Form()],
-) -> HTMLResponse:
+) -> RedirectResponse:
     _get_investable_type(session, UUID(asset_type_id))
 
     investment = Investment(
@@ -95,17 +92,15 @@ def create_investment(
     return RedirectResponse(url="/portfolio/investments", status_code=303)
 
 
-@router.post("/{investment_id}", response_class=HTMLResponse)
+@router.post("/{investment_id}")
 def update_investment(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     investment_id: UUID,
     institution: str = Form(default=""),
     name: str = Form(default=""),
     asset_type_id: str = Form(default=""),
     current_value: str = Form(default=""),
-) -> HTMLResponse:
+):
     investment = session.get(Investment, investment_id)
     if not investment:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -126,24 +121,22 @@ def update_investment(
     session.refresh(investment)
     investment.asset_type = _get_investable_type(session, investment.asset_type_id)
 
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/investment_row.html",
-        context={
+    return json_ok(
+        {
             "investment": investment,
             "asset_types": get_investable_asset_types(session),
-        },
+        }
     )
 
 
-@router.delete("/{investment_id}", response_class=HTMLResponse)
+@router.delete("/{investment_id}")
 def delete_investment(
     session: SessionDep,
     investment_id: UUID,
-) -> HTMLResponse:
+):
     investment = session.get(Investment, investment_id)
     if not investment:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     session.delete(investment)
     session.commit()
-    return HTMLResponse("")
+    return json_ok({})

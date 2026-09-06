@@ -17,11 +17,9 @@ def test_google_callback_redirects_to_login_on_state_mismatch(client):
         response = client.get("/auth/callback?code=fake", follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"].startswith("/auth/login?error=")
-
-    login_page = client.get(response.headers["location"])
-    assert login_page.status_code == 200
-    assert "Login session expired" in login_page.text
+    location = response.headers["location"]
+    assert location.startswith("/auth/login?error=")
+    assert "Login%20session%20expired" in location or "Login session expired" in location
 
 
 def test_find_or_create_user_is_idempotent(session):

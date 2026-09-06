@@ -1,11 +1,10 @@
-import json
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Form, HTTPException, UploadFile, status
+from fastapi.responses import RedirectResponse
 
 from sqlmodel import select
 
@@ -33,7 +32,6 @@ from app.services.ib_statement import (
     pop_stashed_import,
     stash_import,
 )
-from app.web.dependencies import TemplatesDep
 from app.web.helpers import (
     get_consolidated_securities,
     get_exchange_traded_type,
@@ -42,6 +40,7 @@ from app.web.helpers import (
     get_security_lots,
     get_symbol_targets,
 )
+from app.web.jsonutil import json_ok
 
 router = APIRouter(prefix="/portfolio/holdings", tags=["securities"])
 
@@ -71,6 +70,16 @@ def _parse_purchase_date(value: str) -> date:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Invalid trade date. Use YYYY-MM-DD.",
         ) from exc
+
+
+def _target_weight_context(session) -> dict:
+    total = sum((t.target_pct for t in get_symbol_targets(session)), start=Decimal("0"))
+    display_pct = (total * Decimal("100")).quantize(Decimal("0.1"))
+    return {
+        "target_total": total,
+        "target_total_display": display_pct,
+        "target_total_balanced": display_pct == Decimal("100.0"),
+    }
 
 
 def _securities_context(session, exchange_type):
@@ -106,61 +115,25 @@ def _securities_context(session, exchange_type):
         "dividend_net_usd": return_totals.dividend_net_usd,
         "last_prices_at": get_last_prices_updated_at(session),
         "provisional_fx_count": count_provisional_fx_lots(session),
-        "portfolio_tab": "holdings",
         **target_context,
     }
 
 
-def _target_weight_context(session) -> dict:
-    total = sum((t.target_pct for t in get_symbol_targets(session)), start=Decimal("0"))
-    display_pct = (total * Decimal("100")).quantize(Decimal("0.1"))
-    return {
-        "target_total": total,
-        "target_total_display": display_pct,
-        "target_total_balanced": display_pct == Decimal("100.0"),
-    }
-
-
-@router.get("/partials/target-weight-total", response_class=HTMLResponse)
-def target_weight_total_partial(
-    request: Request,
-    session: SessionDep,
-    templates: TemplatesDep,
-) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/target_weight_status.html",
-        context=_target_weight_context(session),
-    )
-
-
-@router.get("", response_class=HTMLResponse)
-def list_securities(
-    request: Request,
-    templates: TemplatesDep,
-) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/securities.html",
-        context={
-            "portfolio_tab": "holdings",
-            "today": date.today().isoformat(),
-        },
-    )
-
-
-@router.get("/partials/content", response_class=HTMLResponse)
-def securities_content_partial(
-    request: Request,
-    session: SessionDep,
-    templates: TemplatesDep,
-) -> HTMLResponse:
+@router.get("")
+def list_securities(session: SessionDep):
     exchange_type = get_exchange_traded_type(session)
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/securities_content_panel.html",
-        context=_securities_context(session, exchange_type),
-    )
+    return json_ok(_securities_context(session, exchange_type))
+
+
+@router.get("/partials/content")
+def securities_content_partial(session: SessionDep):
+    exchange_type = get_exchange_traded_type(session)
+    return json_ok(_securities_context(session, exchange_type))
+
+
+@router.get("/partials/target-weight-total")
+def target_weight_total_partial(session: SessionDep):
+    return json_ok(_target_weight_context(session))
 
 
 @router.post("/ptax/refresh")
@@ -169,13 +142,11 @@ def refresh_ptax_rates(session: SessionDep) -> RedirectResponse:
     return RedirectResponse(url="/portfolio/holdings", status_code=303)
 
 
-@router.post("/import/preview", response_class=HTMLResponse)
+@router.post("/import/preview")
 def preview_statement_import(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     statement: UploadFile,
-) -> HTMLResponse:
+):
     exchange_type = get_exchange_traded_type(session)
     if not exchange_type:
         raise HTTPException(
@@ -185,11 +156,7 @@ def preview_statement_import(
 
     raw = statement.file.read()
     if not raw:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/statement_import_preview.html",
-            context={"error": "The uploaded file is empty."},
-        )
+        return json_ok({"error": "The uploaded file is empty."})
 
     try:
         content = raw.decode("utf-8-sig")
@@ -202,11 +169,7 @@ def preview_statement_import(
     try:
         parsed = parse_ib_statement(content)
     except (ValueError, IndexError) as exc:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/statement_import_preview.html",
-            context={"error": f"Could not parse statement: {exc}"},
-        )
+        return json_ok({"error": f"Could not parse statement: {exc}"})
 
     existing = existing_lot_keys(session, exchange_type.id)
     rows = build_import_lot_rows(parsed, existing)
@@ -214,10 +177,8 @@ def preview_statement_import(
     new_count = sum(1 for row in rows if not row.already_exists)
     existing_count = sum(1 for row in rows if row.already_exists)
 
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/statement_import_preview.html",
-        context={
+    return json_ok(
+        {
             "rows": rows,
             "import_token": import_token,
             "period_end": parsed.period_end,
@@ -225,7 +186,7 @@ def preview_statement_import(
             "has_positions": bool(parsed.positions),
             "new_count": new_count,
             "existing_count": existing_count,
-        },
+        }
     )
 
 
@@ -281,13 +242,11 @@ def confirm_statement_import(
     return RedirectResponse(url="/portfolio/holdings", status_code=303)
 
 
-@router.post("/dividends/import/preview", response_class=HTMLResponse)
+@router.post("/dividends/import/preview")
 def preview_dividend_import(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     statement: UploadFile,
-) -> HTMLResponse:
+):
     exchange_type = get_exchange_traded_type(session)
     if not exchange_type:
         raise HTTPException(
@@ -297,11 +256,7 @@ def preview_dividend_import(
 
     raw = statement.file.read()
     if not raw:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/dividend_import_preview.html",
-            context={"error": "The uploaded file is empty."},
-        )
+        return json_ok({"error": "The uploaded file is empty."})
 
     try:
         content = raw.decode("utf-8-sig")
@@ -314,11 +269,7 @@ def preview_dividend_import(
     try:
         parsed = parse_ib_statement(content)
     except (ValueError, IndexError) as exc:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/dividend_import_preview.html",
-            context={"error": f"Could not parse statement: {exc}"},
-        )
+        return json_ok({"error": f"Could not parse statement: {exc}"})
 
     existing = existing_dividend_keys(session, exchange_type.id)
     rows = build_import_dividend_rows(parsed, existing)
@@ -326,17 +277,15 @@ def preview_dividend_import(
     new_count = sum(1 for row in rows if not row.already_exists)
     existing_count = sum(1 for row in rows if row.already_exists)
 
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/dividend_import_preview.html",
-        context={
+    return json_ok(
+        {
             "rows": rows,
             "import_token": import_token,
             "period_end": parsed.period_end,
             "has_dividends": bool(parsed.dividends),
             "new_count": new_count,
             "existing_count": existing_count,
-        },
+        }
     )
 
 
@@ -402,7 +351,7 @@ def _parse_amount(value: str, field_name: str) -> Decimal:
     return amount
 
 
-@router.post("/dividends", response_class=HTMLResponse)
+@router.post("/dividends")
 def create_dividend(
     session: SessionDep,
     symbol: Annotated[str, Form()],
@@ -450,16 +399,14 @@ def create_dividend(
     return RedirectResponse(url="/portfolio/holdings", status_code=303)
 
 
-@router.post("/dividends/{dividend_id}", response_class=HTMLResponse)
+@router.post("/dividends/{dividend_id}")
 def update_dividend(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     dividend_id: UUID,
     pay_date: str = Form(default=""),
     gross_amount_usd: str = Form(default=""),
     withholding_tax_usd: str = Form(default=""),
-) -> HTMLResponse:
+):
     dividend = session.get(Dividend, dividend_id)
     if not dividend:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -486,37 +433,31 @@ def update_dividend(
     session.commit()
     session.refresh(dividend)
 
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/dividend_row.html",
-        context={"dividend": dividend},
-    )
+    return json_ok({"dividend": dividend})
 
 
-@router.delete("/dividends/{dividend_id}", response_class=HTMLResponse)
+@router.delete("/dividends/{dividend_id}")
 def delete_dividend(
     session: SessionDep,
     dividend_id: UUID,
-) -> HTMLResponse:
+):
     dividend = session.get(Dividend, dividend_id)
     if not dividend:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     session.delete(dividend)
     session.commit()
-    return HTMLResponse("")
+    return json_ok({})
 
 
-@router.post("/lots", response_class=HTMLResponse)
+@router.post("/lots")
 def create_lot(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     symbol: Annotated[str, Form()],
     purchase_date: Annotated[str, Form()],
     position: Annotated[str, Form()],
     purchase_price_usd: Annotated[str, Form()],
     usd_brl_rate: Annotated[str, Form()] = "",
-) -> HTMLResponse:
+) -> RedirectResponse:
     exchange_type = get_exchange_traded_type(session)
     if not exchange_type:
         raise HTTPException(
@@ -578,17 +519,15 @@ def create_lot(
     return RedirectResponse(url="/portfolio/holdings", status_code=303)
 
 
-@router.post("/lots/{lot_id}", response_class=HTMLResponse)
+@router.post("/lots/{lot_id}")
 def update_lot(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     lot_id: UUID,
     purchase_date: str = Form(default=""),
     position: str = Form(default=""),
     purchase_price_usd: str = Form(default=""),
     usd_brl_rate: str = Form(default=""),
-) -> HTMLResponse:
+):
     lot = session.get(SecurityLot, lot_id)
     if not lot:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -608,34 +547,28 @@ def update_lot(
     session.commit()
     session.refresh(lot)
 
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/lot_row.html",
-        context={"lot": lot},
-    )
+    return json_ok({"lot": lot})
 
 
-@router.delete("/lots/{lot_id}", response_class=HTMLResponse)
+@router.delete("/lots/{lot_id}")
 def delete_lot(
     session: SessionDep,
     lot_id: UUID,
-) -> HTMLResponse:
+):
     lot = session.get(SecurityLot, lot_id)
     if not lot:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     session.delete(lot)
     session.commit()
-    return HTMLResponse("")
+    return json_ok({})
 
 
-@router.post("/symbols/{symbol}", response_class=HTMLResponse)
+@router.post("/symbols/{symbol}")
 def update_symbol_target(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     symbol: str,
     target_pct: Annotated[str, Form()],
-) -> HTMLResponse:
+):
     exchange_type = get_exchange_traded_type(session)
     if not exchange_type:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -663,17 +596,4 @@ def update_symbol_target(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
     target_context = _target_weight_context(session)
-    response = templates.TemplateResponse(
-        request=request,
-        name="partials/consolidated_symbol_row.html",
-        context={"item": consolidated},
-    )
-    response.headers["HX-Trigger-After-Settle"] = json.dumps(
-        {
-            "targetTotalRefresh": {
-                "value": str(target_context["target_total_display"]),
-                "balanced": target_context["target_total_balanced"],
-            }
-        }
-    )
-    return response
+    return json_ok({"item": consolidated, **target_context})
