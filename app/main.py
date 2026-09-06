@@ -36,10 +36,9 @@ app.add_middleware(
 app.include_router(web_router)
 
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-if os.getenv("TESTING") != "1":
-    app.frontend(
-        "/",
-        directory=str(frontend_dir),
-        fallback="index.html",
-        check_dir=False,
-    )
+app.frontend(
+    "/",
+    directory=str(frontend_dir),
+    fallback="index.html",
+    check_dir=False,
+)

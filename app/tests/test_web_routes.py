@@ -217,7 +217,7 @@ def test_security_suggestions_partial_uses_usd(client, session, exchange_type):
 def test_security_suggestions_partial_scales_usd_cash(client, session, exchange_type):
     from decimal import Decimal
 
-    from app.tests.conftest import make_lot, make_symbol_target
+    from app.tests.conftest import make_lot
 
     make_lot(session, exchange_type.id, "AAA", Decimal("10"), Decimal("100"), target_pct=Decimal("0.3"))
     make_lot(session, exchange_type.id, "BBB", Decimal("5"), Decimal("100"), target_pct=Decimal("0.7"))

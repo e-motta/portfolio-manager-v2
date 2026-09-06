@@ -315,7 +315,7 @@ def test_bills_expense_update_keeps_subcategory_column(session, client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["show_subcategory_column"] is True
-    assert payload["entry"]["subcategory"] == "Aluguel"
+    assert payload["entry"]["subcategory"] == BILLS_SUBCATEGORY_ALUGUEL
     assert payload["entry"]["payment_account"] == "Nuconta"
     assert payload["entry"]["source_label"]
 
