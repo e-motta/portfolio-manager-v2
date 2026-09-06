@@ -851,7 +851,6 @@ select.compact.wide, input.compact.wide { width: 8.5rem; }
   height: 0.45rem;
   border-radius: 99px;
   background: var(--forest-mid);
-  min-width: 2px;
 }
 .compare-bar.target { background: #c9d6cc; }
 .compare-meta { font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
