@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { getJson } from "../api/client";
+import { FinanceTabs } from "../components/FinanceTabs";
 import { MonthChart } from "../components/MonthChart";
 import { PeriodBar } from "../components/PeriodBar";
+import { QueryFlash } from "../components/QueryFlash";
 import { formatBrl, plClass } from "../lib/format";
 import { useFinancePeriod } from "../lib/finance";
 
@@ -37,11 +39,12 @@ export function FinanceSummaryPage() {
   });
   if (dataQuery.isLoading) return <p className="empty">Loading finance summary…</p>;
   const data = dataQuery.data!;
-  const selected = month ?? data.selected_month;
 
   return (
     <>
-      <PeriodBar year={data.year} month={selected} yearOptions={data.year_options} basePath="/finance/summary" />
+      <FinanceTabs />
+      <QueryFlash />
+      <PeriodBar year={data.year} month={month} yearOptions={data.year_options} basePath="/finance/summary" />
       <dl className="stats">
         <div className="stat is-positive"><dt>Income</dt><dd>{formatBrl(data.month_income)}</dd><div className="meta">YTD {formatBrl(data.year_income)}</div></div>
         <div className="stat is-negative"><dt>Expenses</dt><dd>{formatBrl(data.month_expenses)}</dd><div className="meta">YTD {formatBrl(data.year_expenses)}</div></div>
@@ -52,7 +55,7 @@ export function FinanceSummaryPage() {
         <div className="panel-body">
           <MonthChart
             points={data.monthly_chart.points}
-            selectedMonth={selected}
+            selectedMonth={month}
             variant="summary"
             onSelect={(next) => navigate(`/finance/summary?year=${data.year}&month=${next}`)}
           />
@@ -71,7 +74,7 @@ export function FinanceSummaryPage() {
               </div>
             ))}
             <div style={{ marginTop: "0.8rem" }}>
-              <a className="btn btn--ghost btn--sm" href={card.manage_href}>{card.manage_label}</a>
+              <Link className="btn btn--ghost btn--sm" to={card.manage_href}>{card.manage_label}</Link>
             </div>
           </article>
         ))}

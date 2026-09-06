@@ -3,9 +3,12 @@ import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { deleteJson, getJson, sendForm } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { EmptyState } from "../components/EmptyState";
+import { FinanceTabs } from "../components/FinanceTabs";
 import { Modal } from "../components/Modal";
 import { MonthChart } from "../components/MonthChart";
 import { PeriodBar } from "../components/PeriodBar";
+import { QueryFlash } from "../components/QueryFlash";
 import { formatBrl, formatDate } from "../lib/format";
 import { useFinancePeriod } from "../lib/finance";
 
@@ -57,6 +60,8 @@ export function FinanceTransfersPage() {
 
   return (
     <>
+      <FinanceTabs />
+      <QueryFlash />
       <PeriodBar year={data.year} month={data.filter_month} yearOptions={data.year_options} basePath="/finance/transfers" />
       <div className="toolbar">
         <div className="stat"><dt>Year total</dt><dd>{formatBrl(data.year_total)}</dd></div>
@@ -82,6 +87,9 @@ export function FinanceTransfersPage() {
               </tr>
             </thead>
             <tbody>
+              {!data.entries.length ? (
+                <tr><td colSpan={7}><EmptyState title="No transfers in this period" /></td></tr>
+              ) : null}
               {data.entries.map((entry) => {
                 const isEditing = editing === entry.id;
                 return (

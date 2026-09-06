@@ -2,8 +2,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
 import { deleteJson, getJson, sendForm } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { DonutChart } from "../components/DonutChart";
+import { EmptyState } from "../components/EmptyState";
 import { Modal } from "../components/Modal";
-import { formatBrl, formatDateTime, formatPct } from "../lib/format";
+import { QueryFlash } from "../components/QueryFlash";
+import { asNumber, formatBrl, formatDateTime, formatPct } from "../lib/format";
 
 type Investment = {
   id: string;
@@ -68,6 +71,7 @@ export function OtherInvestmentsPage() {
 
   return (
     <>
+      <QueryFlash />
       <div className="toolbar">
         <p className="page-lead" style={{ margin: 0 }}>
           Positions outside listed securities, grouped by bank or institution.
@@ -88,6 +92,19 @@ export function OtherInvestmentsPage() {
       </dl>
       <section className="panel">
         <div className="panel-head"><h2>By bank / institution</h2></div>
+        {data.institution_summaries.length ? (
+          <div className="panel-body">
+            <DonutChart
+              slices={data.institution_summaries.map((row) => ({
+                label: row.institution,
+                value: asNumber(row.total_value),
+              }))}
+              centerLabel="Other"
+            />
+          </div>
+        ) : (
+          <EmptyState title="No other investments yet" body="Add a position or sync from Open Finance." />
+        )}
         <div className="table-wrap">
           <table className="data">
             <thead>

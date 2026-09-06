@@ -33,7 +33,7 @@ export function LoginPage() {
         {error ? <p className="login-error" role="alert">{error}</p> : null}
         {query.data && !query.data.google_configured ? (
           <p className="login-error">
-            Google login is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.
+            Google sign-in is not set up for this environment. Ask an administrator to configure it.
           </p>
         ) : (
           <a className="btn" href="/auth/google">
