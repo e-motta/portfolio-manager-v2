@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
 import { getJson, sendForm } from "../api/client";
+import { EmptyState } from "../components/EmptyState";
+import { QueryFlash } from "../components/QueryFlash";
 import { formatDateTime } from "../lib/format";
 
 type BackupsPayload = {
@@ -15,7 +16,6 @@ type BackupList = {
 
 export function BackupsPage() {
   const client = useQueryClient();
-  const [params] = useSearchParams();
   const page = useQuery({
     queryKey: ["backups"],
     queryFn: () => getJson<BackupsPayload>("/api/backups"),
@@ -32,23 +32,24 @@ export function BackupsPage() {
     onSuccess: () => void client.invalidateQueries({ queryKey: ["backups-list"] }),
   });
 
-  const notice = params.get("saved") ? "Backup saved." :
-    params.get("restored") ? "Backup restored." :
-    params.get("deleted") ? "Backup deleted." :
-    params.get("connected") ? "Google Drive connected." :
-    params.get("error");
-
   if (page.isLoading) return <p className="empty">Loading backups…</p>;
   const data = page.data!;
 
   return (
     <>
       <p className="page-lead">JSON backups of portfolio and finance data, stored in Google Drive.</p>
-      {notice ? <p className={params.get("error") ? "login-error" : "preview-note"}>{notice}</p> : null}
+      <QueryFlash />
       {!data.google_configured ? (
-        <p className="login-error">Google Drive is not configured.</p>
+        <div className="connect-card">
+          <h2>Google Drive is not set up</h2>
+          <p>Ask an administrator to configure Google sign-in for this environment before connecting Drive backups.</p>
+        </div>
       ) : !data.drive_connected ? (
-        <a className="btn" href="/api/backups/google/connect">Connect Google Drive</a>
+        <div className="connect-card">
+          <h2>Connect Google Drive</h2>
+          <p>Store encrypted JSON backups of this portfolio in your Drive so you can restore later.</p>
+          <a className="btn" href="/api/backups/google/connect">Connect Google Drive</a>
+        </div>
       ) : (
         <div className="toolbar">
           <button type="button" className="btn" onClick={() => create.mutate()}>Create backup</button>
@@ -91,6 +92,8 @@ export function BackupsPage() {
             </table>
           </div>
         </section>
+      ) : data.drive_connected && !list.isLoading ? (
+        <EmptyState title="No backups yet" body="Create a backup to copy the current portfolio into Drive." />
       ) : null}
     </>
   );

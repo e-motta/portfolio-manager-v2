@@ -3,7 +3,9 @@ import { FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { deleteJson, getJson, sendForm } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { formatBrl, formatDate, formatDateTime, formatPct } from "../lib/format";
+import { EmptyState } from "../components/EmptyState";
+import { Sparkline } from "../components/Sparkline";
+import { asNumber, formatBrl, formatDate, formatDateTime, formatPct } from "../lib/format";
 
 type SnapshotList = {
   today: string;
@@ -44,6 +46,17 @@ export function SnapshotsPage() {
           <button className="btn" type="submit">Capture</button>
         </form>
       </div>
+      {data.history_rows.length > 1 ? (
+        <section className="panel">
+          <div className="panel-head"><h2>Total value over time</h2></div>
+          <div className="panel-body">
+            <Sparkline
+              values={[...data.history_rows].reverse().map((row) => asNumber(row.snapshot.total_value))}
+              labels={[...data.history_rows].reverse().map((row) => formatDate(row.snapshot.snapshot_date))}
+            />
+          </div>
+        </section>
+      ) : null}
       <section className="panel">
         <div className="table-wrap">
           <table className="data">
@@ -56,6 +69,13 @@ export function SnapshotsPage() {
               </tr>
             </thead>
             <tbody>
+              {!data.history_rows.length ? (
+                <tr>
+                  <td colSpan={3 + data.asset_class_names.length}>
+                    <EmptyState title="No snapshots yet" body="Capture a date to lock in allocation, holdings, and other investments." />
+                  </td>
+                </tr>
+              ) : null}
               {data.history_rows.map((row) => (
                 <tr key={row.snapshot.id}>
                   <td><Link to={`/history/${row.snapshot.id}`}>{formatDate(row.snapshot.snapshot_date)}</Link></td>

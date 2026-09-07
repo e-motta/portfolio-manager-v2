@@ -19,6 +19,15 @@ export function formatBrl(value: unknown): string {
   return amount < 0 ? `-R$\u00a0${absolute}` : `R$\u00a0${absolute}`;
 }
 
+export function formatCompactBrl(value: unknown): string {
+  const amount = asNumber(value);
+  const sign = amount < 0 ? "-" : "";
+  const abs = Math.abs(amount);
+  if (abs >= 1_000_000) return `${sign}R$\u00a0${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 10_000) return `${sign}R$\u00a0${(abs / 1000).toFixed(0)}k`;
+  return formatBrl(amount);
+}
+
 export function formatUsd(value: unknown): string {
   const amount = asNumber(value);
   const absolute = Math.abs(amount).toLocaleString("en-US", {

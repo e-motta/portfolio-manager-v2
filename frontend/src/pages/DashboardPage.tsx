@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getJson } from "../api/client";
+import { DonutChart } from "../components/DonutChart";
 import { asNumber, formatBrl, formatPct, formatPctPoints, plClass } from "../lib/format";
 
 type Dashboard = {
@@ -33,6 +34,9 @@ export function DashboardPage() {
   const total = asNumber(data.total_value);
   const sleeve = asNumber(data.allocation_sleeve_value);
   const targetSum = asNumber(data.allocation_target_sum);
+  const slices = data.rows
+    .filter((row) => asNumber(row.current_value) > 0)
+    .map((row) => ({ label: row.asset_type.name, value: asNumber(row.current_value) }));
 
   return (
     <>
@@ -49,11 +53,11 @@ export function DashboardPage() {
           <dd>{formatBrl(data.allocation_sleeve_value)}</dd>
           <div className="meta">{total > 0 ? `${((sleeve / total) * 100).toFixed(1)}% of total` : "—"}</div>
         </div>
-        <div className="stat is-negative">
+        <div className={`stat ${data.overweight ? "is-negative" : ""}`}>
           <dt>Overweight</dt>
           <dd>{data.overweight}</dd>
         </div>
-        <div className="stat is-positive">
+        <div className={`stat ${data.underweight ? "is-positive" : ""}`}>
           <dt>Underweight</dt>
           <dd>{data.underweight}</dd>
         </div>
@@ -67,6 +71,13 @@ export function DashboardPage() {
             Asset class targets sum to {(targetSum * 100).toFixed(1)}%
           </p>
         ) : null}
+        <div className="panel-body">
+          {slices.length ? (
+            <DonutChart slices={slices} centerLabel="Portfolio" centerValue={formatBrl(data.total_value)} />
+          ) : (
+            <p className="empty">No positions yet. Add securities or other investments to see allocation.</p>
+          )}
+        </div>
         <div className="table-wrap">
           <table className="data">
             <thead>

@@ -80,6 +80,15 @@ export function redirectLocation(response: Response): string | null {
   return null;
 }
 
+export function pathFromRedirect(location: string): string {
+  try {
+    const url = new URL(location, window.location.origin);
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return location;
+  }
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {

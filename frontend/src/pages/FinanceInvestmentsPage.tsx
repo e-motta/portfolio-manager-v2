@@ -3,10 +3,14 @@ import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { deleteJson, getJson, sendForm } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { EmptyState } from "../components/EmptyState";
+import { FinanceTabs } from "../components/FinanceTabs";
+import { Meter } from "../components/Meter";
 import { Modal } from "../components/Modal";
 import { MonthChart } from "../components/MonthChart";
 import { PeriodBar } from "../components/PeriodBar";
-import { formatBrl } from "../lib/format";
+import { QueryFlash } from "../components/QueryFlash";
+import { asNumber, formatBrl } from "../lib/format";
 import { useFinancePeriod } from "../lib/finance";
 
 type Entry = { id: string; month: number; broker: string; amount: string };
@@ -51,8 +55,13 @@ export function FinanceInvestmentsPage() {
   const data = dataQuery.data!;
   const brokers = data.investment_brokers || [];
 
+  const ytd = asNumber(data.ytd_invested);
+  const target = asNumber(data.annual_target);
+
   return (
     <>
+      <FinanceTabs />
+      <QueryFlash />
       <PeriodBar year={data.year} month={data.filter_month} yearOptions={data.year_options} basePath="/finance/investments" />
       <dl className="stats">
         <div className="stat"><dt>Annual target</dt><dd>{formatBrl(data.annual_target)}</dd></div>
@@ -60,6 +69,13 @@ export function FinanceInvestmentsPage() {
         <div className="stat"><dt>This month</dt><dd>{formatBrl(data.month_invested)}</dd></div>
         <div className="stat"><dt>Year invested</dt><dd>{formatBrl(data.year_invested)}</dd></div>
       </dl>
+      {target > 0 ? (
+        <section className="panel">
+          <div className="panel-body">
+            <Meter value={ytd} max={target} label={`${target ? Math.round((ytd / target) * 100) : 0}% of annual target`} />
+          </div>
+        </section>
+      ) : null}
       <div className="toolbar">
         <div className="btn-row">
           {data.broker_lines.map((line) => (
@@ -85,6 +101,9 @@ export function FinanceInvestmentsPage() {
               </tr>
             </thead>
             <tbody>
+              {!data.entries.length ? (
+                <tr><td colSpan={4}><EmptyState title="No contributions in this period" /></td></tr>
+              ) : null}
               {data.entries.map((entry) => {
                 const isEditing = editing === entry.id;
                 const label = brokers.find((item) => item[0] === entry.broker)?.[1] || entry.broker;
