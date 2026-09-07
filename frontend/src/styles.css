@@ -59,6 +59,7 @@ textarea {
   padding: 0 0.75rem;
   box-shadow: inset 0 1px 1px rgba(23, 21, 15, 0.03);
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  color-scheme: light;
 }
 
 textarea {
@@ -947,14 +948,14 @@ select.compact.wide, input.compact.wide { width: 9rem; }
   padding: 0;
   display: grid;
   gap: 0.42rem;
-  min-width: 11.5rem;
+  width: max-content;
   max-width: 16.5rem;
 }
 .donut-legend li {
   display: grid;
-  grid-template-columns: 0.55rem minmax(0, 1fr) auto;
+  grid-template-columns: 0.55rem auto auto;
   align-items: center;
-  gap: 0.55rem;
+  column-gap: 0.55rem;
   font-size: 0.84rem;
   line-height: 1.2;
 }
