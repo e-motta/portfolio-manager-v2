@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Portfolio Manager">
-  <rect width="32" height="32" rx="7" fill="#0f172a"/>
-  <path d="M16 16 L16 6 A10 10 0 0 1 19.09 25.51 Z" fill="#2563eb"/>
-  <path d="M16 16 L19.09 25.51 A10 10 0 0 1 6.49 12.91 Z" fill="#3b82f6"/>
-  <path d="M16 16 L6.49 12.91 A10 10 0 0 1 16 6 Z" fill="#60a5fa"/>
-</svg>

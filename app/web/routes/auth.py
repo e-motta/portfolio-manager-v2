@@ -18,22 +18,20 @@ from app.services.cumbuca_oauth import (
     complete_authorization,
 )
 from app.services.google_oauth import oauth
-from app.web.dependencies import TemplatesDep
+from app.web.jsonutil import json_ok
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+config_router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-@router.get("/login")
-def login_page(request: Request, templates: TemplatesDep):
-    if request.session.get("user_id"):
-        return RedirectResponse(url="/", status_code=303)
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/login.html",
-        context={
+@config_router.get("/config")
+def auth_config(request: Request):
+    return json_ok(
+        {
             "google_configured": bool(settings.GOOGLE_CLIENT_ID),
+            "authenticated": bool(request.session.get("user_id")),
             "error": request.query_params.get("error"),
-        },
+        }
     )
 
 

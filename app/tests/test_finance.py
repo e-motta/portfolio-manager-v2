@@ -83,16 +83,17 @@ def test_income_entry_totals(session, client):
     assert context["month_totals"][3] == Decimal("5000.00")
     assert context["year_total"] == Decimal("5050.00")
 
-    response = client.get("/finance/income?year=2026")
+    response = client.get("/api/finance/income?year=2026")
     assert response.status_code == 200
-    assert "Client payment" in response.text
+    descriptions = [entry["description"] for entry in response.json()["entries"]]
+    assert "Client payment" in descriptions
 
 
 def test_expense_entry_stored_negative(session, client):
     user = _test_user(session)
 
     response = client.post(
-        "/finance/expenses",
+        "/api/finance/expenses",
         data={
             "year": "2026",
             "month": "2",
@@ -114,7 +115,7 @@ def test_expense_entry_stored_negative(session, client):
 
 def test_expense_entry_negative_input_normalized(session, client):
     response = client.post(
-        "/finance/expenses",
+        "/api/finance/expenses",
         data={
             "year": "2026",
             "month": "2",
@@ -133,7 +134,7 @@ def test_expense_entry_negative_input_normalized(session, client):
 
 def test_expense_optional_transaction_date(session, client):
     response = client.post(
-        "/finance/expenses",
+        "/api/finance/expenses",
         data={
             "year": "2026",
             "month": "2",
@@ -153,7 +154,7 @@ def test_expense_optional_transaction_date(session, client):
 
 def test_expense_without_date_defaults_to_none(session, client):
     response = client.post(
-        "/finance/expenses",
+        "/api/finance/expenses",
         data={
             "year": "2026",
             "month": "2",
@@ -172,7 +173,7 @@ def test_expense_without_date_defaults_to_none(session, client):
 
 def test_expense_description_defaults_empty(session, client):
     response = client.post(
-        "/finance/expenses",
+        "/api/finance/expenses",
         data={
             "year": "2026",
             "month": "2",
@@ -191,7 +192,7 @@ def test_expense_description_defaults_empty(session, client):
 
 def test_expense_create_with_description(session, client):
     response = client.post(
-        "/finance/expenses",
+        "/api/finance/expenses",
         data={
             "year": "2026",
             "month": "2",
@@ -225,7 +226,7 @@ def test_expense_update_description(session, client):
     session.refresh(entry)
 
     response = client.post(
-        f"/finance/expenses/{entry.id}",
+        f"/api/finance/expenses/{entry.id}",
         data={
             "vendor": "Uber",
             "description": "Airport ride",
@@ -234,7 +235,7 @@ def test_expense_update_description(session, client):
         },
     )
     assert response.status_code == 200
-    assert "Airport ride" in response.text
+    assert response.json()["entry"]["description"] == "Airport ride"
 
     session.refresh(entry)
     assert entry.description == "Airport ride"
@@ -256,7 +257,7 @@ def test_expense_can_be_updated_twice_via_htmx(session, client):
     session.refresh(entry)
 
     first = client.post(
-        f"/finance/expenses/{entry.id}",
+        f"/api/finance/expenses/{entry.id}",
         data={
             "vendor": "Uber",
             "description": "First edit",
@@ -265,7 +266,7 @@ def test_expense_can_be_updated_twice_via_htmx(session, client):
         },
     )
     second = client.post(
-        f"/finance/expenses/{entry.id}",
+        f"/api/finance/expenses/{entry.id}",
         data={
             "vendor": "Uber",
             "description": "Second edit",
@@ -276,11 +277,8 @@ def test_expense_can_be_updated_twice_via_htmx(session, client):
 
     assert first.status_code == 200
     assert second.status_code == 200
-    assert "btn-edit" in first.text
-    assert "btn-edit" in second.text
-    assert "Second edit" in second.text
-    assert 'class="editable-row' in second.text
-    assert "is-editing" not in second.text
+    assert first.json()["entry"]["description"] == "First edit"
+    assert second.json()["entry"]["description"] == "Second edit"
 
 
 def test_bills_expense_update_keeps_subcategory_column(session, client):
@@ -303,7 +301,7 @@ def test_bills_expense_update_keeps_subcategory_column(session, client):
     session.refresh(entry)
 
     response = client.post(
-        f"/finance/expenses/{entry.id}",
+        f"/api/finance/expenses/{entry.id}",
         data={
             "vendor": "CELESC DISTRIBUICAO S.A",
             "description": "Test",
@@ -315,11 +313,11 @@ def test_bills_expense_update_keeps_subcategory_column(session, client):
     )
 
     assert response.status_code == 200
-    assert 'class="col-subcategory' in response.text
-    assert "data-finance-bills-subcategory" in response.text
-    assert "Aluguel" in response.text
-    assert "finance-payment-badge" in response.text
-    assert "finance-source-badge" in response.text
+    payload = response.json()
+    assert payload["show_subcategory_column"] is True
+    assert payload["entry"]["subcategory"] == BILLS_SUBCATEGORY_ALUGUEL
+    assert payload["entry"]["payment_account"] == "Nuconta"
+    assert payload["entry"]["source_label"]
 
 
 def test_expenses_page_shows_dash_without_date(session, client):
@@ -337,10 +335,11 @@ def test_expenses_page_shows_dash_without_date(session, client):
     )
     session.commit()
 
-    response = client.get("/finance/expenses?year=2026&month=2")
+    response = client.get("/api/finance/expenses?year=2026&month=2")
     assert response.status_code == 200
-    assert "Metro" in response.text
-    assert "—" in response.text
+    payload = response.json()
+    assert payload["entries"][0]["vendor"] == "Metro"
+    assert payload["entries"][0]["transaction_date"] is None
 
 
 def test_expense_update_transaction_date(session, client):
@@ -360,7 +359,7 @@ def test_expense_update_transaction_date(session, client):
     entry = session.exec(select(FinanceExpenseEntry)).one()
 
     response = client.post(
-        f"/finance/expenses/{entry.id}",
+        f"/api/finance/expenses/{entry.id}",
         data={
             "month": "2",
             "category": "Transporte",
@@ -394,7 +393,7 @@ def test_expense_update_category_redirects(session, client):
     entry = session.exec(select(FinanceExpenseEntry)).one()
 
     response = client.post(
-        f"/finance/expenses/{entry.id}",
+        f"/api/finance/expenses/{entry.id}",
         data={
             "month": "2",
             "category": "Compras online",
@@ -431,7 +430,7 @@ def test_expense_update_category_htmx_redirects(session, client):
     entry = session.exec(select(FinanceExpenseEntry)).one()
 
     response = client.post(
-        f"/finance/expenses/{entry.id}",
+        f"/api/finance/expenses/{entry.id}",
         data={
             "month": "2",
             "category": "Presentes",
@@ -447,11 +446,13 @@ def test_expense_update_category_htmx_redirects(session, client):
     assert "updated=" in response.headers["X-Finance-Redirect"]
     assert response.headers["X-Finance-Redirect"].endswith("#category-gifts")
 
-    page = client.get("/finance/expenses?year=2026")
-    assert response.status_code == 200
-    assert 'id="category-gifts"' in page.text
-    assert "Gift shop" in page.text
-    assert page.text.index("Gift shop") > page.text.index('id="category-gifts"')
+    page = client.get("/api/finance/expenses?year=2026")
+    assert page.status_code == 200
+    payload = page.json()
+    gifts = payload["categories"]["Presentes"]
+    assert gifts[0]["vendor"] == "Gift shop"
+    assert gifts[0]["category_slug"] == "gifts"
+    assert any(row["slug"] == "gifts" for row in payload["category_totals"])
 
 
 def test_expense_recategory_redirect_url_changes_each_save(session, client):
@@ -471,7 +472,7 @@ def test_expense_recategory_redirect_url_changes_each_save(session, client):
     entry = session.exec(select(FinanceExpenseEntry)).one()
 
     first = client.post(
-        f"/finance/expenses/{entry.id}",
+        f"/api/finance/expenses/{entry.id}",
         data={
             "month": "2",
             "category": "Presentes",
@@ -486,7 +487,7 @@ def test_expense_recategory_redirect_url_changes_each_save(session, client):
     assert entry.category == "Presentes"
 
     second = client.post(
-        f"/finance/expenses/{entry.id}",
+        f"/api/finance/expenses/{entry.id}",
         data={
             "month": "2",
             "category": "Profissional",
@@ -519,7 +520,7 @@ def test_expense_update_category_saves_vendor_rule(session, client):
     entry = session.exec(select(FinanceExpenseEntry)).one()
 
     response = client.post(
-        f"/finance/expenses/{entry.id}",
+        f"/api/finance/expenses/{entry.id}",
         data={
             "month": "2",
             "category": "Compras online",
@@ -557,7 +558,7 @@ def test_expense_update_saves_vendor_description(session, client):
     entry = session.exec(select(FinanceExpenseEntry)).one()
 
     response = client.post(
-        f"/finance/expenses/{entry.id}",
+        f"/api/finance/expenses/{entry.id}",
         data={
             "month": "2",
             "category": "Compras online",
@@ -598,7 +599,7 @@ def test_expense_update_saves_vendor_subcategory(session, client):
     entry = session.exec(select(FinanceExpenseEntry)).one()
 
     response = client.post(
-        f"/finance/expenses/{entry.id}",
+        f"/api/finance/expenses/{entry.id}",
         data={
             "month": "2",
             "category": BILLS_CATEGORY,
@@ -631,17 +632,19 @@ def test_expenses_page_hides_category_column_in_view(session, client):
     )
     session.commit()
 
-    response = client.get("/finance/expenses?year=2026&month=2")
+    response = client.get("/api/finance/expenses?year=2026&month=2")
     assert response.status_code == 200
-    assert "<th>Category</th>" not in response.text
-    assert "data-of-category-select" in response.text
+    payload = response.json()
+    assert "Transporte" in payload["categories"]
+    assert payload["expense_categories"]
+    assert payload["entries"][0]["vendor"] == "Metro"
 
 
 def test_expense_installments_create_monthly_entries(session, client):
     user = _test_user(session)
 
     response = client.post(
-        "/finance/expenses",
+        "/api/finance/expenses",
         data={
             "year": "2026",
             "month": "3",
@@ -675,7 +678,7 @@ def test_expense_installments_create_monthly_entries(session, client):
 
 def test_expense_installments_split_remainder_on_last(session, client):
     response = client.post(
-        "/finance/expenses",
+        "/api/finance/expenses",
         data={
             "year": "2026",
             "month": "1",
@@ -701,7 +704,7 @@ def test_expense_installments_split_remainder_on_last(session, client):
 
 def test_expense_installments_span_into_next_year(session, client):
     response = client.post(
-        "/finance/expenses",
+        "/api/finance/expenses",
         data={
             "year": "2026",
             "month": "11",
@@ -919,10 +922,11 @@ def test_migrate_pro_labore_lucro_to_pj_noop_without_summary_table(session):
 
 
 def test_summary_page_has_read_only_cards(client):
-    response = client.get("/finance/summary?year=2026&month=1")
+    response = client.get("/api/finance/summary?year=2026&month=1")
     assert response.status_code == 200
-    assert "finance-summary-card" in response.text
-    assert "btn-edit-section" not in response.text
+    payload = response.json()
+    assert payload["summary_cards"]
+    assert all("manage_href" in card for card in payload["summary_cards"])
 
 
 def test_investments_annual_target(session):
@@ -966,7 +970,7 @@ def test_monthly_chart_payload_has_twelve_points():
         {3: Decimal("-4850.51"), 5: Decimal("-5904.44")},
         year=2026,
         selected_month=5,
-        link_base="/finance/expenses",
+        link_base="/api/finance/expenses",
         variant="expense",
         aria_label="Expenses by month",
     )
@@ -986,7 +990,7 @@ def test_summary_monthly_chart_payload():
         {3: Decimal("1350"), 6: Decimal("-100")},
         year=2026,
         selected_month=3,
-        link_base="/finance/summary",
+        link_base="/api/finance/summary",
         aria_label="Income, expenses, and balance by month",
     )
     assert chart["variant"] == "summary"
@@ -1104,19 +1108,17 @@ def test_summary_outros_includes_reimbursements_from_income_tab(session):
 
 
 def test_summary_page_loads(client):
-    response = client.get("/finance/summary")
+    response = client.get("/api/finance/summary")
     assert response.status_code == 200
-    assert "Balance" in response.text
-    assert "finance-stats" in response.text
-    assert "Monthly trend" in response.text
-    assert 'class="finance-echart"' in response.text
-    assert "echarts.min.js" in response.text
-    assert "finance-summary-cards" in response.text
+    payload = response.json()
+    assert "month_balance" in payload
+    assert "monthly_chart" in payload
+    assert payload["summary_cards"]
 
 
 def test_income_create_with_category(session, client):
     response = client.post(
-        "/finance/income",
+        "/api/finance/income",
         data={
             "year": "2026",
             "month": "3",
@@ -1133,9 +1135,11 @@ def test_income_create_with_category(session, client):
 
 
 def test_investments_page_loads(client):
-    response = client.get("/finance/investments")
+    response = client.get("/api/finance/investments")
     assert response.status_code == 200
-    assert "Annual target" in response.text
+    payload = response.json()
+    assert "annual_target" in payload
+    assert "investment_brokers" in payload
 
 
 def test_link_expense_reversal_unifies_amounts(session):
@@ -1207,13 +1211,13 @@ def test_link_expense_reversal_route(client, session):
     session.commit()
 
     response = client.post(
-        f"/finance/expenses/{reversal.id}/link",
+        f"/api/finance/expenses/{reversal.id}/link",
         data={"target_id": str(charge.id)},
         headers={"HX-Request": "true"},
     )
     assert response.status_code == 200
-    assert "hx-swap-oob" in response.text
-    assert "-113,60" in response.text or "-113.60" in response.text
+    amount = str(response.json()["entry"]["amount"])
+    assert amount in {"-113.6", "-113.60"}
 
     session.refresh(charge)
     assert charge.amount == Decimal("-113.60")
@@ -1244,11 +1248,12 @@ def test_expenses_page_shows_reversal_link_controls(client, session):
     session.add(reversal)
     session.commit()
 
-    response = client.get("/finance/expenses?year=2026&month=5")
+    response = client.get("/api/finance/expenses?year=2026&month=5")
     assert response.status_code == 200
-    assert "Reversal" in response.text
-    assert "Unify" in response.text
-    assert "RESTAURANTE OUTBACK" in response.text
+    payload = response.json()
+    vendors = [entry["vendor"] for entry in payload["entries"]]
+    assert "RESTAURANTE OUTBACK" in vendors
+    assert any(entry["is_reversal"] for entry in payload["entries"])
 
 
 def test_effective_expense_amount_subcategories():
@@ -1346,7 +1351,7 @@ def test_expenses_context_uses_effective_amounts(session):
 
 def test_create_bills_expense_with_subcategory(session, client):
     response = client.post(
-        "/finance/expenses",
+        "/api/finance/expenses",
         data={
             "year": "2026",
             "month": "3",
@@ -1381,7 +1386,7 @@ def test_vendor_subcategory_auto_assignment_on_create(session, client):
     session.commit()
 
     response = client.post(
-        "/finance/expenses",
+        "/api/finance/expenses",
         data={
             "year": "2026",
             "month": "4",
@@ -1443,15 +1448,16 @@ def test_transfer_entry_totals(session, client):
     assert context["month_totals"][3] == Decimal("500")
     assert context["year_total"] == Decimal("700")
 
-    response = client.get("/finance/transfers?year=2026")
+    response = client.get("/api/finance/transfers?year=2026")
     assert response.status_code == 200
-    assert "Nuconta" in response.text
-    assert "Monthly top-up" in response.text
+    payload = response.json()
+    assert any(entry["from_account"] == "Nuconta" for entry in payload["entries"])
+    assert any(entry["description"] == "Monthly top-up" for entry in payload["entries"])
 
 
 def test_create_transfer_entry(session, client):
     response = client.post(
-        "/finance/transfers",
+        "/api/finance/transfers",
         data={
             "year": "2026",
             "month": "2",
@@ -1473,7 +1479,7 @@ def test_create_transfer_entry(session, client):
 
 def test_create_transfer_rejects_same_account(client):
     response = client.post(
-        "/finance/transfers",
+        "/api/finance/transfers",
         data={
             "year": "2026",
             "month": "2",

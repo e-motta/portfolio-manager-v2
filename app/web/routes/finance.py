@@ -5,7 +5,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response
 
 from app.core.auth import CurrentUserDep
 from app.core.db import SessionDep
@@ -45,7 +45,7 @@ from app.services.finance import (
     validate_transfer_accounts,
     expense_category_slug,
 )
-from app.web.dependencies import TemplatesDep
+from app.web.jsonutil import json_ok
 
 router = APIRouter(prefix="/finance", tags=["finance"])
 
@@ -199,15 +199,13 @@ def _page_shell(
     return context
 
 
-@router.get("/summary", response_class=HTMLResponse)
+@router.get("/summary")
 def summary_page(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     current_user: CurrentUserDep,
     year: Annotated[int | None, Query()] = None,
     month: Annotated[int | None, Query()] = None,
-) -> HTMLResponse:
+):
     selected_year = resolve_year(year)
     selected_month = resolve_month(month, selected_year)
     context = build_summary_context(
@@ -220,22 +218,16 @@ def summary_page(
         selected_month=selected_month,
         filter_month=selected_month,
     )
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/finance_summary.html",
-        context=context,
-    )
+    return json_ok(context)
 
 
-@router.get("/income", response_class=HTMLResponse)
+@router.get("/income")
 def income_page(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     current_user: CurrentUserDep,
     year: Annotated[int | None, Query()] = None,
     month: Annotated[int | None, Query()] = None,
-) -> HTMLResponse:
+):
     selected_year = resolve_year(year)
     filter_month = month if month is not None else None
     if filter_month is not None:
@@ -250,14 +242,10 @@ def income_page(
         selected_month=resolve_month(None, selected_year),
         filter_month=filter_month,
     )
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/finance_income.html",
-        context=context,
-    )
+    return json_ok(context)
 
 
-@router.post("/income", response_class=HTMLResponse)
+@router.post("/income")
 def create_income_entry(
     session: SessionDep,
     current_user: CurrentUserDep,
@@ -291,18 +279,16 @@ def create_income_entry(
     )
 
 
-@router.post("/income/{entry_id}", response_class=HTMLResponse)
+@router.post("/income/{entry_id}")
 def update_income_entry(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
     month: str = Form(default=""),
     category: str = Form(default=""),
     description: str = Form(default=""),
     amount: str = Form(default=""),
-) -> HTMLResponse:
+):
     entry = session.get(FinanceIncomeEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -327,41 +313,37 @@ def update_income_entry(
     session.refresh(entry)
 
     context = build_income_context(session, current_user.id, entry.year)
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/finance_income_row.html",
-        context={
+    return json_ok(
+        {
             "entry": entry,
             "month_labels": context["month_labels"],
             "income_categories": INCOME_CATEGORIES,
             "show_month_column": context.get("selected_month") is None,
-        },
+        }
     )
 
 
-@router.delete("/income/{entry_id}", response_class=HTMLResponse)
+@router.delete("/income/{entry_id}")
 def delete_income_entry(
     session: SessionDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
-) -> HTMLResponse:
+):
     entry = session.get(FinanceIncomeEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     session.delete(entry)
     session.commit()
-    return HTMLResponse("")
+    return json_ok({})
 
 
-@router.get("/expenses", response_class=HTMLResponse)
+@router.get("/expenses")
 def expenses_page(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     current_user: CurrentUserDep,
     year: Annotated[int | None, Query()] = None,
     month: Annotated[int | None, Query()] = None,
-) -> HTMLResponse:
+):
     selected_year = resolve_year(year)
     filter_month = month if month is not None else None
     if filter_month is not None:
@@ -376,14 +358,25 @@ def expenses_page(
         selected_month=resolve_month(None, selected_year),
         filter_month=filter_month,
     )
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/finance_expenses.html",
-        context=context,
-    )
+    context["vendor_rules"] = {
+        key: {
+            "category": rule[0],
+            "subcategory": rule[1],
+            "description": rule[2],
+        }
+        for key, rule in load_vendor_rule_map(session, current_user.id).items()
+    }
+    return json_ok(context)
 
 
-@router.post("/expenses", response_class=HTMLResponse)
+@router.get("/suggest-category")
+def suggest_expense_category_route(vendor: Annotated[str, Query()] = ""):
+    from app.services.finance import suggest_expense_category
+
+    return json_ok({"category": suggest_expense_category(vendor)})
+
+
+@router.post("/expenses")
 def create_expense_entry(
     session: SessionDep,
     current_user: CurrentUserDep,
@@ -463,11 +456,10 @@ def create_expense_entry(
     )
 
 
-@router.post("/expenses/{entry_id}", response_class=HTMLResponse)
+@router.post("/expenses/{entry_id}")
 def update_expense_entry(
     request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
     month: str = Form(default=""),
@@ -480,7 +472,7 @@ def update_expense_entry(
     subcategory: str = Form(default=""),
     return_year: str = Form(default=""),
     return_month: str = Form(default=""),
-) -> HTMLResponse:
+):
     entry = session.get(FinanceExpenseEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -564,22 +556,16 @@ def update_expense_entry(
         selected_year,
         selected_month=filter_month,
     )
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/finance_expense_row.html",
-        context=_expense_row_context(context, entry),
-    )
+    return json_ok(_expense_row_context(context, entry))
 
 
-@router.post("/expenses/{entry_id}/link", response_class=HTMLResponse)
+@router.post("/expenses/{entry_id}/link")
 def link_expense_reversal_entry(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
     target_id: Annotated[str, Form()],
-) -> HTMLResponse:
+):
     try:
         parsed_target_id = UUID(target_id)
     except ValueError as exc:
@@ -611,36 +597,30 @@ def link_expense_reversal_entry(
         selected_month=target.month,
     )
     row_context = _expense_row_context(context, target)
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/finance_expense_row_oob.html",
-        context=row_context,
-    )
+    return json_ok(row_context)
 
 
-@router.delete("/expenses/{entry_id}", response_class=HTMLResponse)
+@router.delete("/expenses/{entry_id}")
 def delete_expense_entry(
     session: SessionDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
-) -> HTMLResponse:
+):
     entry = session.get(FinanceExpenseEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     session.delete(entry)
     session.commit()
-    return HTMLResponse("")
+    return json_ok({})
 
 
-@router.get("/investments", response_class=HTMLResponse)
+@router.get("/investments")
 def investments_page(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     current_user: CurrentUserDep,
     year: Annotated[int | None, Query()] = None,
     month: Annotated[int | None, Query()] = None,
-) -> HTMLResponse:
+):
     selected_year = resolve_year(year)
     filter_month = month if month is not None else None
     if filter_month is not None:
@@ -655,14 +635,10 @@ def investments_page(
         selected_month=resolve_month(filter_month, selected_year),
         filter_month=filter_month,
     )
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/finance_investments.html",
-        context=context,
-    )
+    return json_ok(context)
 
 
-@router.post("/investments", response_class=HTMLResponse)
+@router.post("/investments")
 def create_investment_entry(
     session: SessionDep,
     current_user: CurrentUserDep,
@@ -695,17 +671,15 @@ def create_investment_entry(
     )
 
 
-@router.post("/investments/{entry_id}", response_class=HTMLResponse)
+@router.post("/investments/{entry_id}")
 def update_investment_entry(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
     month: str = Form(default=""),
     broker: str = Form(default=""),
     amount: str = Form(default=""),
-) -> HTMLResponse:
+):
     entry = session.get(FinanceInvestmentEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -741,44 +715,40 @@ def update_investment_entry(
             detail=str(exc),
         ) from exc
     if updated is None:
-        return HTMLResponse("")
+        return json_ok({})
 
     context = build_investments_context(session, current_user.id, parsed_year)
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/finance_investment_row.html",
-        context={
+    return json_ok(
+        {
             "entry": updated,
             "month_labels": context["month_labels"],
             "investment_brokers": INVESTMENT_BROKERS,
             "show_month_column": context.get("selected_month") is None,
-        },
+        }
     )
 
 
-@router.delete("/investments/{entry_id}", response_class=HTMLResponse)
+@router.delete("/investments/{entry_id}")
 def delete_investment_entry(
     session: SessionDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
-) -> HTMLResponse:
+):
     entry = session.get(FinanceInvestmentEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     session.delete(entry)
     session.commit()
-    return HTMLResponse("")
+    return json_ok({})
 
 
-@router.get("/transfers", response_class=HTMLResponse)
+@router.get("/transfers")
 def transfers_page(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     current_user: CurrentUserDep,
     year: Annotated[int | None, Query()] = None,
     month: Annotated[int | None, Query()] = None,
-) -> HTMLResponse:
+):
     selected_year = resolve_year(year)
     filter_month = month if month is not None else None
     if filter_month is not None:
@@ -793,14 +763,10 @@ def transfers_page(
         selected_month=resolve_month(None, selected_year),
         filter_month=filter_month,
     )
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/finance_transfers.html",
-        context=context,
-    )
+    return json_ok(context)
 
 
-@router.post("/transfers", response_class=HTMLResponse)
+@router.post("/transfers")
 def create_transfer_entry(
     session: SessionDep,
     current_user: CurrentUserDep,
@@ -848,11 +814,9 @@ def create_transfer_entry(
     )
 
 
-@router.post("/transfers/{entry_id}", response_class=HTMLResponse)
+@router.post("/transfers/{entry_id}")
 def update_transfer_entry(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
     month: str = Form(default=""),
@@ -861,7 +825,7 @@ def update_transfer_entry(
     amount: str = Form(default=""),
     description: str = Form(default=""),
     transaction_date: str = Form(default=""),
-) -> HTMLResponse:
+):
     entry = session.get(FinanceTransferEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -902,27 +866,25 @@ def update_transfer_entry(
     session.refresh(entry)
 
     context = build_transfers_context(session, current_user.id, entry.year)
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/finance_transfer_row.html",
-        context={
+    return json_ok(
+        {
             "entry": entry,
             "month_labels": context["month_labels"],
             "transfer_accounts": TRANSFER_ACCOUNTS,
             "show_month_column": context.get("selected_month") is None,
-        },
+        }
     )
 
 
-@router.delete("/transfers/{entry_id}", response_class=HTMLResponse)
+@router.delete("/transfers/{entry_id}")
 def delete_transfer_entry(
     session: SessionDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
-) -> HTMLResponse:
+):
     entry = session.get(FinanceTransferEntry, entry_id)
     if not entry or entry.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     session.delete(entry)
     session.commit()
-    return HTMLResponse("")
+    return json_ok({})

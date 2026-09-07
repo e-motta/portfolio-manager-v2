@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 
 from app.core.auth import CurrentUserDep
 from app.core.config import settings
@@ -16,7 +16,7 @@ from app.services.google_drive import (
 )
 from app.services.google_oauth import DRIVE_SCOPES, oauth, refresh_access_token
 from app.services.google_drive_auth import OAUTH_PURPOSE_DRIVE
-from app.web.dependencies import TemplatesDep
+from app.web.jsonutil import json_ok
 
 router = APIRouter(prefix="/backups", tags=["backups"])
 
@@ -43,34 +43,18 @@ def _load_drive_backups(user):
     return access_token, folder_id, drive_call(list_backups, access_token, folder_id)
 
 
-@router.get("", response_class=HTMLResponse)
-def backups_page(
-    request: Request,
-    templates: TemplatesDep,
-    user: CurrentUserDep,
-) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/backups.html",
-        context={
+@router.get("")
+def backups_page(user: CurrentUserDep):
+    return json_ok(
+        {
             "google_configured": _drive_configured(),
             "drive_connected": _user_has_drive(user),
-            "saved": request.query_params.get("saved") == "1",
-            "restored": request.query_params.get("restored") == "1",
-            "deleted": request.query_params.get("deleted") == "1",
-            "connected": request.query_params.get("connected") == "1",
-            "error_message": request.query_params.get("error"),
-            "sync_tab": "backups",
-        },
+        }
     )
 
 
-@router.get("/partials/list", response_class=HTMLResponse)
-def backups_list_partial(
-    request: Request,
-    templates: TemplatesDep,
-    user: CurrentUserDep,
-) -> HTMLResponse:
+@router.get("/partials/list")
+def backups_list_partial(user: CurrentUserDep):
     if not _user_has_drive(user):
         raise HTTPException(status_code=400, detail="Connect Google Drive first.")
 
@@ -82,18 +66,17 @@ def backups_list_partial(
         detail = exc.detail
         drive_error = detail if isinstance(detail, str) else str(detail)
 
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/backups_list_panel.html",
-        context={
+    return json_ok(
+        {
             "backups": backups,
             "drive_error": drive_error,
-        },
+        }
     )
 
 
 @router.get("/google/connect")
 async def connect_google_drive(request: Request) -> RedirectResponse:
+
     if not _drive_configured():
         raise HTTPException(status_code=503, detail="Google Drive is not configured.")
     request.session["oauth_purpose"] = OAUTH_PURPOSE_DRIVE

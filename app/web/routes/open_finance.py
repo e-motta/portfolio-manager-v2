@@ -1,7 +1,7 @@
 from datetime import date
 
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 
 from app.core.auth import CurrentUserDep
 from app.core.db import SessionDep
@@ -38,7 +38,7 @@ from app.services.finance import (
     resolve_month,
     resolve_year,
 )
-from app.web.dependencies import TemplatesDep
+from app.web.jsonutil import json_ok
 
 router = APIRouter(prefix="/open-finance", tags=["open-finance"])
 
@@ -96,41 +96,25 @@ def _open_finance_tools_context(session, user) -> dict:
     }
 
 
-@router.get("", response_class=HTMLResponse)
-def open_finance_page(
-    request: Request,
-    templates: TemplatesDep,
-    user: CurrentUserDep,
-) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/open_finance.html",
-        context={
+@router.get("")
+def open_finance_page(user: CurrentUserDep):
+    return json_ok(
+        {
             "connected": user_has_cumbuca(user),
             "connected_at": user.cumbuca_connected_at,
-            "saved": request.query_params.get("connected") == "1",
-            "disconnected": request.query_params.get("disconnected") == "1",
-            "error_message": request.query_params.get("error"),
-            "sync_tab": "open-finance",
-        },
+        }
     )
 
 
-@router.get("/partials/tools", response_class=HTMLResponse)
+@router.get("/partials/tools")
 def open_finance_tools_partial(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     user: CurrentUserDep,
-) -> HTMLResponse:
+):
     if not user_has_cumbuca(user):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
 
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/open_finance_connected_panel.html",
-        context=_open_finance_tools_context(session, user),
-    )
+    return json_ok(_open_finance_tools_context(session, user))
 
 
 @router.post("/disconnect")
@@ -145,11 +129,9 @@ def disconnect_open_finance(
 def _preview_expense_import(
     request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     user: CurrentUserDep,
     *,
     builder,
-    preview_page: str,
     import_title: str,
     import_subtitle: str,
     period_label: str,
@@ -159,7 +141,7 @@ def _preview_expense_import(
     default_import_year: int | None = None,
     default_import_month: int | None = None,
     allow_transfer_import: bool = False,
-) -> HTMLResponse:
+):
     if not user_has_cumbuca(user):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
 
@@ -194,10 +176,8 @@ def _preview_expense_import(
         default_import_month if default_import_month is not None else resolved_month
     )
 
-    return templates.TemplateResponse(
-        request=request,
-        name=preview_page,
-        context={
+    return json_ok(
+        {
             "error": error,
             "warnings": warnings,
             "rows": rows,
@@ -226,20 +206,18 @@ def _preview_expense_import(
             "allow_transfer_import": allow_transfer_import,
             "transfer_accounts": TRANSFER_ACCOUNTS,
             "investment_brokers": INVESTMENT_BROKERS,
-            "sync_tab": "open-finance",
-        },
+        }
     )
 
 
-@router.post("/sync/credit-card/preview", response_class=HTMLResponse)
+@router.post("/sync/credit-card/preview")
 def preview_credit_card_sync(
     request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     user: CurrentUserDep,
     year: int = Form(default=0),
     month: int = Form(default=0),
-) -> HTMLResponse:
+):
     resolved_year = resolve_year(year)
     resolved_month = resolve_month(month, resolved_year)
     cc_expense_year, cc_expense_month, cc_expense_month_label = _cc_expense_period(
@@ -249,10 +227,8 @@ def preview_credit_card_sync(
     return _preview_expense_import(
         request,
         session,
-        templates,
         user,
         builder=build_credit_card_expense_import_rows,
-        preview_page="pages/open_finance_expense_preview.html",
         import_title="Review credit card charges",
         import_subtitle=f"{MONTH_LABELS[resolved_month - 1]} {resolved_year} statement",
         period_label="Statement",
@@ -431,25 +407,22 @@ async def confirm_credit_card_sync(
     return await _confirm_expense_import(request, session, user)
 
 
-@router.post("/sync/account-debits/preview", response_class=HTMLResponse)
+@router.post("/sync/account-debits/preview")
 def preview_account_debits_sync(
     request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     user: CurrentUserDep,
     year: int = Form(default=0),
     month: int = Form(default=0),
-) -> HTMLResponse:
+):
     resolved_year = resolve_year(year)
     resolved_month = resolve_month(month, resolved_year)
     month_label = MONTH_LABELS[resolved_month - 1]
     return _preview_expense_import(
         request,
         session,
-        templates,
         user,
         builder=build_account_expense_import_rows,
-        preview_page="pages/open_finance_expense_preview.html",
         import_title="Review account debits",
         import_subtitle=f"{month_label} {resolved_year}",
         period_label="Month",
@@ -474,15 +447,14 @@ async def confirm_account_debits_sync(
     return await _confirm_account_debits_import(request, session, user)
 
 
-@router.post("/sync/account-credits/preview", response_class=HTMLResponse)
+@router.post("/sync/account-credits/preview")
 def preview_account_credits_sync(
     request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     user: CurrentUserDep,
     year: int = Form(default=0),
     month: int = Form(default=0),
-) -> HTMLResponse:
+):
     if not user_has_cumbuca(user):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
 
@@ -514,10 +486,8 @@ def preview_account_credits_sync(
     new_count = sum(1 for row in rows if not row.already_exists)
     existing_count = sum(1 for row in rows if row.already_exists)
 
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/open_finance_credit_preview.html",
-        context={
+    return json_ok(
+        {
             "error": error,
             "warnings": warnings,
             "rows": rows,
@@ -527,28 +497,26 @@ def preview_account_credits_sync(
             "month_label": month_label,
             "new_count": new_count,
             "existing_count": existing_count,
-            "confirm_action": "/open-finance/sync/account-credits/confirm",
+            "confirm_action": "/api/open-finance/sync/account-credits/confirm",
             "month_labels": MONTH_LABELS,
             "year_options": _preview_year_options(resolved_year, rows),
             "default_import_year": resolved_year,
             "default_import_month": resolved_month,
             "default_import_label": f"{month_label} {resolved_year}",
             "investment_brokers": INVESTMENT_BROKERS,
-            "sync_tab": "open-finance",
-        },
+        }
     )
 
 
-@router.post("/sync/account-deposits/preview", response_class=HTMLResponse)
+@router.post("/sync/account-deposits/preview")
 def preview_account_deposits_sync(
     request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     user: CurrentUserDep,
     year: int = Form(default=0),
     month: int = Form(default=0),
-) -> HTMLResponse:
-    return preview_account_credits_sync(request, session, templates, user, year, month)
+):
+    return preview_account_credits_sync(request, session, user, year, month)
 
 
 @router.post("/sync/account-credits/confirm")
@@ -600,13 +568,11 @@ async def confirm_account_deposits_sync(
     return await confirm_account_credits_sync(request, session, user)
 
 
-@router.post("/sync/investments/preview", response_class=HTMLResponse)
+@router.post("/sync/investments/preview")
 def preview_investment_sync(
-    request: Request,
     session: SessionDep,
-    templates: TemplatesDep,
     user: CurrentUserDep,
-) -> HTMLResponse:
+):
     if not user_has_cumbuca(user):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
 
@@ -626,17 +592,14 @@ def preview_investment_sync(
     new_count = sum(1 for row in rows if not row.already_exists)
     update_count = sum(1 for row in rows if row.is_update)
 
-    return templates.TemplateResponse(
-        request=request,
-        name="pages/open_finance_investment_preview.html",
-        context={
+    return json_ok(
+        {
             "error": error,
             "rows": rows,
             "import_token": import_token,
             "new_count": new_count,
             "update_count": update_count,
-            "sync_tab": "open-finance",
-        },
+        }
     )
 
 
