@@ -4,6 +4,7 @@ import { deleteJson, getJson, sendForm } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DonutChart } from "../components/DonutChart";
 import { EmptyState } from "../components/EmptyState";
+import { FileDrop } from "../components/FileDrop";
 import { Modal } from "../components/Modal";
 import { Segmented } from "../components/Segmented";
 import {
@@ -503,13 +504,12 @@ export function HoldingsPage() {
           </button>
         ) : null}
       >
-        <label className="field">
-          Interactive Brokers statement (CSV)
-          <input type="file" accept=".csv,text/csv" onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void uploadStatement(file);
-          }} />
-        </label>
+        <FileDrop
+          accept=".csv,text/csv"
+          label="Interactive Brokers statement"
+          hint="CSV from Activity / Trades or Dividends"
+          onFile={(file) => void uploadStatement(file)}
+        />
         {preview?.error ? <p className="login-error">{preview.error}</p> : null}
         {preview && !preview.error && importKind === "lots" && preview.has_trades === false ? (
           <p>No trades found in this statement</p>

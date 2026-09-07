@@ -71,7 +71,7 @@ export function DashboardPage() {
             Asset class targets sum to {(targetSum * 100).toFixed(1)}%
           </p>
         ) : null}
-        <div className="panel-body split-panel">
+        <div className="panel-body">
           {slices.length ? (
             <DonutChart slices={slices} centerLabel="Portfolio" centerValue={formatBrl(data.total_value)} />
           ) : (
