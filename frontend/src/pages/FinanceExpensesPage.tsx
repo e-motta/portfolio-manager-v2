@@ -1,12 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, Fragment, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { deleteJson, getJson, redirectLocation, sendForm } from "../api/client";
+import { deleteJson, getJson, pathFromRedirect, redirectLocation, sendForm } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { DonutChart } from "../components/DonutChart";
+import { EmptyState } from "../components/EmptyState";
+import { FinanceTabs } from "../components/FinanceTabs";
 import { Modal } from "../components/Modal";
 import { MonthChart } from "../components/MonthChart";
 import { PeriodBar } from "../components/PeriodBar";
-import { formatBrl, formatDate } from "../lib/format";
+import { QueryFlash } from "../components/QueryFlash";
+import { asNumber, formatBrl, formatDate } from "../lib/format";
 import { useFinancePeriod } from "../lib/finance";
 
 type Entry = {
@@ -97,6 +101,8 @@ export function FinanceExpensesPage() {
 
   return (
     <>
+      <FinanceTabs />
+      <QueryFlash />
       <PeriodBar year={data.year} month={data.filter_month} yearOptions={data.year_options} basePath="/finance/expenses" />
       <div className="toolbar">
         <div className="stat" style={{ minWidth: "12rem" }}><dt>Year total</dt><dd>{formatBrl(data.year_total)}</dd></div>
@@ -110,21 +116,30 @@ export function FinanceExpensesPage() {
       {data.category_totals.length ? (
         <section className="panel">
           <div className="panel-head"><h2>By category</h2></div>
-          <div className="table-wrap">
-            <table className="data">
-              <thead><tr><th>Category</th><th className="num">Count</th><th className="num">Total</th></tr></thead>
-              <tbody>
-                {data.category_totals.map((row) => (
-                  <tr key={row.slug}>
-                    <td><a href={`#category-${row.slug}`}>{row.category}</a></td>
-                    <td className="num">{row.count}</td>
-                    <td className="num">{formatBrl(row.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="panel-body split-panel">
+            <DonutChart
+              slices={data.category_totals.map((row) => ({ label: row.category, value: Math.abs(asNumber(row.total)) }))}
+              centerLabel="Expenses"
+            />
+            <div className="table-wrap">
+              <table className="data">
+                <thead><tr><th>Category</th><th className="num">Count</th><th className="num">Total</th></tr></thead>
+                <tbody>
+                  {data.category_totals.map((row) => (
+                    <tr key={row.slug}>
+                      <td><a href={`#category-${row.slug}`}>{row.category}</a></td>
+                      <td className="num">{row.count}</td>
+                      <td className="num">{formatBrl(row.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
+      ) : null}
+      {!data.entries.length ? (
+        <EmptyState title="No expenses in this period" body="Add an expense or import from Open Finance." />
       ) : null}
       {grouped.map(([groupName, categories]) => (
         <Fragment key={groupName}>
@@ -204,6 +219,7 @@ function ExpenseTable({
   setLinkFor: (entry: Entry) => void;
   client: ReturnType<typeof useQueryClient>;
 }) {
+  const navigate = useNavigate();
   return (
     <div className="table-wrap">
       <table className="data">
@@ -263,7 +279,7 @@ function ExpenseTable({
                         const redirect = redirectLocation(response);
                         setEditing(null);
                         if (redirect) {
-                          window.location.assign(redirect);
+                          navigate(pathFromRedirect(redirect));
                           return;
                         }
                         void client.invalidateQueries({ queryKey: ["finance-expenses"] });

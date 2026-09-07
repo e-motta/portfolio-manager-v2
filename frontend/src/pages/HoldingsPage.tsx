@@ -2,8 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useMemo, useState } from "react";
 import { deleteJson, getJson, sendForm } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { DonutChart } from "../components/DonutChart";
+import { EmptyState } from "../components/EmptyState";
+import { FileDrop } from "../components/FileDrop";
 import { Modal } from "../components/Modal";
+import { Segmented } from "../components/Segmented";
 import {
+  asNumber,
   formatBrl,
   formatDate,
   formatDateTime,
@@ -114,6 +119,7 @@ export function HoldingsPage() {
   const [divDraft, setDivDraft] = useState({ pay_date: "", gross_amount_usd: "", withholding_tax_usd: "" });
   const [pendingLot, setPendingLot] = useState<Lot | null>(null);
   const [pendingDiv, setPendingDiv] = useState<Dividend | null>(null);
+  const [section, setSection] = useState<"positions" | "performance" | "lots" | "dividends">("positions");
 
   const refreshPrices = useMutation({
     mutationFn: () => sendForm("/api/prices/refresh", {}),
@@ -219,8 +225,32 @@ export function HoldingsPage() {
           <span className="badge badge--warn">Targets = {data.target_total_display}%</span>
         )}
       </p>
+      <div className="toolbar">
+        <Segmented
+          label="Holdings sections"
+          value={section}
+          onChange={setSection}
+          options={[
+            { value: "positions", label: "Positions" },
+            { value: "performance", label: "Performance" },
+            { value: "lots", label: "Tax lots" },
+            { value: "dividends", label: "Dividends" },
+          ]}
+        />
+      </div>
+      {section === "positions" ? (
       <section className="panel">
         <div className="panel-head"><h2>Positions by ticker</h2></div>
+        {data.consolidated.length ? (
+          <div className="panel-body">
+            <DonutChart
+              slices={data.consolidated.map((item) => ({ label: item.symbol, value: asNumber(item.current_value_brl) }))}
+              centerLabel="Securities"
+            />
+          </div>
+        ) : (
+          <EmptyState title="No securities yet" body="Add a trade or import an Interactive Brokers statement." />
+        )}
         <div className="table-wrap">
           <table className="data">
             <thead>
@@ -271,6 +301,8 @@ export function HoldingsPage() {
           </table>
         </div>
       </section>
+      ) : null}
+      {section === "performance" ? (
       <section className="panel">
         <div className="panel-head"><h2>Performance by ticker</h2></div>
         <div className="table-wrap">
@@ -286,6 +318,9 @@ export function HoldingsPage() {
               </tr>
             </thead>
             <tbody>
+              {!data.security_returns.length ? (
+                <tr><td colSpan={6}><EmptyState title="No performance data yet" /></td></tr>
+              ) : null}
               {data.security_returns.map((item) => (
                 <tr key={item.symbol}>
                   <td>{item.symbol}</td>
@@ -300,6 +335,8 @@ export function HoldingsPage() {
           </table>
         </div>
       </section>
+      ) : null}
+      {section === "lots" ? (
       <section className="panel">
         <div className="panel-head"><h2>Tax lots</h2></div>
         <div className="table-wrap">
@@ -316,6 +353,9 @@ export function HoldingsPage() {
               </tr>
             </thead>
             <tbody>
+              {!data.lots.length ? (
+                <tr><td colSpan={7}><EmptyState title="No tax lots yet" /></td></tr>
+              ) : null}
               {data.lots.map((lot) => {
                 const isEditing = editingLot === lot.id;
                 return (
@@ -361,6 +401,8 @@ export function HoldingsPage() {
           </table>
         </div>
       </section>
+      ) : null}
+      {section === "dividends" ? (
       <section className="panel">
         <div className="panel-head"><h2>Dividends</h2></div>
         <div className="table-wrap">
@@ -376,6 +418,9 @@ export function HoldingsPage() {
               </tr>
             </thead>
             <tbody>
+              {!data.dividends.length ? (
+                <tr><td colSpan={6}><EmptyState title="No dividends recorded" /></td></tr>
+              ) : null}
               {data.dividends.map((item) => {
                 const isEditing = editingDiv === item.id;
                 return (
@@ -416,6 +461,7 @@ export function HoldingsPage() {
           </table>
         </div>
       </section>
+      ) : null}
       <Modal open={tradeOpen} title="Add trade" onClose={() => setTradeOpen(false)} footer={<button form="add-trade" className="btn" type="submit">Save</button>}>
         <form id="add-trade" className="form-grid" onSubmit={(event: FormEvent<HTMLFormElement>) => {
           event.preventDefault();
@@ -458,13 +504,12 @@ export function HoldingsPage() {
           </button>
         ) : null}
       >
-        <label className="field">
-          Interactive Brokers statement (CSV)
-          <input type="file" accept=".csv,text/csv" onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void uploadStatement(file);
-          }} />
-        </label>
+        <FileDrop
+          accept=".csv,text/csv"
+          label="Interactive Brokers statement"
+          hint="CSV from Activity / Trades or Dividends"
+          onFile={(file) => void uploadStatement(file)}
+        />
         {preview?.error ? <p className="login-error">{preview.error}</p> : null}
         {preview && !preview.error && importKind === "lots" && preview.has_trades === false ? (
           <p>No trades found in this statement</p>
