@@ -78,39 +78,44 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
           const x = padL + index * band;
           const selected = selectedMonth === point.month;
           const hovered = hover === point.month;
+          const cx = x + band / 2;
+          const on = selected || hovered;
           if (variant === "summary") {
             const incomeH = point.income * scale;
             const expenseH = point.expense * scale;
-            const cx = x + band / 2;
+            const barW = 11;
+            const bx = cx - barW / 2;
             return (
-              <g key={point.month} onMouseEnter={() => setHover(point.month)} onMouseLeave={() => setHover(null)}>
+              <g key={point.month}>
                 <rect
-                  className="chart-hit"
-                  x={x}
-                  y={padT}
-                  width={band}
-                  height={innerH}
-                  onClick={() => onSelect(point.month)}
-                />
-                <rect
-                  className={`chart-bar income${selected || hovered ? " is-on" : ""}`}
-                  x={cx - 7}
+                  className={`chart-bar income${on ? " is-on" : ""}`}
+                  x={bx}
                   y={zeroY - incomeH}
-                  width={7}
+                  width={barW}
                   height={Math.max(incomeH, 0)}
                   rx={2}
                 />
                 <rect
-                  className={`chart-bar expense${selected || hovered ? " is-on" : ""}`}
-                  x={cx}
+                  className={`chart-bar expense${on ? " is-on" : ""}`}
+                  x={bx}
                   y={zeroY}
-                  width={7}
+                  width={barW}
                   height={Math.max(expenseH, 0)}
                   rx={2}
                 />
                 <text className={`chart-label${selected ? " is-on" : ""}`} x={cx} y={height - 8} textAnchor="middle">
                   {point.label}
                 </text>
+                <rect
+                  className="chart-hit"
+                  x={x}
+                  y={0}
+                  width={band}
+                  height={height}
+                  onMouseEnter={() => setHover(point.month)}
+                  onMouseLeave={() => setHover(null)}
+                  onClick={() => onSelect(point.month)}
+                />
               </g>
             );
           }
@@ -118,26 +123,28 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
           const barH = value * scale;
           const negative = variant === "expense" || point.value < 0;
           return (
-            <g key={point.month} onMouseEnter={() => setHover(point.month)} onMouseLeave={() => setHover(null)}>
+            <g key={point.month}>
               <rect
-                className="chart-hit"
-                x={x}
-                y={padT}
-                width={band}
-                height={innerH}
-                onClick={() => onSelect(point.month)}
-              />
-              <rect
-                className={`chart-bar ${negative ? "expense" : "income"}${selected || hovered ? " is-on" : ""}`}
+                className={`chart-bar ${negative ? "expense" : "income"}${on ? " is-on" : ""}`}
                 x={x + band * 0.22}
                 y={padT + innerH - barH}
                 width={band * 0.56}
                 height={Math.max(barH, 1.5)}
                 rx={3}
               />
-              <text className={`chart-label${selected ? " is-on" : ""}`} x={x + band / 2} y={height - 8} textAnchor="middle">
+              <text className={`chart-label${selected ? " is-on" : ""}`} x={cx} y={height - 8} textAnchor="middle">
                 {point.label}
               </text>
+              <rect
+                className="chart-hit"
+                x={x}
+                y={0}
+                width={band}
+                height={height}
+                onMouseEnter={() => setHover(point.month)}
+                onMouseLeave={() => setHover(null)}
+                onClick={() => onSelect(point.month)}
+              />
             </g>
           );
         })}
