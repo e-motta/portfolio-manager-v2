@@ -90,9 +90,9 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
                 <rect
                   className={`chart-bar income${on ? " is-on" : ""}`}
                   x={bx}
-                  y={zeroY - incomeH}
+                  y={zeroY - Math.max(incomeH, point.income > 0 ? 2 : 0)}
                   width={barW}
-                  height={Math.max(incomeH, 0)}
+                  height={Math.max(incomeH, point.income > 0 ? 2 : 0)}
                   rx={2}
                 />
                 <rect
@@ -100,22 +100,12 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
                   x={bx}
                   y={zeroY}
                   width={barW}
-                  height={Math.max(expenseH, 0)}
+                  height={Math.max(expenseH, point.expense > 0 ? 2 : 0)}
                   rx={2}
                 />
                 <text className={`chart-label${selected ? " is-on" : ""}`} x={cx} y={height - 8} textAnchor="middle">
                   {point.label}
                 </text>
-                <rect
-                  className="chart-hit"
-                  x={x}
-                  y={0}
-                  width={band}
-                  height={height}
-                  onMouseEnter={() => setHover(point.month)}
-                  onMouseLeave={() => setHover(null)}
-                  onClick={() => onSelect(point.month)}
-                />
               </g>
             );
           }
@@ -135,16 +125,6 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
               <text className={`chart-label${selected ? " is-on" : ""}`} x={cx} y={height - 8} textAnchor="middle">
                 {point.label}
               </text>
-              <rect
-                className="chart-hit"
-                x={x}
-                y={0}
-                width={band}
-                height={height}
-                onMouseEnter={() => setHover(point.month)}
-                onMouseLeave={() => setHover(null)}
-                onClick={() => onSelect(point.month)}
-              />
             </g>
           );
         })}
@@ -177,6 +157,25 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
               />
             ))
           : null}
+        {series.map((point, index) => {
+          const x = padL + index * band;
+          return (
+            <rect
+              key={`hit-${point.month}`}
+              className="chart-hit"
+              x={x}
+              y={0}
+              width={band}
+              height={height}
+              fill="#000"
+              fillOpacity={0}
+              pointerEvents="all"
+              onMouseEnter={() => setHover(point.month)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => onSelect(point.month)}
+            />
+          );
+        })}
       </svg>
       <div className="chart-caption">
         {variant === "summary" ? (
