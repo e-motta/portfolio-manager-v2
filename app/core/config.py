@@ -1,8 +1,36 @@
+import os
 import secrets
 import sys
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _load_vault_secrets_to_env() -> None:
+    """Load OCI Vault secrets into environment variables before Settings init.
+
+    Only runs when OCI_VAULT_OCID is configured. Secrets are loaded into
+    os.environ so pydantic-settings picks them up. Falls back gracefully
+    if Vault is unavailable.
+    """
+    if not os.environ.get("OCI_VAULT_OCID"):
+        return
+
+    if os.environ.get("TESTING") == "1":
+        return
+
+    try:
+        from app.core.vault import load_vault_secrets
+
+        vault_secrets = load_vault_secrets()
+        for key, value in vault_secrets.items():
+            if key not in os.environ:
+                os.environ[key] = value
+    except Exception as e:
+        print(f"WARNING: Failed to load OCI Vault secrets: {e}", file=sys.stderr)
+
+
+_load_vault_secrets_to_env()
 
 
 class Settings(BaseSettings):
