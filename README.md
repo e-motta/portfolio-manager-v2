@@ -112,6 +112,14 @@ pytest
 ruff check app
 ```
 
+## Production Deployment
+
+See [docs/deploy-oci.md](docs/deploy-oci.md) for deploying to Oracle Cloud Infrastructure with:
+- Docker + Postgres
+- Caddy for automatic HTTPS
+- OCI Vault for secrets management
+- Instance principal authentication
+
 ## Project layout
 
 - `app/services/` — allocation, prices, finance, Open Finance sync, backups
