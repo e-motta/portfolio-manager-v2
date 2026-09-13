@@ -20,16 +20,21 @@ This guide covers deploying Portfolio Manager to OCI Always Free tier at `https:
 │  │  Caddy  │────▶│   App   │────▶│    Postgres     │   │
 │  │ :80/443 │     │  :8000  │     │     :5432       │   │
 │  └─────────┘     └─────────┘     └─────────────────┘   │
-│       │                                   │             │
-│       │              ┌────────────────────┘             │
-│       │              ▼                                  │
-│       │         postgres_data                           │
-│       │         (volume)                                │
+│       │               │                   │             │
+│       │               │    ┌──────────────┘             │
+│       │               │    ▼                            │
+│       │               │  postgres_data                  │
+│       │               │  (volume)                       │
+│       │               ▼                                 │
+│       │          OCI Vault                              │
+│       │          (secrets)                              │
 └───────│─────────────────────────────────────────────────┘
         │
         ▼
    Internet (:443)
 ```
+
+**Secrets Handling**: The app loads secrets directly from OCI Vault at startup using the OCI Python SDK with instance principal authentication. Secrets are held in memory only — **no secrets are written to disk**.
 
 ## 1. Create OCI Resources
 
@@ -42,7 +47,7 @@ This guide covers deploying Portfolio Manager to OCI Always Free tier at `https:
 3. Select **Ubuntu 22.04** or **Oracle Linux 8** image
 4. Create or select a VCN with public subnet
 5. Add your SSH public key
-6. Note the public IP after creation
+6. Note the public IP and instance OCID after creation
 
 ### 1.2 Configure Security List / NSG
 
@@ -62,7 +67,7 @@ Allow only necessary ports:
 1. Go to **Identity & Security → Vault → Create Vault**
    - Name: `portfolio-vault`
    - Type: Default (free tier compatible)
-   - Note the Vault OCID
+   - Note the **Vault OCID**
 
 2. Create a Master Encryption Key:
    - Go to your vault → Master Encryption Keys → Create Key
@@ -71,15 +76,28 @@ Allow only necessary ports:
 
 3. Create secrets (Identity & Security → Vault → your vault → Secrets → Create Secret):
 
-   | Secret Name | Description | Example Value |
-   |-------------|-------------|---------------|
-   | `portfolio-secret-key` | Session signing key | `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
-   | `portfolio-postgres-password` | Database password | Strong random password |
-   | `portfolio-google-client-id` | Google OAuth client ID | From Google Cloud Console |
-   | `portfolio-google-client-secret` | Google OAuth secret | From Google Cloud Console |
-   | `portfolio-google-redirect-uri` | OAuth callback URL | `https://finance.eduardomotta.dev/auth/callback` |
-   | `portfolio-cumbuca-redirect-uri` | Cumbuca callback (optional) | `https://finance.eduardomotta.dev/auth/cumbuca/callback` |
-   | `portfolio-allowed-emails` | Email allowlist (optional) | `user@example.com,other@example.com` |
+   | OCI Secret Name | App Setting | Description |
+   |-----------------|-------------|-------------|
+   | `portfolio-secret-key` | `SECRET_KEY` | Session signing key (≥32 chars) |
+   | `portfolio-database-url` | `DATABASE_URL` | Full Postgres URL |
+   | `portfolio-postgres-password` | `POSTGRES_PASSWORD` | DB password (for postgres container) |
+   | `portfolio-google-client-id` | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
+   | `portfolio-google-client-secret` | `GOOGLE_CLIENT_SECRET` | Google OAuth secret |
+   | `portfolio-google-redirect-uri` | `GOOGLE_REDIRECT_URI` | `https://finance.eduardomotta.dev/auth/callback` |
+   | `portfolio-cumbuca-redirect-uri` | `CUMBUCA_REDIRECT_URI` | Cumbuca callback (optional) |
+   | `portfolio-allowed-emails` | `ALLOWED_GOOGLE_EMAILS` | Email allowlist (optional) |
+
+   **Generating secret values:**
+   ```bash
+   # SECRET_KEY
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+   # POSTGRES_PASSWORD
+   python -c "import secrets; print(secrets.token_urlsafe(24))"
+
+   # DATABASE_URL (use the postgres password you generated)
+   # postgresql+psycopg://portfolio:PASSWORD@postgres:5432/portfolio
+   ```
 
 ### 1.4 Create Dynamic Group for Instance Principal
 
@@ -89,7 +107,7 @@ Allow only necessary ports:
    ```
    instance.id = 'ocid1.instance.oc1.xxx.yyy'
    ```
-   Or match by compartment:
+   Or match by compartment (allows all instances in compartment):
    ```
    instance.compartment.id = 'ocid1.compartment.oc1..xxx'
    ```
@@ -129,11 +147,7 @@ Wait for DNS propagation (check with `dig finance.eduardomotta.dev`).
    ```
    https://finance.eduardomotta.dev/auth/callback
    ```
-4. If using Google Drive backups, also add:
-   ```
-   https://finance.eduardomotta.dev/auth/callback
-   ```
-   (same URI, used for Drive OAuth)
+4. If using Google Drive backups, the same URI is used for Drive OAuth.
 
 ## 4. Configure Cumbuca (Optional)
 
@@ -180,20 +194,7 @@ sudo usermod -aG docker $USER
 exit
 ```
 
-### 5.2 Install OCI CLI
-
-```bash
-bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
-
-# Add to PATH
-echo 'export PATH=$PATH:$HOME/bin' >> ~/.bashrc
-source ~/.bashrc
-
-# Verify installation
-oci --version
-```
-
-### 5.3 Clone the Repository
+### 5.2 Clone the Repository
 
 ```bash
 git clone https://github.com/yourusername/portfolio-manager-v2.git
@@ -202,53 +203,58 @@ cd portfolio-manager-v2
 
 ## 6. Deploy with OCI Vault Secrets
 
-### 6.1 Set Vault Configuration
+### 6.1 Configure Environment
+
+Create `.env.production` with your OCI Vault configuration:
 
 ```bash
-# Set these in your shell or /etc/environment
-export OCI_VAULT_OCID="ocid1.vault.oc1.xxx.yyy"
-export OCI_COMPARTMENT_ID="ocid1.compartment.oc1..xxx"
+cat > .env.production << 'EOF'
+APP_ENV=production
+OCI_VAULT_OCID=ocid1.vault.oc1.xxx.yyy
+OCI_COMPARTMENT_ID=ocid1.compartment.oc1..xxx
+EOF
+
+chmod 600 .env.production
 ```
 
-### 6.2 Fetch Secrets
+**Note**: The app loads all other secrets (SECRET_KEY, DATABASE_URL, Google OAuth, etc.) directly from OCI Vault at startup. Only the Vault OCID and Compartment ID are needed in the config file.
 
-```bash
-# Create secure tmpfs directory
-sudo mkdir -p /run/secrets
-sudo chmod 700 /run/secrets
-
-# Fetch secrets (uses instance principal automatically)
-sudo -E ./scripts/fetch-oci-secrets.sh
-
-# Verify secrets were loaded
-sudo cat /run/secrets/app.env
-```
-
-### 6.3 Start the Application
+### 6.2 Start the Application
 
 ```bash
 # Build and start all services
 docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
 
-# Check logs
-docker compose logs -f
+# Watch startup logs (secrets are loaded at app startup)
+docker compose logs -f app
 
 # Verify all services are healthy
 docker compose ps
 ```
 
-## 7. Alternative: Deploy with .env File
+You should see log messages like:
+```
+Loading secrets from OCI Vault...
+  Loaded: SECRET_KEY
+  Loaded: DATABASE_URL
+  Loaded: GOOGLE_CLIENT_ID
+  ...
+Loaded N secrets from OCI Vault
+```
+
+## 7. Alternative: Deploy without OCI Vault
 
 If not using OCI Vault (simpler but less secure):
 
 ```bash
-# Copy example and fill in values
+# Copy example and fill in ALL values
 cp .env.production.example .env.production
-
-# Edit with your values
 nano .env.production
 
-# Start services
+# Comment out OCI_VAULT_OCID and OCI_COMPARTMENT_ID
+# Set all secrets directly in the file
+
+# Start services (use base compose only)
 docker compose up -d --build
 ```
 
@@ -280,7 +286,7 @@ Create `/etc/systemd/system/portfolio.service`:
 [Unit]
 Description=Portfolio Manager
 Requires=docker.service
-After=docker.service
+After=docker.service network-online.target
 
 [Service]
 Type=oneshot
@@ -299,32 +305,6 @@ Enable the service:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable portfolio
-```
-
-### 8.3 Set Up Secrets Refresh on Boot
-
-Create `/etc/systemd/system/portfolio-secrets.service`:
-
-```ini
-[Unit]
-Description=Fetch Portfolio Secrets from OCI Vault
-Before=portfolio.service
-Requires=network-online.target
-After=network-online.target
-
-[Service]
-Type=oneshot
-Environment="OCI_VAULT_OCID=ocid1.vault.oc1.xxx.yyy"
-Environment="OCI_COMPARTMENT_ID=ocid1.compartment.oc1..xxx"
-ExecStart=/home/ubuntu/portfolio-manager-v2/scripts/fetch-oci-secrets.sh
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable portfolio-secrets
 ```
 
 ## 9. Backup and Maintenance
@@ -390,13 +370,13 @@ docker compose logs -f caddy
 
 ### App fails to start
 
-1. Check app logs:
+1. Check app logs for Vault loading errors:
    ```bash
-   docker compose logs app
+   docker compose logs app | grep -i vault
    ```
-2. Verify secrets are loaded:
+2. Verify OCI_VAULT_OCID and OCI_COMPARTMENT_ID are set:
    ```bash
-   sudo cat /run/secrets/app.env
+   docker compose exec app env | grep OCI
    ```
 3. Verify Postgres is healthy:
    ```bash
@@ -404,36 +384,82 @@ docker compose logs -f caddy
    docker compose logs postgres
    ```
 
+### OCI Vault secrets not loading
+
+1. Check app logs for specific errors:
+   ```bash
+   docker compose logs app 2>&1 | head -50
+   ```
+
+2. Verify instance principal is working (run on the VM, not in container):
+   ```bash
+   # Install OCI CLI if needed
+   oci os ns get --auth instance_principal
+   ```
+
+3. Verify dynamic group includes your instance:
+   - Check instance OCID matches the dynamic group rule
+   - Check the dynamic group is in the correct compartment
+
+4. Verify IAM policy:
+   - Policy must allow `read secret-family`
+   - Policy must reference the correct dynamic group name
+   - Policy must be in the correct compartment (or root)
+
+5. Verify secrets exist in Vault:
+   - Check secret names match exactly (e.g., `portfolio-secret-key`)
+   - Check secrets are in ACTIVE lifecycle state
+
 ### Database connection issues
 
 1. Check if Postgres is running:
    ```bash
    docker compose exec postgres pg_isready -U portfolio
    ```
-2. Verify DATABASE_URL in app environment:
+2. Verify DATABASE_URL was loaded from Vault:
    ```bash
-   docker compose exec app env | grep DATABASE
+   docker compose logs app | grep DATABASE
    ```
 
-### Instance principal not working
+### Container can't reach OCI IMDS
 
-1. Verify dynamic group membership:
+The OCI Instance Metadata Service (IMDS) at `169.254.169.254` must be reachable from containers for instance principal auth. This works by default on OCI, but if you have custom network configuration:
+
+1. Verify IMDS is reachable from the host:
    ```bash
-   oci iam dynamic-group get --dynamic-group-id <dynamic-group-ocid>
+   curl -s http://169.254.169.254/opc/v2/instance/ | head
    ```
-2. Test from instance:
+
+2. Verify from inside the container:
    ```bash
-   oci os ns get --auth instance_principal
+   docker compose exec app curl -s http://169.254.169.254/opc/v2/instance/ | head
    ```
-3. Check IAM policy allows `read secret-family`
 
 ## Security Checklist
 
 - [ ] Only ports 22, 80, 443 exposed in security list
 - [ ] Postgres not exposed to internet (internal Docker network only)
-- [ ] Secrets stored in OCI Vault (not in files on disk)
-- [ ] Instance principal used (no API keys on VM)
-- [ ] `.env.production` has mode 600 (if used instead of Vault)
+- [ ] Secrets stored in OCI Vault, loaded in-memory only
+- [ ] No secrets written to disk (no .env files with production secrets)
+- [ ] Instance principal used (no API keys or config files on VM)
+- [ ] Dynamic group scoped to specific instance (not entire compartment)
 - [ ] `ALLOWED_GOOGLE_EMAILS` set to restrict access
 - [ ] Regular backups configured
 - [ ] SSH key authentication only (no password)
+
+## Secret Name to Environment Variable Mapping
+
+The app loads these secrets from OCI Vault and maps them to environment variables:
+
+| OCI Secret Name | Environment Variable | Required |
+|-----------------|---------------------|----------|
+| `portfolio-secret-key` | `SECRET_KEY` | Yes |
+| `portfolio-database-url` | `DATABASE_URL` | Yes |
+| `portfolio-postgres-password` | `POSTGRES_PASSWORD` | Yes |
+| `portfolio-google-client-id` | `GOOGLE_CLIENT_ID` | Yes |
+| `portfolio-google-client-secret` | `GOOGLE_CLIENT_SECRET` | Yes |
+| `portfolio-google-redirect-uri` | `GOOGLE_REDIRECT_URI` | Yes |
+| `portfolio-cumbuca-redirect-uri` | `CUMBUCA_REDIRECT_URI` | No |
+| `portfolio-allowed-emails` | `ALLOWED_GOOGLE_EMAILS` | No |
+
+This mapping is defined in `app/core/vault.py`.
