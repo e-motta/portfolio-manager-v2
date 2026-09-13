@@ -7,7 +7,6 @@ services:
         condition: service_healthy
     environment:
       - APP_ENV=production
-      - DATABASE_URL=postgresql+psycopg://portfolio:${POSTGRES_PASSWORD}@postgres:5432/portfolio
     env_file:
       - .env.production
     networks:

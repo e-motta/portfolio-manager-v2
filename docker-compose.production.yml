@@ -1,18 +1,22 @@
-# Production override: use with base docker-compose.yml
+# Production override for OCI deployment with Vault secrets
 # Usage: docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
 #
-# Expects secrets at /run/secrets/app.env (created by scripts/fetch-oci-secrets.sh)
-# or .env.production with all required variables.
+# Secrets are loaded directly from OCI Vault via the OCI Python SDK using
+# instance principal authentication. No secrets are written to disk.
 #
-# Before first run:
-#   1. Set OCI_VAULT_OCID and OCI_COMPARTMENT_ID in environment
-#   2. Run: sudo ./scripts/fetch-oci-secrets.sh
-#   3. Then: docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+# Required setup:
+#   1. Create OCI Vault with secrets (see docs/deploy-oci.md)
+#   2. Configure dynamic group and IAM policy for instance principal
+#   3. Set OCI_VAULT_OCID and OCI_COMPARTMENT_ID in .env.production
+#
+# The app container needs network access to OCI IMDS (169.254.169.254) for
+# instance principal auth. This works by default on OCI compute instances.
 
 services:
   app:
-    env_file:
-      - /run/secrets/app.env
+    environment:
+      - OCI_VAULT_OCID=${OCI_VAULT_OCID}
+      - OCI_COMPARTMENT_ID=${OCI_COMPARTMENT_ID}
     logging:
       driver: json-file
       options:
