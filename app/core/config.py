@@ -1,6 +1,7 @@
 import secrets
+import sys
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +12,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    APP_ENV: str = "development"
     DATABASE_URL: str = "sqlite:///./local.db"
     TEST_DATABASE_URL: str = "sqlite:///:memory:"
     DISPLAY_TIMEZONE: str = "America/Sao_Paulo"
@@ -23,6 +25,35 @@ class Settings(BaseSettings):
     CUMBUCA_AUTH_SERVER: str = "https://idc.cumbuca.com/realms/cumbuca-mcp"
     CUMBUCA_REDIRECT_URI: str = "http://127.0.0.1:8000/auth/cumbuca/callback"
     CUMBUCA_OAUTH_SCOPES: str = "openid profile offline_access open-finance"
+    ALLOWED_GOOGLE_EMAILS: str = ""
+
+    @property
+    def is_production(self) -> bool:
+        return self.APP_ENV == "production"
+
+    @property
+    def allowed_emails_set(self) -> set[str]:
+        if not self.ALLOWED_GOOGLE_EMAILS:
+            return set()
+        return {e.strip().lower() for e in self.ALLOWED_GOOGLE_EMAILS.split(",") if e.strip()}
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        if not self.is_production:
+            return self
+        missing = []
+        if self.SECRET_KEY == "" or len(self.SECRET_KEY) < 32:
+            missing.append("SECRET_KEY (must be at least 32 characters)")
+        if not self.GOOGLE_CLIENT_ID:
+            missing.append("GOOGLE_CLIENT_ID")
+        if not self.GOOGLE_CLIENT_SECRET:
+            missing.append("GOOGLE_CLIENT_SECRET")
+        if self.DATABASE_URL.startswith("sqlite"):
+            missing.append("DATABASE_URL (must use Postgres in production)")
+        if missing:
+            print(f"FATAL: Missing required production secrets: {', '.join(missing)}", file=sys.stderr)
+            sys.exit(1)
+        return self
 
 
 settings = Settings()
