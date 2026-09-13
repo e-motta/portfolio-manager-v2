@@ -1,0 +1,34 @@
+# Production override: use with base docker-compose.yml
+# Usage: docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+#
+# Expects secrets at /run/secrets/app.env (created by scripts/fetch-oci-secrets.sh)
+# or .env.production with all required variables.
+#
+# Before first run:
+#   1. Set OCI_VAULT_OCID and OCI_COMPARTMENT_ID in environment
+#   2. Run: sudo ./scripts/fetch-oci-secrets.sh
+#   3. Then: docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+
+services:
+  app:
+    env_file:
+      - /run/secrets/app.env
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
