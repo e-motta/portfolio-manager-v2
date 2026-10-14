@@ -13,6 +13,7 @@ client-supplied forwarded values as localhost.
 
 import ipaddress
 import os
+import time
 from typing import Callable
 
 from fastapi import FastAPI, Request
@@ -152,7 +153,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if not rate_limiter.hit(limit, client_ip):
             window_stats = rate_limiter.get_window_stats(limit, client_ip)
-            retry_after = max(1, int(window_stats.reset_time - window_stats.elapsed_time))
+            retry_after = max(1, int(window_stats.reset_time - time.time()))
 
             return JSONResponse(
                 status_code=429,

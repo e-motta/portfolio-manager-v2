@@ -285,3 +285,49 @@ class TestRetryAfterFormat:
         response = _rate_limit_exceeded_handler(request, exc)
 
         assert response.headers["Retry-After"] == "30"
+
+
+class TestRateLimitIntegration:
+    """Integration tests using the real limiter (no mocks)."""
+
+    def test_auth_route_rate_limit_triggers_429_on_11th_request(self):
+        """Test that real rate limiting works: 10 allowed, 11th returns 429."""
+        from app.core.ratelimit import storage, AUTH_LIMIT
+
+        class ClientIPOverrideApp:
+            """ASGI wrapper that overrides the client IP in scope."""
+
+            def __init__(self, wrapped_app, client_ip: str, client_port: int = 50000):
+                self.app = wrapped_app
+                self.client = (client_ip, client_port)
+
+            async def __call__(self, scope, receive, send):
+                if scope["type"] == "http":
+                    scope = dict(scope)
+                    scope["client"] = self.client
+                await self.app(scope, receive, send)
+
+        test_client_ip = "203.0.113.10"
+        storage.reset()
+
+        try:
+            with patch.dict(os.environ, {"TESTING": "0"}, clear=False):
+                wrapped_app = ClientIPOverrideApp(app, test_client_ip)
+                with TestClient(wrapped_app, raise_server_exceptions=False) as client:
+                    for i in range(10):
+                        response = client.get("/auth/login")
+                        assert response.status_code != 429, f"Request {i+1} should not be rate limited"
+
+                    response = client.get("/auth/login")
+                    assert response.status_code == 429, "11th request should be rate limited"
+
+                    retry_after = response.headers.get("Retry-After")
+                    assert retry_after is not None, "Retry-After header should be present"
+                    assert retry_after.isdigit(), f"Retry-After should be digits, got: {retry_after}"
+                    assert int(retry_after) >= 1, f"Retry-After should be >= 1, got: {retry_after}"
+
+                    body = response.json()
+                    assert body["detail"] == "Rate limit exceeded. Please slow down."
+                    assert "retry_after" in body
+        finally:
+            storage.reset()
