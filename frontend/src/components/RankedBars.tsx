@@ -62,10 +62,10 @@ export function RankedBars({ items, topN = 8, showGroupLegend = true }: RankedBa
               <span className="ranked-bar-track">
                 <span
                   className="ranked-bar-fill"
-                  style={{ width: `${barWidth}%`, background: color }}
+                  style={{ width: `${barWidth}%`, backgroundColor: color }}
                 />
               </span>
-              <span className="ranked-bar-amount">{formatBrl(-absValue)}</span>
+              <span className="ranked-bar-amount">{formatBrl(absValue)}</span>
               <span className="ranked-bar-pct">{pct.toFixed(1).replace(".", ",")}%</span>
               <span className="ranked-bar-count">{item.count}</span>
             </a>
@@ -79,7 +79,7 @@ export function RankedBars({ items, topN = 8, showGroupLegend = true }: RankedBa
           className="ranked-bars-more"
           onClick={() => setShowAll(true)}
         >
-          +{hiddenCount} more ({formatBrl(-hiddenTotal)})
+          +{hiddenCount} more ({formatBrl(hiddenTotal)})
         </button>
       ) : null}
 

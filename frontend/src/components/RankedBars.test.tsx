@@ -93,4 +93,69 @@ describe("RankedBars", () => {
     const firstLink = links[0] as HTMLAnchorElement;
     expect(firstLink.getAttribute("href")).toMatch(/#category-/);
   });
+
+  it("renders bar widths > 0 for negative input values", () => {
+    render(<RankedBars items={mockItems} topN={10} showGroupLegend={false} />);
+
+    const fills = document.querySelectorAll(".ranked-bar-fill");
+    fills.forEach((fill) => {
+      const style = (fill as HTMLElement).style;
+      const widthStr = style.width || style.getPropertyValue("width");
+      const width = parseFloat(widthStr);
+      expect(width).toBeGreaterThan(0);
+    });
+  });
+
+  it("renders bar widths proportional to absolute values", () => {
+    render(<RankedBars items={mockItems} topN={10} showGroupLegend={false} />);
+
+    const fills = document.querySelectorAll(".ranked-bar-fill");
+    const widths: number[] = [];
+    fills.forEach((fill) => {
+      const style = (fill as HTMLElement).style;
+      const widthStr = style.width || style.getPropertyValue("width");
+      widths.push(parseFloat(widthStr));
+    });
+
+    expect(widths[0]).toBe(100);
+
+    const billsWidth = widths[0];
+    const alimentacaoWidth = widths[1];
+    const supermercadoWidth = widths[2];
+
+    expect(alimentacaoWidth).toBeCloseTo((2500 / 3200) * 100, 0);
+    expect(supermercadoWidth).toBeCloseTo((1800 / 3200) * 100, 0);
+  });
+
+  it("displays amounts as absolute values without minus sign", () => {
+    render(<RankedBars items={mockItems} topN={3} showGroupLegend={false} />);
+
+    const amounts = document.querySelectorAll(".ranked-bar-amount");
+    amounts.forEach((amount) => {
+      const text = amount.textContent || "";
+      expect(text).not.toMatch(/^-/);
+      expect(text).toMatch(/R\$/);
+    });
+  });
+
+  it("displays +N more total as absolute value without minus sign", () => {
+    render(<RankedBars items={mockItems} topN={5} showGroupLegend={false} />);
+
+    const moreButton = screen.getByRole("button", { name: /\+5 more/ });
+    const buttonText = moreButton.textContent || "";
+    expect(buttonText).not.toMatch(/-R\$/);
+    expect(buttonText).toMatch(/R\$/);
+  });
+
+  it("applies category group colors to bar fills", () => {
+    render(<RankedBars items={mockItems} topN={3} showGroupLegend={false} />);
+
+    const fills = document.querySelectorAll(".ranked-bar-fill");
+    fills.forEach((fill) => {
+      const style = (fill as HTMLElement).style;
+      const bgColor = style.backgroundColor;
+      expect(bgColor).toBeTruthy();
+      expect(bgColor).not.toBe("");
+    });
+  });
 });
