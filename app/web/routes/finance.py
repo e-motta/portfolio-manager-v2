@@ -9,6 +9,7 @@ from fastapi.responses import RedirectResponse, Response
 
 from app.core.auth import CurrentUserDep
 from app.core.db import SessionDep
+
 from app.models.finance import (
     FinanceExpenseEntry,
     FinanceIncomeEntry,
@@ -247,6 +248,7 @@ def income_page(
 
 @router.post("/income")
 def create_income_entry(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUserDep,
     year: Annotated[str, Form()],
@@ -281,6 +283,7 @@ def create_income_entry(
 
 @router.post("/income/{entry_id}")
 def update_income_entry(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
@@ -325,6 +328,7 @@ def update_income_entry(
 
 @router.delete("/income/{entry_id}")
 def delete_income_entry(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
@@ -378,6 +382,7 @@ def suggest_expense_category_route(vendor: Annotated[str, Query()] = ""):
 
 @router.post("/expenses")
 def create_expense_entry(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUserDep,
     year: Annotated[str, Form()],
@@ -561,6 +566,7 @@ def update_expense_entry(
 
 @router.post("/expenses/{entry_id}/link")
 def link_expense_reversal_entry(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
@@ -602,6 +608,7 @@ def link_expense_reversal_entry(
 
 @router.delete("/expenses/{entry_id}")
 def delete_expense_entry(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
@@ -640,6 +647,7 @@ def investments_page(
 
 @router.post("/investments")
 def create_investment_entry(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUserDep,
     year: Annotated[str, Form()],
@@ -673,6 +681,7 @@ def create_investment_entry(
 
 @router.post("/investments/{entry_id}")
 def update_investment_entry(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
@@ -730,6 +739,7 @@ def update_investment_entry(
 
 @router.delete("/investments/{entry_id}")
 def delete_investment_entry(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
@@ -768,6 +778,7 @@ def transfers_page(
 
 @router.post("/transfers")
 def create_transfer_entry(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUserDep,
     year: Annotated[str, Form()],
@@ -816,6 +827,7 @@ def create_transfer_entry(
 
 @router.post("/transfers/{entry_id}")
 def update_transfer_entry(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUserDep,
     entry_id: UUID,
@@ -878,6 +890,7 @@ def update_transfer_entry(
 
 @router.delete("/transfers/{entry_id}")
 def delete_transfer_entry(
+    request: Request,
     session: SessionDep,
     current_user: CurrentUserDep,
     entry_id: UUID,

@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 
 from app.core.auth import CurrentUserDep
 from app.core.db import SessionDep
+
 from app.services.cumbuca_oauth import (
     disconnect_cumbuca,
     user_has_cumbuca,
@@ -119,6 +120,7 @@ def open_finance_tools_partial(
 
 @router.post("/disconnect")
 def disconnect_open_finance(
+    request: Request,
     session: SessionDep,
     user: CurrentUserDep,
 ) -> RedirectResponse:
@@ -577,6 +579,7 @@ async def confirm_account_deposits_sync(
 
 @router.post("/sync/investments/preview")
 def preview_investment_sync(
+    request: Request,
     session: SessionDep,
     user: CurrentUserDep,
 ):
@@ -618,6 +621,7 @@ def preview_investment_sync(
 
 @router.post("/sync/investments/confirm")
 def confirm_investment_sync(
+    request: Request,
     session: SessionDep,
     user: CurrentUserDep,
     import_token: str = Form(...),

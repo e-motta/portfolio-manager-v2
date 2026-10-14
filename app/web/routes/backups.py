@@ -7,6 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.auth import CurrentUserDep
 from app.core.config import settings
 from app.core.db import SessionDep
+
 from app.services.backup import export_portfolio_json, restore_portfolio_json
 from app.services.google_drive import (
     backup_filename,
@@ -96,6 +97,7 @@ async def connect_google_drive(request: Request) -> RedirectResponse:
 
 @router.post("/create")
 def create_backup(
+    request: Request,
     session: SessionDep,
     user: CurrentUserDep,
 ) -> RedirectResponse:
@@ -124,6 +126,7 @@ def create_backup(
 
 @router.post("/{file_id}/restore")
 def restore_backup(
+    request: Request,
     file_id: str,
     session: SessionDep,
     user: CurrentUserDep,
@@ -150,6 +153,7 @@ def restore_backup(
 
 @router.post("/{file_id}/delete")
 def delete_backup_route(
+    request: Request,
     file_id: str,
     session: SessionDep,
     user: CurrentUserDep,
