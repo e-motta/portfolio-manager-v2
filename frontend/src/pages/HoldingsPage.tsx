@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useMemo, useState } from "react";
 import { deleteJson, getJson, sendForm } from "../api/client";
+import { ActionMenu } from "../components/ActionMenu";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DonutChart } from "../components/DonutChart";
 import { EmptyState } from "../components/EmptyState";
@@ -12,6 +13,7 @@ import {
   formatBrl,
   formatDate,
   formatDateTime,
+  formatFx,
   formatPct,
   formatPctPoints,
   formatQty,
@@ -193,21 +195,30 @@ export function HoldingsPage() {
           {data.symbol_count} tickers · {data.lot_count} lots
           {data.last_prices_at ? ` · Prices ${formatDateTime(data.last_prices_at)}` : ""}
         </p>
-        <div className="btn-row">
+        <div className="btn-row btn-row--phone-menu">
           <button type="button" className="btn" onClick={() => setTradeOpen(true)}>Add trade</button>
-          <button type="button" className="btn btn--ghost" onClick={() => setDivOpen(true)}>Add dividend</button>
-          <button type="button" className="btn btn--ghost" onClick={() => refreshPrices.mutate()}>Refresh prices</button>
+          <button type="button" className="btn btn--ghost btn--phone-hide" onClick={() => setDivOpen(true)}>Add dividend</button>
+          <button type="button" className="btn btn--ghost btn--phone-hide" onClick={() => refreshPrices.mutate()}>Refresh prices</button>
           {data.provisional_fx_count > 0 ? (
-            <button type="button" className="btn btn--ghost" onClick={() => refreshPtax.mutate()}>
+            <button type="button" className="btn btn--ghost btn--phone-hide" onClick={() => refreshPtax.mutate()}>
               Update PTAX rates
             </button>
           ) : null}
-          <button type="button" className="btn btn--ghost" onClick={() => { setImportKind("lots"); setPreview(null); }}>
+          <button type="button" className="btn btn--ghost btn--phone-hide" onClick={() => { setImportKind("lots"); setPreview(null); }}>
             Import IB lots
           </button>
-          <button type="button" className="btn btn--ghost" onClick={() => { setImportKind("dividends"); setPreview(null); }}>
+          <button type="button" className="btn btn--ghost btn--phone-hide" onClick={() => { setImportKind("dividends"); setPreview(null); }}>
             Preview dividends
           </button>
+          <ActionMenu
+            actions={[
+              { label: "Add dividend", onClick: () => setDivOpen(true) },
+              { label: "Refresh prices", onClick: () => refreshPrices.mutate() },
+              ...(data.provisional_fx_count > 0 ? [{ label: "Update PTAX rates", onClick: () => refreshPtax.mutate() }] : []),
+              { label: "Import IB lots", onClick: () => { setImportKind("lots"); setPreview(null); } },
+              { label: "Preview dividends", onClick: () => { setImportKind("dividends"); setPreview(null); } },
+            ]}
+          />
         </div>
       </div>
       <dl className="stats">
@@ -257,12 +268,12 @@ export function HoldingsPage() {
               <tr>
                 <th>Ticker</th>
                 <th className="num">Qty</th>
-                <th className="num">Avg cost</th>
-                <th className="num">Last</th>
-                <th className="num">Value</th>
+                <th className="num">Avg cost (USD)</th>
+                <th className="num">Last (USD)</th>
+                <th className="num">Value (R$)</th>
                 <th className="num">Weight</th>
                 <th className="num">Target</th>
-                <th className="num">P/L</th>
+                <th className="num">P/L (USD)</th>
               </tr>
             </thead>
             <tbody>
@@ -310,10 +321,10 @@ export function HoldingsPage() {
             <thead>
               <tr>
                 <th>Ticker</th>
-                <th className="num">Unrealized</th>
+                <th className="num">Unrealized (USD)</th>
                 <th className="num">Dividends net (USD)</th>
-                <th className="num">Total return (USD)</th>
-                <th className="num">Total return (BRL)</th>
+                <th className="num">Total (USD)</th>
+                <th className="num">Total (R$)</th>
                 <th className="num">%</th>
               </tr>
             </thead>
@@ -346,8 +357,8 @@ export function HoldingsPage() {
                 <th>Ticker</th>
                 <th>Trade date</th>
                 <th className="num">Qty</th>
-                <th className="num">Price</th>
-                <th className="num">FX</th>
+                <th className="num">Price (USD)</th>
+                <th className="num">USD/BRL</th>
                 <th>Source</th>
                 <th className="num">Actions</th>
               </tr>
@@ -365,8 +376,8 @@ export function HoldingsPage() {
                     <td className="num">{isEditing ? <input className="compact" value={lotDraft.position} onChange={(e) => setLotDraft({ ...lotDraft, position: e.target.value })} /> : formatQty(lot.position)}</td>
                     <td className="num">{isEditing ? <input className="compact" value={lotDraft.purchase_price_usd} onChange={(e) => setLotDraft({ ...lotDraft, purchase_price_usd: e.target.value })} /> : formatUsd(lot.purchase_price_usd)}</td>
                     <td className="num">
-                      {isEditing ? <input className="compact" value={lotDraft.usd_brl_rate} onChange={(e) => setLotDraft({ ...lotDraft, usd_brl_rate: e.target.value })} /> : lot.usd_brl_rate}
-                      {lot.provisional_fx ? <span className="badge badge--warn">est.</span> : null}
+                      {isEditing ? <input className="compact" value={lotDraft.usd_brl_rate} onChange={(e) => setLotDraft({ ...lotDraft, usd_brl_rate: e.target.value })} /> : formatFx(lot.usd_brl_rate)}
+                      {lot.provisional_fx ? <span className="badge badge--warn" title="Provisional FX, run Update PTAX">Est.</span> : null}
                     </td>
                     <td>{lot.source}</td>
                     <td className="num">
@@ -411,9 +422,9 @@ export function HoldingsPage() {
               <tr>
                 <th>Ticker</th>
                 <th>Pay date</th>
-                <th className="num">Gross</th>
-                <th className="num">Withholding</th>
-                <th className="num">Net</th>
+                <th className="num">Gross (USD)</th>
+                <th className="num">Withheld (USD)</th>
+                <th className="num">Net (USD)</th>
                 <th className="num">Actions</th>
               </tr>
             </thead>

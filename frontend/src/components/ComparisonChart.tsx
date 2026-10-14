@@ -1,44 +1,54 @@
-import { asNumber, formatPct } from "../lib/format";
+import { asNumber, formatPctPoints } from "../lib/format";
 
 type Row = {
   label: string;
   current: number | string;
   target: number | string;
+  delta?: number | string;
 };
 
 export function ComparisonChart({ rows }: { rows: Row[] }) {
-  const items = rows.map((row) => ({
-    label: row.label,
-    current: asNumber(row.current) * 100,
-    target: asNumber(row.target) * 100,
-  }));
-  const max = Math.max(1, ...items.flatMap((row) => [row.current, row.target]));
+  const items = rows.map((row) => {
+    const current = asNumber(row.current) * 100;
+    const target = asNumber(row.target) * 100;
+    const drift = current - target;
+    return { label: row.label, current, target, drift };
+  });
+
+  const maxDrift = Math.max(1, ...items.map((row) => Math.abs(row.drift)));
 
   return (
-    <div className="compare">
-      {items.map((row) => (
-        <div key={row.label} className="compare-row">
-          <div className="compare-label">{row.label}</div>
-          <div className="compare-bars">
-            <div
-              className="compare-bar current"
-              style={{ width: `${(row.current / max) * 100}%` }}
-              title={`Current ${row.current.toFixed(1)}%`}
-            />
-            <div
-              className="compare-bar target"
-              style={{ width: `${(row.target / max) * 100}%` }}
-              title={`Target ${row.target.toFixed(1)}%`}
-            />
+    <div className="compare compare--drift">
+      {items.map((row) => {
+        const barWidth = Math.abs(row.drift) / maxDrift * 50;
+        const isOver = row.drift > 0;
+        return (
+          <div key={row.label} className="compare-row">
+            <div className="compare-label">{row.label}</div>
+            <div className="compare-drift-track">
+              <div className="compare-drift-center" />
+              {row.drift !== 0 && (
+                <div
+                  className={`compare-drift-bar ${isOver ? "over" : "under"}`}
+                  style={{
+                    width: `${barWidth}%`,
+                    [isOver ? "left" : "right"]: "50%",
+                  }}
+                  title={`Drift ${row.drift > 0 ? "+" : ""}${row.drift.toFixed(1)}pp`}
+                />
+              )}
+            </div>
+            <div className="compare-meta">
+              <span className={row.drift > 0 ? "is-over" : row.drift < 0 ? "is-under" : ""}>
+                {formatPctPoints(row.drift / 100)}
+              </span>
+            </div>
           </div>
-          <div className="compare-meta">
-            {formatPct(row.current / 100)} → {formatPct(row.target / 100)}
-          </div>
-        </div>
-      ))}
+        );
+      })}
       <div className="compare-legend">
-        <span><i className="swatch current" /> Current</span>
-        <span><i className="swatch target" /> Target</span>
+        <span><i className="swatch over" /> Overweight</span>
+        <span><i className="swatch under" /> Underweight</span>
       </div>
     </div>
   );

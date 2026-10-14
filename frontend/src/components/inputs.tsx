@@ -5,7 +5,7 @@ type MoneyInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
   currency?: "BRL" | "USD";
   error?: string;
   label?: string;
-  onValueChange?: (value: string) => void;
+  onValueChange?: (value: string, error: string | null) => void;
 };
 
 export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(
@@ -13,16 +13,28 @@ export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(
     const id = useId();
     const errorId = `${id}-error`;
     const prefix = currency === "BRL" ? "R$" : "$";
+    const [internalError, setInternalError] = useState<string | null>(null);
 
     function handleChange(event: ChangeEvent<HTMLInputElement>) {
       onChange?.(event);
-      if (onValueChange) {
-        const parsed = parseDecimalInput(event.target.value);
-        if (parsed !== null) {
-          onValueChange(parsed);
-        }
+      const text = event.target.value;
+      if (!text.trim()) {
+        setInternalError(null);
+        onValueChange?.("", null);
+        return;
+      }
+      const parsed = parseDecimalInput(text);
+      if (parsed !== null) {
+        setInternalError(null);
+        onValueChange?.(parsed, null);
+      } else {
+        const err = "Invalid amount";
+        setInternalError(err);
+        onValueChange?.("", err);
       }
     }
+
+    const displayError = error || internalError;
 
     return (
       <div className={`input-group ${className || ""}`}>
@@ -34,13 +46,13 @@ export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(
             id={id}
             inputMode="decimal"
             autoComplete="off"
-            aria-invalid={error ? "true" : undefined}
-            aria-describedby={error ? errorId : undefined}
+            aria-invalid={displayError ? "true" : undefined}
+            aria-describedby={displayError ? errorId : undefined}
             onChange={handleChange}
             {...props}
           />
         </div>
-        {error ? <span id={errorId} className="input-error">{error}</span> : null}
+        {displayError ? <span id={errorId} className="input-error">{displayError}</span> : null}
       </div>
     );
   }

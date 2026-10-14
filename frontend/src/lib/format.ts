@@ -158,6 +158,14 @@ export function formatQty(value: unknown, digits = 4): string {
   });
 }
 
+export function formatFx(value: unknown): string {
+  const amount = asNumber(value);
+  return amount.toLocaleString("en-US", {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  });
+}
+
 export function formatDate(value: unknown): string {
   if (!value) return "—";
   const text = String(value);

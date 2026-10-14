@@ -14,16 +14,18 @@ export function FinanceTabs() {
   const suffix = qs ? `?${qs}` : "";
 
   return (
-    <nav className="subnav" aria-label="Finance">
-      {TABS.map((tab) => (
-        <NavLink
-          key={tab.href}
-          to={`${tab.href}${suffix}`}
-          className={({ isActive }) => (isActive ? "is-active" : "")}
-        >
-          {tab.label}
-        </NavLink>
-      ))}
-    </nav>
+    <div className="subnav-wrap">
+      <nav className="subnav" aria-label="Finance">
+        {TABS.map((tab) => (
+          <NavLink
+            key={tab.href}
+            to={`${tab.href}${suffix}`}
+            className={({ isActive }) => (isActive ? "is-active" : "")}
+          >
+            {tab.label}
+          </NavLink>
+        ))}
+      </nav>
+    </div>
   );
 }
