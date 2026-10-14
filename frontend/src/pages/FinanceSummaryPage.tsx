@@ -5,8 +5,21 @@ import { FinanceTabs } from "../components/FinanceTabs";
 import { MonthChart } from "../components/MonthChart";
 import { PeriodBar } from "../components/PeriodBar";
 import { QueryFlash } from "../components/QueryFlash";
-import { formatBrl, plClass } from "../lib/format";
+import { asNumber, formatBrl, plClass } from "../lib/format";
 import { useFinancePeriod } from "../lib/finance";
+
+const MONTH_NAMES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+
+type SummaryLine = {
+  label: string;
+  amount: string;
+  paid?: boolean;
+  secondary?: string;
+  is_split?: boolean;
+};
 
 type Summary = {
   year: number;
@@ -26,7 +39,8 @@ type Summary = {
     total_amount: string;
     manage_href: string;
     manage_label: string;
-    lines: Array<{ label: string; amount: string; paid?: boolean }>;
+    lines: SummaryLine[];
+    show_split_note?: boolean;
   }>;
 };
 
@@ -55,10 +69,10 @@ export function FinanceSummaryPage() {
           <dd>{formatBrl(income)}</dd>
           {yearView ? <div className="meta">Full year</div> : <div className="meta">YTD {formatBrl(data.year_income)}</div>}
         </div>
-        <div className="stat is-negative">
+        <div className="stat">
           <dt>Expenses</dt>
-          <dd>{formatBrl(expenses)}</dd>
-          {yearView ? <div className="meta">Full year</div> : <div className="meta">YTD {formatBrl(data.year_expenses)}</div>}
+          <dd>{formatBrl(Math.abs(asNumber(expenses)))}</dd>
+          {yearView ? <div className="meta">Full year</div> : <div className="meta">YTD {formatBrl(Math.abs(asNumber(data.year_expenses)))}</div>}
         </div>
         <div className={`stat ${plClass(balance)}`}>
           <dt>Balance</dt>
@@ -78,22 +92,35 @@ export function FinanceSummaryPage() {
         </div>
       </section>
       <div className="cards">
-        {data.summary_cards.map((card) => (
-          <article key={card.id} className="summary-card">
-            <h3>{card.title}</h3>
-            <p>{card.subtitle}</p>
-            <div className={`total ${plClass(card.total_amount)}`}>{formatBrl(card.total_amount)}</div>
-            {card.lines.map((line) => (
-              <div key={line.label} className="summary-line">
-                <span>{line.label}{line.paid === false ? " · unpaid" : ""}</span>
-                <span>{formatBrl(line.amount)}</span>
+        {data.summary_cards.map((card) => {
+          const isExpenseCard = card.id === "bills" || card.id === "day_to_day";
+          const periodLabel = yearView ? `Ano ${data.year}` : MONTH_NAMES[month - 1];
+
+          return (
+            <article key={card.id} className="summary-card">
+              <h3>{card.title}</h3>
+              <p>{card.subtitle} · {periodLabel}</p>
+              <div className={`total ${isExpenseCard ? "" : plClass(card.total_amount)}`}>
+                {formatBrl(isExpenseCard ? Math.abs(asNumber(card.total_amount)) : card.total_amount)}
+                {card.show_split_note ? <span className="summary-split-note"> (effective / split)</span> : null}
               </div>
-            ))}
-            <div style={{ marginTop: "0.8rem" }}>
-              <Link className="btn btn--ghost btn--sm" to={card.manage_href}>{card.manage_label}</Link>
-            </div>
-          </article>
-        ))}
+              {card.lines.map((line) => (
+                <div key={line.label} className="summary-line">
+                  <span>
+                    {line.label}
+                    {line.secondary ? <span className="cell-sub" style={{ marginLeft: "0.35rem" }}>{line.secondary}</span> : null}
+                    {line.paid === false ? " · unpaid" : ""}
+                    {line.is_split ? <span className="badge badge--src" style={{ marginLeft: "0.35rem" }}>split</span> : null}
+                  </span>
+                  <span>{formatBrl(isExpenseCard ? Math.abs(asNumber(line.amount)) : line.amount)}</span>
+                </div>
+              ))}
+              <div style={{ marginTop: "0.8rem" }}>
+                <Link className="btn btn--ghost btn--sm" to={card.manage_href}>{card.manage_label}</Link>
+              </div>
+            </article>
+          );
+        })}
       </div>
     </>
   );

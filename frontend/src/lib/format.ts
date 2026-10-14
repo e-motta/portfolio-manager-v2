@@ -10,22 +10,63 @@ export function asOptionalNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+const brlFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const brlCompactFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  notation: "compact",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 1,
+});
+
 export function formatBrl(value: unknown): string {
   const amount = asNumber(value);
-  const absolute = Math.abs(amount).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-  return amount < 0 ? `-R$\u00a0${absolute}` : `R$\u00a0${absolute}`;
+  return brlFormatter.format(amount);
 }
 
 export function formatCompactBrl(value: unknown): string {
   const amount = asNumber(value);
-  const sign = amount < 0 ? "-" : "";
   const abs = Math.abs(amount);
-  if (abs >= 1_000_000) return `${sign}R$\u00a0${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 10_000) return `${sign}R$\u00a0${(abs / 1000).toFixed(0)}k`;
+  if (abs >= 10_000) {
+    return brlCompactFormatter.format(amount);
+  }
   return formatBrl(amount);
+}
+
+export function parseDecimalInput(text: string): string | null {
+  if (!text || typeof text !== "string") return null;
+  let cleaned = text.trim();
+  cleaned = cleaned.replace(/^R\$\s*/i, "");
+  cleaned = cleaned.replace(/^\$\s*/, "");
+  cleaned = cleaned.replace(/[^\d.,-]/g, "");
+  if (!cleaned) return null;
+  const hasComma = cleaned.includes(",");
+  const hasDot = cleaned.includes(".");
+  if (hasComma && hasDot) {
+    const lastComma = cleaned.lastIndexOf(",");
+    const lastDot = cleaned.lastIndexOf(".");
+    if (lastComma > lastDot) {
+      cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+    } else {
+      cleaned = cleaned.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    const parts = cleaned.split(",");
+    if (parts.length === 2 && parts[1].length <= 2) {
+      cleaned = cleaned.replace(",", ".");
+    } else {
+      cleaned = cleaned.replace(/,/g, "");
+    }
+  }
+  const n = parseFloat(cleaned);
+  if (!Number.isFinite(n)) return null;
+  return n.toFixed(2);
 }
 
 export function formatUsd(value: unknown): string {
@@ -50,27 +91,32 @@ export function formatSignedUsd(value: unknown): string {
 
 export function formatSignedBrl(value: unknown): string {
   const amount = asNumber(value);
-  const absolute = Math.abs(amount).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-  if (amount > 0) return `+R$\u00a0${absolute}`;
-  if (amount < 0) return `-R$\u00a0${absolute}`;
-  return `R$\u00a0${absolute}`;
+  const formatted = brlFormatter.format(Math.abs(amount));
+  if (amount > 0) return `+${formatted}`;
+  if (amount < 0) return `-${formatted}`;
+  return formatted;
 }
 
 export function formatPct(value: unknown, digits = 1): string {
   const amount = asOptionalNumber(value);
   if (amount === null) return "—";
-  return `${(amount * 100).toFixed(digits)}%`;
+  const pct = amount * 100;
+  const formatted = new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(pct);
+  return `${formatted}%`;
 }
 
 export function formatPctPoints(value: unknown, digits = 1): string {
   const amount = asOptionalNumber(value);
   if (amount === null) return "—";
-  const text = `${amount.toFixed(digits)}%`;
-  if (amount > 0) return `+${text}`;
-  return text;
+  const formatted = new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(amount);
+  if (amount > 0) return `+${formatted}%`;
+  return `${formatted}%`;
 }
 
 export function formatQty(value: unknown, digits = 4): string {

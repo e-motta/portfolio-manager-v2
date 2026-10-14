@@ -4,7 +4,7 @@ import { getJson } from "../api/client";
 import { ComparisonChart } from "../components/ComparisonChart";
 import { EmptyState } from "../components/EmptyState";
 import { Segmented } from "../components/Segmented";
-import { asNumber, formatBrl, formatSignedBrl, formatSignedUsd, formatUsd } from "../lib/format";
+import { asNumber, formatBrl, formatPct, formatSignedBrl, formatSignedUsd, formatUsd, parseDecimalInput } from "../lib/format";
 
 type Suggestion = {
   id: string;
@@ -77,7 +77,16 @@ export function RebalancePage() {
         <div className="btn-row">
           <label className="field">
             Cash to deploy (BRL)
-            <input id="suggestion-cash" value={cash} onChange={(event) => setCash(event.target.value)} />
+            <input
+              id="suggestion-cash"
+              inputMode="decimal"
+              autoComplete="off"
+              value={cash}
+              onChange={(event) => {
+                const parsed = parseDecimalInput(event.target.value);
+                setCash(parsed !== null ? parsed : event.target.value);
+              }}
+            />
           </label>
           <label className="field">
             Cash to deploy (USD)
@@ -101,7 +110,7 @@ export function RebalancePage() {
       ) : null}
       <section className="panel">
         <div className="table-wrap">
-          <table className="data">
+          <table className="data cards-sm">
             <thead>
               <tr>
                 <th>{level === "types" ? "Asset class" : "Holding"}</th>
@@ -119,15 +128,15 @@ export function RebalancePage() {
               ) : null}
               {(query.data?.suggestions || []).map((item) => (
                 <tr key={item.id}>
-                  <td>{item.label}</td>
-                  <td className="num">{formatMoney(item.current_value)}</td>
-                  <td className="num">{(asNumber(item.current_weight) * 100).toFixed(1)}%</td>
-                  <td className="num">{(asNumber(item.target_weight) * 100).toFixed(1)}%</td>
-                  <td className="num">{formatMoney(item.ideal_value)}</td>
-                  <td>
-                    <span className={`badge badge--${item.action}`}>{item.action}</span>
+                  <td className="card-primary" data-label={level === "types" ? "Asset class" : "Holding"}>{item.label}</td>
+                  <td className="num hide-on-mobile" data-label="Current">{formatMoney(item.current_value)}</td>
+                  <td className="num hide-on-mobile" data-label="Current %">{formatPct(item.current_weight)}</td>
+                  <td className="num hide-on-mobile" data-label="Target %">{formatPct(item.target_weight)}</td>
+                  <td className="num hide-on-mobile" data-label="Ideal">{formatMoney(item.ideal_value)}</td>
+                  <td data-label="Action">
+                    <span className="badge badge--action">{item.action === "buy" ? "BUY ▲" : item.action === "sell" ? "SELL ▼" : item.action.toUpperCase()}</span>
                   </td>
-                  <td className="num">{formatSigned(item.delta)}</td>
+                  <td className="num" data-label="Adjustment">{formatSigned(item.delta)}</td>
                 </tr>
               ))}
             </tbody>

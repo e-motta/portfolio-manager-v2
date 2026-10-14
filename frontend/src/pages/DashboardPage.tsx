@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { getJson } from "../api/client";
 import { DonutChart } from "../components/DonutChart";
-import { asNumber, formatBrl, formatPct, formatPctPoints, plClass } from "../lib/format";
+import { asNumber, formatBrl, formatPct, formatPctPoints, formatSignedBrl } from "../lib/format";
 
 type Dashboard = {
   rows: Array<{
@@ -53,13 +53,13 @@ export function DashboardPage() {
           <dd>{formatBrl(data.allocation_sleeve_value)}</dd>
           <div className="meta">{total > 0 ? `${((sleeve / total) * 100).toFixed(1)}% of total` : "—"}</div>
         </div>
-        <div className={`stat ${data.overweight ? "is-negative" : ""}`}>
+        <div className="stat">
           <dt>Overweight</dt>
-          <dd>{data.overweight}</dd>
+          <dd>{data.overweight > 0 ? `▲ ${data.overweight}` : data.overweight}</dd>
         </div>
-        <div className={`stat ${data.underweight ? "is-positive" : ""}`}>
+        <div className="stat">
           <dt>Underweight</dt>
-          <dd>{data.underweight}</dd>
+          <dd>{data.underweight > 0 ? `▼ ${data.underweight}` : data.underweight}</dd>
         </div>
       </dl>
       <section className="panel">
@@ -79,7 +79,7 @@ export function DashboardPage() {
           )}
         </div>
         <div className="table-wrap">
-          <table className="data">
+          <table className="data cards-sm">
             <thead>
               <tr>
                 <th>Asset class</th>
@@ -100,7 +100,7 @@ export function DashboardPage() {
                 const driftPct = asNumber(row.drift) * 100;
                 return (
                   <tr key={row.asset_type.id} className={row.has_target ? "" : "row-untracked"}>
-                    <td>
+                    <td className="card-primary" data-label="Asset class">
                       <div>{row.asset_type.name}</div>
                       <div className="cell-sub">
                         {row.asset_type.is_exchange_traded
@@ -110,8 +110,8 @@ export function DashboardPage() {
                             : "Outside allocation"}
                       </div>
                     </td>
-                    <td className="num">{formatBrl(row.current_value)}</td>
-                    <td>
+                    <td className="num" data-label="Market value">{formatBrl(row.current_value)}</td>
+                    <td data-label="Sleeve">
                       {row.has_target ? (
                         <div className="alloc-track" title={`Current ${currentAlloc.toFixed(1)}% · Target ${targetAlloc.toFixed(1)}%`}>
                           <div className="alloc-fill" style={{ width: `${Math.min(currentAlloc, targetAlloc)}%` }} />
@@ -125,12 +125,18 @@ export function DashboardPage() {
                         "—"
                       )}
                     </td>
-                    <td className="num">{formatPct(row.current_weight)}</td>
-                    <td className="num">{row.current_weight_allocation == null ? "—" : formatPct(row.current_weight_allocation)}</td>
-                    <td className="num">{row.target_weight == null ? "—" : formatPct(row.target_weight)}</td>
-                    <td className="num">{row.target_weight_allocation == null ? "—" : formatPct(row.target_weight_allocation)}</td>
-                    <td className={`num ${plClass(driftPct)}`}>{row.drift == null ? "—" : formatPctPoints(driftPct)}</td>
-                    <td className={`num ${plClass(row.drift_value)}`}>{row.drift_value == null ? "—" : formatBrl(row.drift_value)}</td>
+                    <td className="num" data-label="Current→Target">
+                      {formatPct(row.current_weight)} → {row.target_weight == null ? "—" : formatPct(row.target_weight)}
+                    </td>
+                    <td className="num hide-on-mobile">{row.current_weight_allocation == null ? "—" : formatPct(row.current_weight_allocation)}</td>
+                    <td className="num hide-on-mobile">{row.target_weight == null ? "—" : formatPct(row.target_weight)}</td>
+                    <td className="num hide-on-mobile">{row.target_weight_allocation == null ? "—" : formatPct(row.target_weight_allocation)}</td>
+                    <td className={`num ${Math.abs(driftPct) > 5 ? "is-drift-high" : ""}`} data-label="Drift">
+                      {row.drift == null ? "—" : formatPctPoints(driftPct)}
+                    </td>
+                    <td className={`num hide-on-mobile ${Math.abs(asNumber(row.drift_value)) > 5000 ? "is-drift-high" : ""}`}>
+                      {row.drift_value == null ? "—" : formatSignedBrl(row.drift_value)}
+                    </td>
                   </tr>
                 );
               })}
