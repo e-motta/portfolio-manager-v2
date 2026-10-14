@@ -1658,6 +1658,7 @@ input[aria-invalid="true"]:focus-visible {
 }
 
 .ranked-bar-fill {
+  display: block;
   height: 100%;
   border-radius: 99px;
   transition: width 0.2s ease;
