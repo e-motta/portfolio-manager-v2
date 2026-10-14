@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AuthError, getJson } from "../api/client";
-import { useFocusTrap, useInert } from "../hooks/useFocusTrap";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { isActivePath, NAV_SECTIONS, type NavItem } from "../lib/nav";
 
 type Session = {
@@ -13,14 +13,23 @@ type Session = {
   display_timezone_label: string;
 };
 
+const MOBILE_BREAKPOINT = "(max-width: 820px)";
+
 export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const sidebarRef = useFocusTrap(menuOpen);
 
-  useInert(menuOpen, "#app-sidebar, .modal-backdrop");
+  useEffect(() => {
+    const mql = window.matchMedia(MOBILE_BREAKPOINT);
+    setIsMobile(mql.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
 
   const session = useQuery({
     queryKey: ["session"],
@@ -81,7 +90,7 @@ export function AppShell() {
         ref={sidebarRef}
         className={`sidebar${menuOpen ? " is-open" : ""}`}
         id="app-sidebar"
-        aria-hidden={!menuOpen ? "true" : undefined}
+        aria-hidden={isMobile && !menuOpen ? "true" : undefined}
       >
         <Link to="/" className="brand" onClick={() => setMenuOpen(false)}>
           <strong>Portfolio</strong>

@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useId, useRef } from "react";
-import { useFocusTrap, useInert } from "../hooks/useFocusTrap";
+import { createPortal } from "react-dom";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 type ModalProps = {
   title: string;
@@ -14,9 +15,23 @@ type ModalProps = {
 export function Modal({ title, open, onClose, children, footer, wide, initialFocusRef }: ModalProps) {
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
   const focusTrapRef = useFocusTrap(open, initialFocusRef ?? closeButtonRef);
 
-  useInert(open, ".modal-backdrop");
+  useEffect(() => {
+    if (!open) return;
+
+    const root = document.getElementById("root");
+    if (root) {
+      root.setAttribute("inert", "");
+    }
+
+    return () => {
+      if (root) {
+        root.removeAttribute("inert");
+      }
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -29,8 +44,8 @@ export function Modal({ title, open, onClose, children, footer, wide, initialFoc
 
   if (!open) return null;
 
-  return (
-    <div className="modal-backdrop" onClick={onClose} role="presentation">
+  return createPortal(
+    <div ref={backdropRef} className="modal-backdrop" onClick={onClose} role="presentation">
       <div
         ref={focusTrapRef}
         className={`modal${wide ? " wide" : ""}`}
@@ -54,6 +69,7 @@ export function Modal({ title, open, onClose, children, footer, wide, initialFoc
         <div className="modal-body">{children}</div>
         {footer ? <div className="modal-foot">{footer}</div> : null}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
