@@ -119,7 +119,6 @@ describe("RankedBars", () => {
 
     expect(widths[0]).toBe(100);
 
-    const billsWidth = widths[0];
     const alimentacaoWidth = widths[1];
     const supermercadoWidth = widths[2];
 
