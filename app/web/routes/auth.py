@@ -7,7 +7,6 @@ from fastapi.responses import FileResponse, RedirectResponse
 
 from app.core.config import settings
 from app.core.db import SessionDep
-from app.core.ratelimit import auth_rate_limit
 from app.services.auth import ensure_user_portfolio, find_or_create_user
 from app.services.google_drive_auth import (
     OAUTH_PURPOSE_DRIVE,
@@ -38,7 +37,6 @@ def auth_config(request: Request):
 
 
 @router.get("/google")
-@auth_rate_limit
 async def google_login(request: Request) -> RedirectResponse:
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Google login is not configured")
@@ -47,7 +45,6 @@ async def google_login(request: Request) -> RedirectResponse:
 
 
 @router.get("/callback")
-@auth_rate_limit
 async def google_callback(request: Request, session: SessionDep) -> RedirectResponse:
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Google login is not configured")
@@ -108,14 +105,12 @@ async def google_callback(request: Request, session: SessionDep) -> RedirectResp
 
 
 @router.post("/logout")
-@auth_rate_limit
 def logout(request: Request) -> RedirectResponse:
     request.session.clear()
     return RedirectResponse(url="/auth/login", status_code=303)
 
 
 @router.get("/cumbuca")
-@auth_rate_limit
 def cumbuca_login(request: Request, session: SessionDep) -> RedirectResponse:
     user = get_logged_in_user(session, request.session.get("user_id"))
     try:
@@ -132,7 +127,6 @@ def cumbuca_login(request: Request, session: SessionDep) -> RedirectResponse:
 
 
 @router.get("/cumbuca/callback")
-@auth_rate_limit
 def cumbuca_callback(request: Request, session: SessionDep) -> RedirectResponse:
     user = get_logged_in_user(session, request.session.get("user_id"))
     request.session.pop("oauth_purpose", None)

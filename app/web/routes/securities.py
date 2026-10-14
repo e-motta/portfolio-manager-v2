@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse
 from sqlmodel import select
 
 from app.core.db import SessionDep
-from app.core.ratelimit import api_rate_limit
+
 from app.models.dividend import Dividend
 from app.models.security import SecurityLot
 from app.models.symbol_target import SymbolTarget
@@ -138,14 +138,12 @@ def target_weight_total_partial(session: SessionDep):
 
 
 @router.post("/ptax/refresh")
-@api_rate_limit
 def refresh_ptax_rates(request: Request, session: SessionDep) -> RedirectResponse:
     refresh_provisional_ptax_rates(session)
     return RedirectResponse(url="/portfolio/holdings", status_code=303)
 
 
 @router.post("/import/preview")
-@api_rate_limit
 def preview_statement_import(
     request: Request,
     session: SessionDep,
@@ -195,7 +193,6 @@ def preview_statement_import(
 
 
 @router.post("/import/confirm")
-@api_rate_limit
 def confirm_statement_import(
     request: Request,
     session: SessionDep,
@@ -249,7 +246,6 @@ def confirm_statement_import(
 
 
 @router.post("/dividends/import/preview")
-@api_rate_limit
 def preview_dividend_import(
     request: Request,
     session: SessionDep,
@@ -298,7 +294,6 @@ def preview_dividend_import(
 
 
 @router.post("/dividends/import/confirm")
-@api_rate_limit
 def confirm_dividend_import(
     request: Request,
     session: SessionDep,

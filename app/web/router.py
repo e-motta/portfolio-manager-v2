@@ -3,7 +3,7 @@ from fastapi.responses import RedirectResponse
 
 from app.core.auth import bind_current_user
 from app.core.db import SessionDep
-from app.core.ratelimit import api_rate_limit
+
 from app.services.prices import refresh_all_exchange_traded_prices
 from app.web.navigation import LEGACY_REDIRECTS
 from app.web.routes import (
@@ -37,7 +37,6 @@ router.include_router(api)
 
 
 @router.post("/api/prices/refresh", dependencies=[Depends(bind_current_user)])
-@api_rate_limit
 def refresh_prices(request: Request, session: SessionDep) -> RedirectResponse:
     refresh_all_exchange_traded_prices(session)
     return RedirectResponse(url="/portfolio/holdings", status_code=303)

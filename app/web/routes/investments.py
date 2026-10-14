@@ -7,7 +7,7 @@ from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
 from app.core.db import SessionDep
-from app.core.ratelimit import api_rate_limit
+
 from app.models.asset_type import AssetType
 from app.models.investment import Investment
 from app.web.helpers import (
@@ -73,7 +73,6 @@ def list_investments(session: SessionDep):
 
 
 @router.post("")
-@api_rate_limit
 def create_investment(
     request: Request,
     session: SessionDep,
@@ -96,7 +95,6 @@ def create_investment(
 
 
 @router.post("/{investment_id}")
-@api_rate_limit
 def update_investment(
     request: Request,
     session: SessionDep,
@@ -135,7 +133,6 @@ def update_investment(
 
 
 @router.delete("/{investment_id}")
-@api_rate_limit
 def delete_investment(
     request: Request,
     session: SessionDep,

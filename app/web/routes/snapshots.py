@@ -5,7 +5,7 @@ from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
 from app.core.db import SessionDep
-from app.core.ratelimit import api_rate_limit
+
 from app.services.snapshots import (
     build_snapshot_dashboard,
     capture_portfolio_snapshot,
@@ -34,7 +34,6 @@ def snapshots_dashboard(session: SessionDep):
 
 
 @router.post("")
-@api_rate_limit
 def create_snapshot(
     request: Request,
     session: SessionDep,
@@ -68,7 +67,6 @@ def snapshot_detail(
 
 
 @router.delete("/{snapshot_id}")
-@api_rate_limit
 def delete_snapshot(
     request: Request,
     session: SessionDep,

@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.auth import CurrentUserDep
 from app.core.config import settings
 from app.core.db import SessionDep
-from app.core.ratelimit import api_rate_limit
+
 from app.services.backup import export_portfolio_json, restore_portfolio_json
 from app.services.google_drive import (
     backup_filename,
@@ -81,7 +81,6 @@ def backups_list_partial(user: CurrentUserDep):
 
 
 @router.get("/google/connect")
-@api_rate_limit
 async def connect_google_drive(request: Request) -> RedirectResponse:
 
     if not _drive_configured():
@@ -97,7 +96,6 @@ async def connect_google_drive(request: Request) -> RedirectResponse:
 
 
 @router.post("/create")
-@api_rate_limit
 def create_backup(
     request: Request,
     session: SessionDep,
@@ -127,7 +125,6 @@ def create_backup(
 
 
 @router.post("/{file_id}/restore")
-@api_rate_limit
 def restore_backup(
     request: Request,
     file_id: str,
@@ -155,7 +152,6 @@ def restore_backup(
 
 
 @router.post("/{file_id}/delete")
-@api_rate_limit
 def delete_backup_route(
     request: Request,
     file_id: str,
