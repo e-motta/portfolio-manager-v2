@@ -54,3 +54,8 @@ jobs:
         env:
           DATABASE_URL: postgresql+psycopg://testuser:testpass@localhost:5432/testdb
         run: uv run alembic upgrade head
+
+      - name: Check for model/migration drift
+        env:
+          DATABASE_URL: postgresql+psycopg://testuser:testpass@localhost:5432/testdb
+        run: uv run alembic check
