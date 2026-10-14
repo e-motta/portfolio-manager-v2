@@ -25,8 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install uv
 RUN pip install --no-cache-dir uv
 
-# Copy dependency files and source (hatchling needs app/ for packages=["app"])
-COPY pyproject.toml uv.lock ./
+# Copy dependency files and source (hatchling needs app/ and README.md)
+COPY pyproject.toml uv.lock README.md ./
 COPY app/ app/
 COPY alembic.ini ./
 COPY alembic/ alembic/
