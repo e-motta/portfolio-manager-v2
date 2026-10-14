@@ -252,7 +252,7 @@ export function HoldingsPage() {
           <EmptyState title="No securities yet" body="Add a trade or import an Interactive Brokers statement." />
         )}
         <div className="table-wrap">
-          <table className="data">
+          <table className="data cards-sm">
             <thead>
               <tr>
                 <th>Ticker</th>
@@ -268,19 +268,19 @@ export function HoldingsPage() {
             <tbody>
               {data.consolidated.map((item) => (
                 <tr key={item.symbol}>
-                  <td>
+                  <td className="card-primary" data-label="Ticker">
                     <div>{item.symbol}</div>
                     <div className="cell-sub">{item.name}</div>
                   </td>
-                  <td className="num">{formatQty(item.total_position)}</td>
-                  <td className="num">{formatUsd(item.avg_purchase_price_usd)}</td>
-                  <td className="num">{formatUsd(item.current_price_usd)}</td>
-                  <td className="num">{formatBrl(item.current_value_brl)}</td>
-                  <td className="num">{formatPct(item.current_weight)}</td>
-                  <td className="num">
+                  <td className="num hide-on-mobile" data-label="Qty">{formatQty(item.total_position)}</td>
+                  <td className="num hide-on-mobile" data-label="Avg cost">{formatUsd(item.avg_purchase_price_usd)}</td>
+                  <td className="num hide-on-mobile" data-label="Last">{formatUsd(item.current_price_usd)}</td>
+                  <td className="num" data-label="Value R$">{formatBrl(item.current_value_brl)}</td>
+                  <td className="num" data-label="Weight">{formatPct(item.current_weight)}</td>
+                  <td className="num hide-on-mobile" data-label="Target">
                     {editingTarget === item.symbol ? (
                       <span className="inline-edit">
-                        <input className="compact" value={targetDraft} onChange={(e) => setTargetDraft(e.target.value)} />
+                        <input className="compact" inputMode="decimal" value={targetDraft} onChange={(e) => setTargetDraft(e.target.value)} />
                         <button type="button" className="btn btn--sm" onClick={async () => {
                           await sendForm(`/api/portfolio/holdings/symbols/${item.symbol}`, { target_pct: targetDraft });
                           setEditingTarget(null);
@@ -294,7 +294,7 @@ export function HoldingsPage() {
                       }}>{formatPct(item.target_pct)}</button>
                     )}
                   </td>
-                  <td className={`num ${plClass(item.pl_usd)}`}>{formatSignedUsd(item.pl_usd)}</td>
+                  <td className={`num ${plClass(item.pl_usd)}`} data-label="P/L">{formatSignedUsd(item.pl_usd)}</td>
                 </tr>
               ))}
             </tbody>

@@ -1,15 +1,46 @@
 import { asNumber } from "./format";
 
 export const CHART_PALETTE = [
-  "#21543c",
-  "#9c4320",
-  "#3d6e8c",
-  "#8a5a12",
-  "#6a7f6c",
-  "#5c4a7a",
-  "#2d6a4c",
-  "#b06a3c",
+  "#4a90a4", // teal
+  "#7b68b6", // purple
+  "#c9a227", // ochre
+  "#5e81ac", // blue
+  "#d08770", // rose/salmon
+  "#6a8a82", // slate
+  "#8b9a6b", // olive
+  "#5c6bc0", // indigo
+  "#b0a090", // sand
+  "#45b7d1", // cyan
 ];
+
+export const EXPENSE_CATEGORY_GROUPS: Record<string, string> = {
+  Bills: "#5e81ac",
+  "Alimentação fora": "#c9a227",
+  Supermercado: "#c9a227",
+  Suplementos: "#8b9a6b",
+  Corrida: "#8b9a6b",
+  "Academia e treino": "#8b9a6b",
+  "Assinaturas digitais": "#7b68b6",
+  Telecom: "#7b68b6",
+  Seguros: "#5e81ac",
+  "Contabilidade / PJ": "#5e81ac",
+  Saúde: "#d08770",
+  Casa: "#6a8a82",
+  Transporte: "#4a90a4",
+  "Compras online": "#b0a090",
+  "Bar e lazer": "#45b7d1",
+  Presentes: "#45b7d1",
+  Outros: "#b0a090",
+};
+
+export const CATEGORY_GROUP_COLORS: Record<string, string> = {
+  Bills: "#5e81ac",
+  Alimentação: "#c9a227",
+  Esporte: "#8b9a6b",
+  Assinaturas: "#7b68b6",
+  Vida: "#d08770",
+  Outros: "#b0a090",
+};
 
 export function formatAxis(value: number): string {
   const abs = Math.abs(value);

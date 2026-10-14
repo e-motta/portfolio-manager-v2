@@ -3,14 +3,15 @@ import { FormEvent, Fragment, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { deleteJson, getJson, pathFromRedirect, redirectLocation, sendForm } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { DonutChart } from "../components/DonutChart";
 import { EmptyState } from "../components/EmptyState";
 import { FinanceTabs } from "../components/FinanceTabs";
 import { Modal } from "../components/Modal";
 import { MonthChart } from "../components/MonthChart";
 import { PeriodBar } from "../components/PeriodBar";
 import { QueryFlash } from "../components/QueryFlash";
-import { asNumber, formatBrl, formatDate } from "../lib/format";
+import { RankedBars } from "../components/RankedBars";
+import { showToast } from "../components/inputs";
+import { asNumber, formatBrl, formatDate, parseDecimalInput } from "../lib/format";
 import { useFinancePeriod } from "../lib/finance";
 
 type Entry = {
@@ -116,25 +117,17 @@ export function FinanceExpensesPage() {
       {data.category_totals.length ? (
         <section className="panel">
           <div className="panel-head"><h2>By category</h2></div>
-          <div className="panel-body split-panel">
-            <DonutChart
-              slices={data.category_totals.map((row) => ({ label: row.category, value: Math.abs(asNumber(row.total)) }))}
-              centerLabel="Expenses"
+          <div className="panel-body">
+            <RankedBars
+              items={data.category_totals.map((row) => ({
+                label: row.category,
+                slug: row.slug,
+                value: asNumber(row.total),
+                count: row.count,
+              }))}
+              topN={8}
+              showGroupLegend={true}
             />
-            <div className="table-wrap">
-              <table className="data">
-                <thead><tr><th>Category</th><th className="num">Count</th><th className="num">Total</th></tr></thead>
-                <tbody>
-                  {data.category_totals.map((row) => (
-                    <tr key={row.slug}>
-                      <td><a href={`#category-${row.slug}`}>{row.category}</a></td>
-                      <td className="num">{row.count}</td>
-                      <td className="num">{formatBrl(row.total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </div>
         </section>
       ) : null}
@@ -198,6 +191,12 @@ export function FinanceExpensesPage() {
   );
 }
 
+function formatExpenseAmount(amount: string | number): string {
+  const num = typeof amount === "string" ? parseFloat(amount) : amount;
+  const abs = Math.abs(num);
+  return formatBrl(abs);
+}
+
 function ExpenseTable({
   entries,
   data,
@@ -220,16 +219,39 @@ function ExpenseTable({
   client: ReturnType<typeof useQueryClient>;
 }) {
   const navigate = useNavigate();
+  const hasBills = entries.some((entry) => entry.category === data.bills_category);
+
+  async function handleSave(entry: Entry) {
+    try {
+      const parsedAmount = parseDecimalInput(draft.amount);
+      const response = await sendForm(`/api/finance/expenses/${entry.id}`, {
+        ...draft,
+        amount: parsedAmount || draft.amount,
+        return_year: String(data.year),
+        return_month: data.filter_month ? String(data.filter_month) : "",
+      });
+      const redirect = redirectLocation(response);
+      setEditing(null);
+      if (redirect) {
+        navigate(pathFromRedirect(redirect));
+        return;
+      }
+      void client.invalidateQueries({ queryKey: ["finance-expenses"] });
+    } catch (error) {
+      showToast(`Error saving: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }
+
   return (
     <div className="table-wrap">
-      <table className="data">
+      <table className="data cards-sm">
         <thead>
           <tr>
             {data.filter_month == null ? <th>Month</th> : null}
             <th>Date</th>
             <th>Vendor</th>
             <th>Description</th>
-            {entries.some((entry) => entry.category === data.bills_category) ? <th>Subcategory</th> : null}
+            {hasBills ? <th>Subcategory</th> : null}
             <th>Account</th>
             <th className="num">Amount</th>
             <th>Source</th>
@@ -239,14 +261,40 @@ function ExpenseTable({
         <tbody>
           {entries.map((entry) => {
             const isEditing = editing === entry.id;
+            const isRefund = entry.is_reversal || asNumber(entry.effective_amount) > 0;
             return (
               <tr key={entry.id}>
-                {data.filter_month == null ? <td>{isEditing ? <select className="compact" value={draft.month} onChange={(e) => setDraft({ ...draft, month: e.target.value })}>{data.month_labels.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}</select> : data.month_labels[entry.month - 1]}</td> : null}
-                <td>{isEditing ? <input className="compact wide" type="date" value={draft.transaction_date} onChange={(e) => setDraft({ ...draft, transaction_date: e.target.value })} /> : formatDate(entry.transaction_date)}</td>
-                <td>{isEditing ? <input className="compact wide" value={draft.vendor} onChange={(e) => setDraft({ ...draft, vendor: e.target.value })} /> : entry.vendor}</td>
-                <td>{isEditing ? <input className="compact wide" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /> : entry.description || (entry.is_reversal ? "Reversal" : "")}</td>
-                {entries.some((item) => item.category === data.bills_category) ? (
-                  <td>
+                {data.filter_month == null ? (
+                  <td data-label="Month">
+                    {isEditing ? (
+                      <select className="compact" value={draft.month} onChange={(e) => setDraft({ ...draft, month: e.target.value })}>
+                        {data.month_labels.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}
+                      </select>
+                    ) : data.month_labels[entry.month - 1]}
+                  </td>
+                ) : null}
+                <td data-label="Date">
+                  {isEditing ? (
+                    <input className="compact wide" type="date" value={draft.transaction_date} onChange={(e) => setDraft({ ...draft, transaction_date: e.target.value })} />
+                  ) : formatDate(entry.transaction_date)}
+                </td>
+                <td className="card-primary" data-label="Vendor">
+                  {isEditing ? (
+                    <input className="compact wide" value={draft.vendor} onChange={(e) => setDraft({ ...draft, vendor: e.target.value })} />
+                  ) : entry.vendor}
+                </td>
+                <td data-label="Description">
+                  {isEditing ? (
+                    <input className="compact wide" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+                  ) : (
+                    <>
+                      {entry.description || (entry.is_reversal ? "Reversal" : "")}
+                      {isRefund && !entry.is_reversal ? <span className="badge badge--ok" style={{ marginLeft: "0.35rem" }}>Refund</span> : null}
+                    </>
+                  )}
+                </td>
+                {hasBills ? (
+                  <td data-label="Subcategory">
                     {isEditing && draft.category === data.bills_category ? (
                       <select className="compact wide" value={draft.subcategory} onChange={(e) => setDraft({ ...draft, subcategory: e.target.value })}>
                         <option value="">—</option>
@@ -255,35 +303,35 @@ function ExpenseTable({
                     ) : entry.subcategory || "—"}
                   </td>
                 ) : null}
-                <td>
+                <td data-label="Account">
                   {isEditing ? (
                     <select className="compact wide" value={draft.payment_account} onChange={(e) => setDraft({ ...draft, payment_account: e.target.value })}>
                       {data.payment_accounts.map((account) => <option key={account}>{account}</option>)}
                     </select>
                   ) : <span className="badge badge--src">{entry.payment_account}</span>}
                 </td>
-                <td className="num">{isEditing ? <input className="compact" value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} /> : formatBrl(entry.effective_amount)}</td>
-                <td><span className="badge badge--src">{entry.source_label}</span></td>
-                <td className="num">
+                <td className="num" data-label="Amount">
+                  {isEditing ? (
+                    <input
+                      className="compact"
+                      inputMode="decimal"
+                      value={draft.amount}
+                      onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
+                    />
+                  ) : (
+                    <span className={isRefund ? "is-positive" : ""}>
+                      {isRefund ? `+${formatExpenseAmount(entry.effective_amount)}` : formatExpenseAmount(entry.effective_amount)}
+                    </span>
+                  )}
+                </td>
+                <td data-label="Source"><span className="badge badge--src">{entry.source_label}</span></td>
+                <td className="num card-actions">
                   {isEditing ? (
                     <div className="inline-edit">
                       <select className="compact wide" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })}>
                         {data.expense_categories.map((category) => <option key={category}>{category}</option>)}
                       </select>
-                      <button type="button" className="btn btn--sm" onClick={async () => {
-                        const response = await sendForm(`/api/finance/expenses/${entry.id}`, {
-                          ...draft,
-                          return_year: String(data.year),
-                          return_month: data.filter_month ? String(data.filter_month) : "",
-                        });
-                        const redirect = redirectLocation(response);
-                        setEditing(null);
-                        if (redirect) {
-                          navigate(pathFromRedirect(redirect));
-                          return;
-                        }
-                        void client.invalidateQueries({ queryKey: ["finance-expenses"] });
-                      }}>Save</button>
+                      <button type="button" className="btn btn--sm" onClick={() => void handleSave(entry)}>Save</button>
                       <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditing(null)}>Cancel</button>
                     </div>
                   ) : (

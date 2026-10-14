@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { formatBrl, formatSignedBrl } from "../lib/format";
 import { formatAxis, niceMax, numeric } from "../lib/chart";
 
@@ -18,14 +18,37 @@ type MonthChartProps = {
   onSelect: (month: number) => void;
 };
 
+const SHORT_LABELS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+
+function hasData(point: { income: number; expense: number; value: number }): boolean {
+  return point.income > 0 || point.expense > 0 || point.value !== 0;
+}
+
 export function MonthChart({ points, selectedMonth, variant = "neutral", onSelect }: MonthChartProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(720);
   const [hover, setHover] = useState<number | null>(null);
-  const width = 720;
-  const height = variant === "summary" ? 236 : 200;
-  const padL = 44;
-  const padR = 12;
+  const [tapped, setTapped] = useState<number | null>(null);
+  const isTouch = typeof window !== "undefined" && "ontouchstart" in window;
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width || 720;
+      setContainerWidth(width);
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  const isPhone = containerWidth < 500;
+  const width = isPhone ? 360 : 720;
+  const height = variant === "summary" ? (isPhone ? 180 : 236) : (isPhone ? 160 : 200);
+  const padL = isPhone ? 36 : 44;
+  const padR = isPhone ? 8 : 12;
   const padT = 16;
-  const padB = 28;
+  const padB = isPhone ? 24 : 28;
   const innerW = width - padL - padR;
   const innerH = height - padT - padB;
   const band = innerW / Math.max(points.length, 1);
@@ -41,34 +64,73 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
     }));
   }, [points, variant]);
 
-  const max = useMemo(() => {
-    if (variant === "summary") {
-      return niceMax(
-        Math.max(
-          1,
-          ...series.map((point) => Math.max(point.income, point.expense, Math.abs(point.balance))),
-        ),
-      );
+  const lastDataIndex = useMemo(() => {
+    for (let i = series.length - 1; i >= 0; i--) {
+      if (hasData(series[i])) return i;
     }
-    return niceMax(Math.max(1, ...series.map((point) => Math.abs(point.value))));
+    return -1;
+  }, [series]);
+
+  const { posMax, negMax } = useMemo(() => {
+    if (variant === "summary") {
+      const positives = series.map((p) => Math.max(p.income, p.balance > 0 ? p.balance : 0));
+      const negatives = series.map((p) => Math.max(p.expense, p.balance < 0 ? Math.abs(p.balance) : 0));
+      return {
+        posMax: niceMax(Math.max(1, ...positives)),
+        negMax: niceMax(Math.max(1, ...negatives)),
+      };
+    }
+    const max = niceMax(Math.max(1, ...series.map((point) => Math.abs(point.value))));
+    return { posMax: max, negMax: max };
   }, [series, variant]);
 
-  const zeroY = variant === "summary" ? padT + innerH * 0.52 : padT + innerH;
-  const scale = variant === "summary" ? (innerH * 0.46) / max : innerH / max;
-  const ticks = variant === "summary" ? [max, max / 2, 0, -max / 2, -max] : [max, max / 2, 0];
+  const posHeight = variant === "summary" ? innerH * (posMax / (posMax + negMax)) : innerH;
+  const negHeight = variant === "summary" ? innerH - posHeight : 0;
+  const zeroY = padT + posHeight;
+  const posScale = posHeight / posMax;
+  const negScale = negHeight / negMax;
 
-  const active = hover ?? selectedMonth ?? null;
+  const posTicks = isPhone
+    ? [posMax, 0]
+    : [posMax, posMax / 2, 0];
+  const negTicks = variant === "summary"
+    ? (isPhone ? [-negMax] : [-negMax / 2, -negMax])
+    : [];
+  const ticks = [...posTicks, ...negTicks];
+
+  const active = tapped ?? hover ?? selectedMonth ?? null;
   const activePoint = series.find((point) => point.month === active);
 
+  const handleClick = useCallback((month: number) => {
+    if (isTouch) {
+      setTapped(month);
+    }
+    onSelect(month);
+  }, [isTouch, onSelect]);
+
   return (
-    <div className="chart-frame">
-      <svg className="chart-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Monthly chart">
+    <div className="chart-frame" ref={containerRef}>
+      <svg
+        className="chart-svg"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label="Monthly chart"
+        style={{ minHeight: isPhone ? "180px" : undefined }}
+      >
         {ticks.map((tick) => {
-          const y = variant === "summary" ? zeroY - tick * scale : padT + innerH - tick * scale;
+          const y = tick >= 0
+            ? zeroY - tick * posScale
+            : zeroY + Math.abs(tick) * negScale;
           return (
             <g key={tick}>
               <line className="chart-grid" x1={padL} x2={width - padR} y1={y} y2={y} />
-              <text className="chart-axis" x={padL - 6} y={y + 3} textAnchor="end">
+              <text
+                className="chart-axis"
+                x={padL - 6}
+                y={y + 3}
+                textAnchor="end"
+                style={{ fontSize: isPhone ? "9px" : undefined }}
+              >
                 {formatAxis(tick)}
               </text>
             </g>
@@ -79,11 +141,12 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
           const selected = selectedMonth === point.month;
           const hovered = hover === point.month;
           const cx = x + band / 2;
-          const on = selected || hovered;
+          const on = selected || hovered || tapped === point.month;
+          const displayLabel = isPhone ? SHORT_LABELS[point.month - 1] || point.label : point.label;
           if (variant === "summary") {
-            const incomeH = point.income * scale;
-            const expenseH = point.expense * scale;
-            const barW = 11;
+            const incomeH = point.income * posScale;
+            const expenseH = point.expense * negScale;
+            const barW = isPhone ? 8 : 11;
             const bx = cx - barW / 2;
             return (
               <g key={point.month}>
@@ -103,27 +166,39 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
                   height={Math.max(expenseH, point.expense > 0 ? 2 : 0)}
                   rx={2}
                 />
-                <text className={`chart-label${selected ? " is-on" : ""}`} x={cx} y={height - 8} textAnchor="middle">
-                  {point.label}
+                <text
+                  className={`chart-label${selected ? " is-on" : ""}`}
+                  x={cx}
+                  y={height - (isPhone ? 6 : 8)}
+                  textAnchor="middle"
+                  style={{ fontSize: isPhone ? "9px" : undefined }}
+                >
+                  {displayLabel}
                 </text>
               </g>
             );
           }
           const value = Math.abs(point.value);
-          const barH = value * scale;
+          const barH = value * posScale;
           const negative = variant === "expense" || point.value < 0;
           return (
             <g key={point.month}>
               <rect
                 className={`chart-bar ${negative ? "expense" : "income"}${on ? " is-on" : ""}`}
                 x={x + band * 0.22}
-                y={padT + innerH - barH}
+                y={padT + posHeight - barH}
                 width={band * 0.56}
                 height={Math.max(barH, 1.5)}
                 rx={3}
               />
-              <text className={`chart-label${selected ? " is-on" : ""}`} x={cx} y={height - 8} textAnchor="middle">
-                {point.label}
+              <text
+                className={`chart-label${selected ? " is-on" : ""}`}
+                x={cx}
+                y={height - (isPhone ? 6 : 8)}
+                textAnchor="middle"
+                style={{ fontSize: isPhone ? "9px" : undefined }}
+              >
+                {displayLabel}
               </text>
             </g>
           );
@@ -131,31 +206,44 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
         {variant === "summary"
           ? series.map((point, index, all) => {
               if (index === 0) return null;
+              if (index > lastDataIndex) return null;
               const prev = all[index - 1];
               const x1 = padL + (index - 0.5) * band;
               const x2 = padL + (index + 0.5) * band;
+              const y1 = prev.balance >= 0
+                ? zeroY - prev.balance * posScale
+                : zeroY + Math.abs(prev.balance) * negScale;
+              const y2 = point.balance >= 0
+                ? zeroY - point.balance * posScale
+                : zeroY + Math.abs(point.balance) * negScale;
               return (
                 <line
                   key={`line-${point.month}`}
                   className="chart-line"
                   x1={x1}
-                  y1={zeroY - prev.balance * scale}
+                  y1={y1}
                   x2={x2}
-                  y2={zeroY - point.balance * scale}
+                  y2={y2}
                 />
               );
             })
           : null}
         {variant === "summary"
-          ? series.map((point, index) => (
-              <circle
-                key={`dot-${point.month}`}
-                className="chart-dot"
-                cx={padL + (index + 0.5) * band}
-                cy={zeroY - point.balance * scale}
-                r={selectedMonth === point.month ? 3.6 : 2.4}
-              />
-            ))
+          ? series.map((point, index) => {
+              if (index > lastDataIndex) return null;
+              const cy = point.balance >= 0
+                ? zeroY - point.balance * posScale
+                : zeroY + Math.abs(point.balance) * negScale;
+              return (
+                <circle
+                  key={`dot-${point.month}`}
+                  className="chart-dot"
+                  cx={padL + (index + 0.5) * band}
+                  cy={cy}
+                  r={selectedMonth === point.month ? 3.6 : 2.4}
+                />
+              );
+            })
           : null}
         {series.map((point, index) => {
           const x = padL + index * band;
@@ -172,7 +260,7 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
               pointerEvents="all"
               onMouseEnter={() => setHover(point.month)}
               onMouseLeave={() => setHover(null)}
-              onClick={() => onSelect(point.month)}
+              onClick={() => handleClick(point.month)}
             />
           );
         })}
@@ -192,7 +280,7 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
             ? variant === "summary"
               ? `${activePoint.label}: in ${formatBrl(activePoint.income)} · out ${formatBrl(-activePoint.expense)} · ${formatSignedBrl(activePoint.balance)}`
               : `${activePoint.label}: ${formatBrl(activePoint.value)}`
-            : "Click a month to filter"}
+            : isTouch ? "Tap a month" : "Click a month to filter"}
         </span>
       </div>
     </div>
