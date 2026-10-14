@@ -83,6 +83,13 @@ async def google_callback(request: Request, session: SessionDep) -> RedirectResp
     if not email or not google_sub:
         raise HTTPException(status_code=400, detail="Google account missing email")
 
+    allowed_emails = settings.allowed_emails_set
+    if allowed_emails and email.lower() not in allowed_emails:
+        return RedirectResponse(
+            url="/auth/login?error=Your%20email%20is%20not%20authorized%20to%20access%20this%20application.",
+            status_code=303,
+        )
+
     user = find_or_create_user(
         session,
         email=email,

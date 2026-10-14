@@ -8,10 +8,15 @@ from alembic import command
 from alembic.config import Config
 from app.core.config import settings
 
-engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args={"check_same_thread": False},
-)
+
+def _create_engine():
+    url = settings.DATABASE_URL
+    if url.startswith("sqlite"):
+        return create_engine(url, connect_args={"check_same_thread": False})
+    return create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=10)
+
+
+engine = _create_engine()
 
 
 def get_session() -> Generator[Session, None, None]:

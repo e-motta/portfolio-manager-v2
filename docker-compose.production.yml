@@ -1,0 +1,37 @@
+# Production override for OCI deployment with Vault secrets
+#
+# Usage: ./scripts/deploy.py up -d --build
+#
+# The deploy.py script fetches secrets from OCI Vault using instance principal
+# authentication and passes them to docker-compose via environment variables.
+# Secrets are never written to disk - they exist only in process memory.
+#
+# Required setup:
+#   1. Create OCI Vault with secrets (see docs/deploy-oci.md)
+#   2. Configure dynamic group and IAM policy for instance principal
+#   3. Set OCI_VAULT_OCID and OCI_COMPARTMENT_ID in shell environment
+#
+# DO NOT use 'docker compose up' directly in production - use deploy.py
+# to ensure secrets are loaded from Vault.
+
+services:
+  app:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

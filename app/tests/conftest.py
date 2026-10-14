@@ -27,9 +27,11 @@ from app.services import prices
 
 @pytest.fixture(name="session")
 def session_fixture():
+    url = settings.TEST_DATABASE_URL
+    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
     engine = create_engine(
-        settings.TEST_DATABASE_URL,
-        connect_args={"check_same_thread": False},
+        url,
+        connect_args=connect_args,
         poolclass=StaticPool,
     )
     SQLModel.metadata.create_all(engine)
