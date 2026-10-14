@@ -74,3 +74,44 @@ def test_ensure_user_portfolio_is_idempotent(session):
     first = ensure_user_portfolio(session, user)
     again = ensure_user_portfolio(session, user)
     assert first.id == again.id
+
+
+def test_auth_login_serves_spa_html_unauthenticated(client):
+    """GET /auth/login serves the SPA index.html without authentication."""
+    response = client.get("/auth/login", follow_redirects=False)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<!doctype html>" in response.text.lower() or "<!DOCTYPE html>" in response.text
+
+
+def test_auth_nonexistent_serves_spa_html(client):
+    """Unmatched /auth/* paths serve the SPA for client-side routing."""
+    response = client.get("/auth/nonexistent", follow_redirects=False)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+
+
+def test_auth_google_route_still_works(client, monkeypatch):
+    """Real OAuth route /auth/google is not shadowed by the SPA fallback."""
+    monkeypatch.setattr(
+        "app.web.routes.auth.settings.GOOGLE_CLIENT_ID",
+        "test-google-client-id",
+    )
+    response = client.get("/auth/google", follow_redirects=False)
+    assert response.status_code == 302
+    assert "accounts.google.com" in response.headers["location"]
+
+
+def test_auth_google_returns_503_when_not_configured(client):
+    """OAuth route returns 503 when Google credentials are not configured."""
+    response = client.get("/auth/google", follow_redirects=False)
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Google login is not configured"
+
+
+def test_auth_login_has_security_headers(client):
+    """SPA fallback response includes security headers."""
+    response = client.get("/auth/login", follow_redirects=False)
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert response.headers.get("x-frame-options") == "DENY"
+    assert "content-security-policy" in response.headers

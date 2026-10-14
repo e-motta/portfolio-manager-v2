@@ -1,8 +1,9 @@
+from pathlib import Path
 from urllib.parse import quote
 
 from authlib.integrations.base_client.errors import MismatchingStateError
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from app.core.config import settings
 from app.core.db import SessionDep
@@ -163,3 +164,15 @@ def cumbuca_callback(request: Request, session: SessionDep) -> RedirectResponse:
         )
 
     return RedirectResponse(url="/open-finance?connected=1", status_code=303)
+
+
+_FRONTEND_INDEX = Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist" / "index.html"
+
+
+@router.get("/{path:path}")
+def auth_spa_fallback(path: str) -> FileResponse:
+    """Serve the SPA for any /auth/* path not handled by specific routes."""
+    return FileResponse(
+        _FRONTEND_INDEX,
+        media_type="text/html",
+    )
