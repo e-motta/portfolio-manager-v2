@@ -1,5 +1,5 @@
 import { ChangeEvent, InputHTMLAttributes, forwardRef, useId, useState } from "react";
-import { parseDecimalInput } from "../lib/format";
+import { parseDecimalInput, parsePercentInput } from "../lib/format";
 
 type MoneyInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
   currency?: "BRL" | "USD";
@@ -62,7 +62,7 @@ export const PercentInput = forwardRef<HTMLInputElement, PercentInputProps>(
 
     function handleChange(event: ChangeEvent<HTMLInputElement>) {
       onChange?.(event);
-      const parsed = parseDecimalInput(event.target.value);
+      const parsed = parsePercentInput(event.target.value);
       if (parsed !== null) {
         const num = parseFloat(parsed);
         if (min !== undefined && num < min) {

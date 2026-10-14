@@ -39,34 +39,65 @@ export function formatCompactBrl(value: unknown): string {
   return formatBrl(amount);
 }
 
-export function parseDecimalInput(text: string): string | null {
+export function parseDecimalInput(text: string, precision = 2): string | null {
   if (!text || typeof text !== "string") return null;
   let cleaned = text.trim();
+  
+  const isNegative = cleaned.startsWith("-");
+  cleaned = cleaned.replace(/^-/, "");
+  
   cleaned = cleaned.replace(/^R\$\s*/i, "");
   cleaned = cleaned.replace(/^\$\s*/, "");
-  cleaned = cleaned.replace(/[^\d.,-]/g, "");
+  cleaned = cleaned.replace(/[^\d.,]/g, "");
   if (!cleaned) return null;
+  
   const hasComma = cleaned.includes(",");
   const hasDot = cleaned.includes(".");
-  if (hasComma && hasDot) {
-    const lastComma = cleaned.lastIndexOf(",");
-    const lastDot = cleaned.lastIndexOf(".");
-    if (lastComma > lastDot) {
-      cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+  
+  if (hasComma) {
+    cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+  } else if (hasDot) {
+    const dotCount = (cleaned.match(/\./g) || []).length;
+    if (dotCount > 1) {
+      cleaned = cleaned.replace(/\./g, "");
     } else {
-      cleaned = cleaned.replace(/,/g, "");
-    }
-  } else if (hasComma) {
-    const parts = cleaned.split(",");
-    if (parts.length === 2 && parts[1].length <= 2) {
-      cleaned = cleaned.replace(",", ".");
-    } else {
-      cleaned = cleaned.replace(/,/g, "");
+      const dotIndex = cleaned.indexOf(".");
+      const afterDot = cleaned.substring(dotIndex + 1);
+      if (afterDot.length === 3 && /^\d{3}$/.test(afterDot)) {
+        cleaned = cleaned.replace(".", "");
+      }
     }
   }
+  
   const n = parseFloat(cleaned);
   if (!Number.isFinite(n)) return null;
-  return n.toFixed(2);
+  
+  const result = n.toFixed(precision);
+  return isNegative ? `-${result}` : result;
+}
+
+export function parsePercentInput(text: string): string | null {
+  if (!text || typeof text !== "string") return null;
+  let cleaned = text.trim();
+  
+  const isNegative = cleaned.startsWith("-");
+  cleaned = cleaned.replace(/^-/, "");
+  
+  cleaned = cleaned.replace(/%\s*$/, "");
+  cleaned = cleaned.replace(/[^\d.,]/g, "");
+  if (!cleaned) return null;
+  
+  const hasComma = cleaned.includes(",");
+  
+  if (hasComma) {
+    cleaned = cleaned.replace(",", ".");
+  }
+  
+  const n = parseFloat(cleaned);
+  if (!Number.isFinite(n)) return null;
+  
+  const result = String(n);
+  return isNegative ? `-${result}` : result;
 }
 
 export function formatUsd(value: unknown): string {

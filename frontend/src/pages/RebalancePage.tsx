@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { getJson } from "../api/client";
 import { ComparisonChart } from "../components/ComparisonChart";
 import { EmptyState } from "../components/EmptyState";
@@ -25,25 +25,33 @@ type Payload = {
 export function RebalancePage() {
   const [level, setLevel] = useState<"types" | "securities">("types");
   const [mode, setMode] = useState<"buy_only" | "buy_and_sell">("buy_only");
-  const [cash, setCash] = useState("0");
+  const [cashInput, setCashInput] = useState("0");
+  
+  const parsedCash = useMemo(() => {
+    const parsed = parseDecimalInput(cashInput);
+    return parsed !== null ? parsed : "0";
+  }, [cashInput]);
+  
+  const deferredCash = useDeferredValue(parsedCash);
+  
   const meta = useQuery({
     queryKey: ["rebalance-meta"],
     queryFn: () => getJson<{ usd_brl_rate: string }>("/api/allocation/rebalance"),
   });
   const rate = asNumber(meta.data?.usd_brl_rate) || 1;
-  const cashValue = cash;
+  
   const query = useQuery({
-    queryKey: ["rebalance", level, mode, cashValue],
+    queryKey: ["rebalance", level, mode, deferredCash],
     queryFn: () =>
       getJson<Payload>(
-        `/api/allocation/rebalance/${level}?mode=${mode}&new_cash=${encodeURIComponent(cashValue || "0")}`,
+        `/api/allocation/rebalance/${level}?mode=${mode}&new_cash=${encodeURIComponent(deferredCash)}`,
       ),
   });
 
   const usdCash = useMemo(() => {
-    const brl = asNumber(cash);
+    const brl = asNumber(parsedCash);
     return rate ? (brl / rate).toFixed(2) : "0.00";
-  }, [cash, rate]);
+  }, [parsedCash, rate]);
 
   const formatMoney = level === "securities" ? formatUsd : formatBrl;
   const formatSigned = level === "securities" ? formatSignedUsd : formatSignedBrl;
@@ -81,10 +89,13 @@ export function RebalancePage() {
               id="suggestion-cash"
               inputMode="decimal"
               autoComplete="off"
-              value={cash}
-              onChange={(event) => {
-                const parsed = parseDecimalInput(event.target.value);
-                setCash(parsed !== null ? parsed : event.target.value);
+              value={cashInput}
+              onChange={(event) => setCashInput(event.target.value)}
+              onBlur={() => {
+                const parsed = parseDecimalInput(cashInput);
+                if (parsed !== null) {
+                  setCashInput(parsed);
+                }
               }}
             />
           </label>
