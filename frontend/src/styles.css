@@ -3,7 +3,7 @@
 :root {
   --ink: #17150f;
   --ink-soft: #3c3830;
-  --muted: #6f6a60;
+  --muted: #5d5850;
   --paper: #f4f0e6;
   --paper-2: #ebe6d8;
   --surface: #fbf8f1;
@@ -154,6 +154,7 @@ a { color: var(--forest); }
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
   border-right: 1px solid rgba(255,255,255,0.06);
 }
 
@@ -609,8 +610,24 @@ table.data tbody tr:hover { background: #f6f3ea; }
   background: var(--forest-mid);
 }
 
-.alloc-fill.excess { background: var(--copper); }
-.alloc-fill.gap { background: #c9d6cc; }
+.alloc-fill.excess {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--copper),
+    var(--copper) 3px,
+    var(--copper-soft) 3px,
+    var(--copper-soft) 6px
+  );
+}
+.alloc-fill.gap {
+  background: repeating-linear-gradient(
+    45deg,
+    #c9d6cc,
+    #c9d6cc 3px,
+    #e4eee6 3px,
+    #e4eee6 6px
+  );
+}
 
 .modal-backdrop {
   position: fixed;
@@ -1068,6 +1085,14 @@ select.compact.wide, input.compact.wide { width: 9rem; }
   fill-opacity: 0;
   cursor: pointer;
   pointer-events: all;
+}
+.chart-hit:focus {
+  outline: none;
+}
+.chart-hit:focus-visible {
+  fill-opacity: 0.05;
+  outline: 2px solid var(--forest-mid);
+  outline-offset: -2px;
 }
 .chart-bar { fill: var(--forest-mid); pointer-events: none; }
 .chart-bar.income { fill: var(--forest-mid); }

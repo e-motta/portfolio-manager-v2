@@ -8,7 +8,7 @@ export default defineConfig({
   workers: 1,
   reporter: "html",
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: "http://localhost:5173",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -23,14 +23,15 @@ export default defineConfig({
     {
       name: "mobile",
       use: {
-        ...devices["iPhone 14 Pro"],
+        ...devices["Desktop Chrome"],
         viewport: { width: 390, height: 844 },
+        isMobile: true,
       },
     },
   ],
   webServer: {
     command: "npm run dev",
-    url: "http://127.0.0.1:5173",
+    url: "http://localhost:5173",
     reuseExistingServer: !process.env.CI,
   },
 });

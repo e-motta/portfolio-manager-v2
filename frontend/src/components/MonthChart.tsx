@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect, useCallback } from "react";
+import { useMemo, useState, useRef, useEffect, useCallback, useId } from "react";
 import { formatBrl, formatSignedBrl } from "../lib/format";
 import { formatAxis, niceMax, numeric } from "../lib/chart";
 
@@ -30,6 +30,8 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
   const [hover, setHover] = useState<number | null>(null);
   const [tapped, setTapped] = useState<number | null>(null);
   const isTouch = typeof window !== "undefined" && "ontouchstart" in window;
+  const chartId = useId();
+  const descId = `${chartId}-desc`;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -108,13 +110,23 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
     onSelect(month);
   }, [isTouch, onSelect]);
 
+  const chartDescription = useMemo(() => {
+    if (variant === "summary") {
+      return `Monthly financial chart showing income, expenses, and balance for ${series.length} months.`;
+    }
+    const label = variant === "expense" ? "expenses" : variant === "income" ? "income" : "values";
+    return `Monthly ${label} chart for ${series.length} months.`;
+  }, [series.length, variant]);
+
   return (
     <div className="chart-frame" ref={containerRef}>
+      <p id={descId} className="sr-only">{chartDescription}</p>
       <svg
         className="chart-svg"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label="Monthly chart"
+        aria-label={variant === "summary" ? "Monthly income, expense and balance chart" : `Monthly ${variant} chart`}
+        aria-describedby={descId}
         style={{ minHeight: isPhone ? "180px" : undefined }}
       >
         {ticks.map((tick) => {
@@ -247,6 +259,9 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
           : null}
         {series.map((point, index) => {
           const x = padL + index * band;
+          const barLabel = variant === "summary"
+            ? `${point.label}: income ${formatBrl(point.income)}, expenses ${formatBrl(point.expense)}, balance ${formatSignedBrl(point.balance)}`
+            : `${point.label}: ${formatBrl(Math.abs(point.value))}`;
           return (
             <rect
               key={`hit-${point.month}`}
@@ -258,9 +273,20 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
               fill="#000"
               fillOpacity={0}
               pointerEvents="all"
+              tabIndex={0}
+              role="button"
+              aria-label={barLabel}
               onMouseEnter={() => setHover(point.month)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(point.month)}
+              onFocus={() => setHover(point.month)}
+              onBlur={() => setHover(null)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleClick(point.month);
+                }
+              }}
             />
           );
         })}
@@ -280,7 +306,7 @@ export function MonthChart({ points, selectedMonth, variant = "neutral", onSelec
             ? variant === "summary"
               ? `${activePoint.label}: in ${formatBrl(activePoint.income)} · out ${formatBrl(-activePoint.expense)} · ${formatSignedBrl(activePoint.balance)}`
               : `${activePoint.label}: ${formatBrl(activePoint.value)}`
-            : isTouch ? "Tap a month" : "Click a month to filter"}
+            : isTouch ? "Tap a month" : "Select a month to filter"}
         </span>
       </div>
     </div>

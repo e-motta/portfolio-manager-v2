@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useId, useRef } from "react";
+import { useFocusTrap, useInert } from "../hooks/useFocusTrap";
 
 type ModalProps = {
   title: string;
@@ -7,9 +8,16 @@ type ModalProps = {
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  initialFocusRef?: React.RefObject<HTMLElement | null>;
 };
 
-export function Modal({ title, open, onClose, children, footer, wide }: ModalProps) {
+export function Modal({ title, open, onClose, children, footer, wide, initialFocusRef }: ModalProps) {
+  const titleId = useId();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const focusTrapRef = useFocusTrap(open, initialFocusRef ?? closeButtonRef);
+
+  useInert(open, ".modal-backdrop");
+
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -24,15 +32,22 @@ export function Modal({ title, open, onClose, children, footer, wide }: ModalPro
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
+        ref={focusTrapRef}
         className={`modal${wide ? " wide" : ""}`}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="modal-head">
-          <h2>{title}</h2>
-          <button type="button" className="btn btn--ghost btn--sm" onClick={onClose}>
+          <h2 id={titleId}>{title}</h2>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={onClose}
+            aria-label="Close dialog"
+          >
             Close
           </button>
         </div>
