@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { pushModal, popModal, isTopModal, attachEscapeListener } from "../lib/modalStack";
 
 type ModalProps = {
   title: string;
@@ -13,34 +14,23 @@ type ModalProps = {
 };
 
 export function Modal({ title, open, onClose, children, footer, wide, initialFocusRef }: ModalProps) {
+  const modalId = useId();
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
-  const focusTrapRef = useFocusTrap(open, initialFocusRef ?? closeButtonRef);
+  const isTop = open && isTopModal(modalId);
+  const focusTrapRef = useFocusTrap(open && isTop, initialFocusRef ?? closeButtonRef);
 
   useEffect(() => {
     if (!open) return;
 
-    const root = document.getElementById("root");
-    if (root) {
-      root.setAttribute("inert", "");
-    }
+    attachEscapeListener();
+    pushModal(modalId, onClose);
 
     return () => {
-      if (root) {
-        root.removeAttribute("inert");
-      }
+      popModal(modalId);
     };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, modalId, onClose]);
 
   if (!open) return null;
 

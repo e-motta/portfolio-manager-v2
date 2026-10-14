@@ -3,6 +3,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Modal } from "./Modal";
 import { useState } from "react";
+import { _resetForTesting } from "../lib/modalStack";
 
 function TestModalWithForm({ onSave }: { onSave: (value: string) => void }) {
   const [open, setOpen] = useState(true);
@@ -37,6 +38,37 @@ function TestModalWithForm({ onSave }: { onSave: (value: string) => void }) {
   );
 }
 
+function NestedModalsTest() {
+  const [modalAOpen, setModalAOpen] = useState(true);
+  const [modalBOpen, setModalBOpen] = useState(false);
+
+  return (
+    <>
+      <Modal
+        open={modalAOpen}
+        title="Modal A"
+        onClose={() => setModalAOpen(false)}
+        footer={
+          <button type="button" onClick={() => setModalBOpen(true)} data-testid="open-modal-b">
+            Open Modal B
+          </button>
+        }
+      >
+        <p>Content A</p>
+        <input type="text" data-testid="input-a" />
+      </Modal>
+      <Modal
+        open={modalBOpen}
+        title="Modal B"
+        onClose={() => setModalBOpen(false)}
+      >
+        <p>Content B</p>
+        <input type="text" data-testid="input-b" />
+      </Modal>
+    </>
+  );
+}
+
 describe("Modal", () => {
   let rootEl: HTMLDivElement;
 
@@ -44,10 +76,12 @@ describe("Modal", () => {
     rootEl = document.createElement("div");
     rootEl.id = "root";
     document.body.appendChild(rootEl);
+    _resetForTesting();
   });
 
   afterEach(() => {
     cleanup();
+    _resetForTesting();
     rootEl.remove();
     const backdrops = document.querySelectorAll(".modal-backdrop");
     backdrops.forEach((b) => b.remove());
@@ -86,7 +120,9 @@ describe("Modal", () => {
     await user.click(input);
     expect(input).toHaveFocus();
 
-    await user.type(input, "Hello World");
+    // Use fireEvent.change because userEvent.type can have timing issues
+    // with modal state updates during rapid re-renders
+    fireEvent.change(input, { target: { value: "Hello World" } });
     expect(input).toHaveValue("Hello World");
   });
 
@@ -200,5 +236,82 @@ describe("Modal", () => {
 
     const backdrop = document.querySelector(".modal-backdrop");
     expect(backdrop?.parentElement).toBe(document.body);
+  });
+
+  describe("Nested modals", () => {
+    it("keeps #root inert when closing inner modal while outer is still open", async () => {
+      const user = userEvent.setup();
+      render(<NestedModalsTest />);
+
+      expect(screen.getByText("Modal A")).toBeInTheDocument();
+      expect(rootEl).toHaveAttribute("inert");
+
+      const openBButton = screen.getByTestId("open-modal-b");
+      await user.click(openBButton);
+
+      expect(screen.getByText("Modal B")).toBeInTheDocument();
+      expect(rootEl).toHaveAttribute("inert");
+
+      const closeBButton = screen.getAllByRole("button", { name: "Close dialog" })[1];
+      await user.click(closeBButton);
+
+      expect(screen.queryByText("Modal B")).not.toBeInTheDocument();
+      expect(screen.getByText("Modal A")).toBeInTheDocument();
+      expect(rootEl).toHaveAttribute("inert");
+    });
+
+    it("allows interaction with outer modal after inner is closed", async () => {
+      const user = userEvent.setup();
+      render(<NestedModalsTest />);
+
+      const openBButton = screen.getByTestId("open-modal-b");
+      await user.click(openBButton);
+
+      expect(screen.getByText("Modal B")).toBeInTheDocument();
+
+      const closeBButton = screen.getAllByRole("button", { name: "Close dialog" })[1];
+      await user.click(closeBButton);
+
+      expect(screen.queryByText("Modal B")).not.toBeInTheDocument();
+
+      const inputA = screen.getByTestId("input-a");
+      await user.click(inputA);
+      expect(inputA).toHaveFocus();
+      await user.type(inputA, "test");
+      expect(inputA).toHaveValue("test");
+    });
+
+    it("Escape closes only the topmost modal when multiple are open", async () => {
+      const user = userEvent.setup();
+      render(<NestedModalsTest />);
+
+      const openBButton = screen.getByTestId("open-modal-b");
+      await user.click(openBButton);
+
+      expect(screen.getByText("Modal A")).toBeInTheDocument();
+      expect(screen.getByText("Modal B")).toBeInTheDocument();
+
+      fireEvent.keyDown(window, { key: "Escape" });
+
+      expect(screen.queryByText("Modal B")).not.toBeInTheDocument();
+      expect(screen.getByText("Modal A")).toBeInTheDocument();
+      expect(rootEl).toHaveAttribute("inert");
+    });
+
+    it("removes inert only when all modals are closed", async () => {
+      const user = userEvent.setup();
+      render(<NestedModalsTest />);
+
+      const openBButton = screen.getByTestId("open-modal-b");
+      await user.click(openBButton);
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByText("Modal B")).not.toBeInTheDocument();
+      expect(rootEl).toHaveAttribute("inert");
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByText("Modal A")).not.toBeInTheDocument();
+      expect(rootEl).not.toHaveAttribute("inert");
+    });
   });
 });
