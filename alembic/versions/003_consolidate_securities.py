@@ -50,18 +50,20 @@ def upgrade() -> None:
             sa.Column("current_price_brl", sa.Numeric(precision=18, scale=8), nullable=True)
         )
 
-    op.execute(
-        """
-        UPDATE securities
-        SET purchase_price_usd = latest_price,
-            purchase_price_brl = price_brl,
-            current_price_usd = latest_price,
-            current_price_brl = price_brl,
-            provisional_fx = 0
-        """
-    )
-
     connection = op.get_bind()
+    connection.execute(
+        sa.text(
+            """
+            UPDATE securities
+            SET purchase_price_usd = latest_price,
+                purchase_price_brl = price_brl,
+                current_price_usd = latest_price,
+                current_price_brl = price_brl,
+                provisional_fx = :false_val
+            """
+        ),
+        {"false_val": False},
+    )
     rows = connection.execute(
         sa.text(
             """

@@ -17,14 +17,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute(
+    connection = op.get_bind()
+    connection.execute(
         sa.text(
             """
             UPDATE asset_types
             SET current_value = 0
-            WHERE is_exchange_traded = 0
+            WHERE is_exchange_traded = :false_val
             """
-        )
+        ),
+        {"false_val": False},
     )
 
 

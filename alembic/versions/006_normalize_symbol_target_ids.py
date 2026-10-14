@@ -18,6 +18,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     connection = op.get_bind()
+    dialect = connection.dialect.name
+
+    if dialect == "postgresql":
+        return
+
     rows = connection.execute(
         sa.text("SELECT id FROM symbol_targets WHERE id LIKE '%-%'")
     ).fetchall()

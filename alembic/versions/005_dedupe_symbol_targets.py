@@ -18,10 +18,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     connection = op.get_bind()
+    dialect = connection.dialect.name
+
+    if dialect == "postgresql":
+        min_id_expr = "MIN(id::text)::uuid"
+    else:
+        min_id_expr = "MIN(id)"
+
     duplicates = connection.execute(
         sa.text(
-            """
-            SELECT asset_type_id, symbol, MIN(id) AS keep_id
+            f"""
+            SELECT asset_type_id, symbol, {min_id_expr} AS keep_id
             FROM symbol_targets
             GROUP BY asset_type_id, symbol
             HAVING COUNT(*) > 1

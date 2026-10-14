@@ -38,9 +38,10 @@ def upgrade() -> None:
             """
             SELECT id, name, current_value
             FROM asset_types
-            WHERE is_exchange_traded = 0 AND current_value > 0
+            WHERE is_exchange_traded = :false_val AND current_value > 0
             """
-        )
+        ),
+        {"false_val": False},
     ).fetchall()
 
     for row in rows:
