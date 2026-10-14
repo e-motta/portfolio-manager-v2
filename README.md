@@ -102,7 +102,7 @@ Year-scoped personal finance with month pills, year selector, and monthly charts
 ### Authentication and UI
 
 - Google OAuth sign-in; session cookie; sign out; first login creates an empty portfolio with default asset classes
-- Sidebar or top navigation layout (persisted in browser)
+- Grouped sidebar navigation with icons; drawer on small screens
 - Responsive tables, modal forms, and inline editing
 
 ## Tests
