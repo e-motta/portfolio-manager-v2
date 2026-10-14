@@ -56,6 +56,25 @@ The deployment process has been optimized for speed:
 ./scripts/deploy.py up -d --build
 ```
 
+## Automatic Deployment
+
+Pushes to `main` automatically deploy to production via GitHub Actions. The workflow:
+
+1. Builds and pushes the Docker image to GHCR
+2. SSHs to the production VM with the image tag
+3. VM pulls the image, deploys, and health-checks
+4. If unhealthy, automatically rolls back to the previous version
+
+### Rollback Behavior
+
+- **Automatic**: If health checks fail after deploy, the previous image is redeployed
+- **Manual**: Use `./scripts/deploy.py up -d --tag sha-<commit>` to deploy any version
+- **Limitation**: Database migrations are NOT rolled back. If a migration causes issues, manual intervention is required.
+
+### Setting Up Auto-Deploy (One-Time)
+
+See [Appendix: Auto-Deploy Setup](#appendix-auto-deploy-setup) for detailed instructions.
+
 ## Secrets Handling
 
 **No secrets are written to disk.** The deployment uses a two-stage approach:
@@ -497,3 +516,154 @@ We chose option 4: `deploy.py` fetches all secrets including `POSTGRES_PASSWORD`
 ### Instance principal vs config file
 
 Instance principal authentication requires no credentials on the VM — the VM's identity is used automatically. This is more secure than storing API keys in a config file.
+
+---
+
+## Appendix: Auto-Deploy Setup
+
+This section covers one-time setup for automatic deployment from GitHub Actions.
+
+### A.1 Generate Deploy Key (on your local machine)
+
+```bash
+# Generate a dedicated ed25519 key pair for deploy
+ssh-keygen -t ed25519 -C "github-deploy@portfolio-manager" -f ~/.ssh/deploy_ed25519 -N ""
+
+# Display the private key (add to GitHub secret DEPLOY_SSH_KEY)
+cat ~/.ssh/deploy_ed25519
+
+# Display the public key (add to authorized_keys on VM)
+cat ~/.ssh/deploy_ed25519.pub
+```
+
+### A.2 Configure authorized_keys on the VM
+
+Add the public key to the deploy user's `authorized_keys` with forced command:
+
+```bash
+# On the VM, as root or the deploy user
+cat >> /home/ubuntu/.ssh/authorized_keys << 'EOF'
+restrict,command="/opt/portfolio-manager-v2/scripts/remote-deploy.sh" ssh-ed25519 AAAA...your-public-key... github-deploy@portfolio-manager
+EOF
+```
+
+**Authorized keys line format:**
+
+```
+restrict,command="/opt/portfolio-manager-v2/scripts/remote-deploy.sh" <key-type> <key-data> <comment>
+```
+
+The `restrict` keyword disables port forwarding, agent forwarding, X11 forwarding, PTY allocation, and all other features. Only the forced command is executed, regardless of what the client requests.
+
+### A.3 Set Up VM Environment
+
+```bash
+# Create the deploy environment file (root-owned, non-secret OCIDs)
+sudo mkdir -p /etc/portfolio
+sudo tee /etc/portfolio/deploy.env << 'EOF'
+OCI_VAULT_OCID="ocid1.vault.oc1.xxx.yyy"
+OCI_COMPARTMENT_ID="ocid1.compartment.oc1..xxx"
+EOF
+sudo chmod 644 /etc/portfolio/deploy.env
+sudo chown root:root /etc/portfolio/deploy.env
+
+# Create Python venv with OCI SDK for deploy.py
+sudo python3 -m venv /opt/portfolio-venv
+sudo /opt/portfolio-venv/bin/pip install oci
+
+# Clone/update the repository
+sudo mkdir -p /opt/portfolio-manager-v2
+sudo chown ubuntu:ubuntu /opt/portfolio-manager-v2
+git clone https://github.com/e-motta/portfolio-manager-v2.git /opt/portfolio-manager-v2
+
+# Make the deploy script executable
+chmod +x /opt/portfolio-manager-v2/scripts/remote-deploy.sh
+```
+
+### A.4 Verify SSH Host Key Fingerprint
+
+Get the VM's SSH host key fingerprint and verify it:
+
+```bash
+# On the VM
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+Then use `ssh-keyscan` to get the known_hosts entry:
+
+```bash
+# On your local machine (or GitHub Actions will use this)
+ssh-keyscan -t ed25519 <VM-IP-or-hostname> 2>/dev/null
+
+# Verify the fingerprint matches what the VM shows
+ssh-keyscan <VM-IP-or-hostname> 2>/dev/null | ssh-keygen -lf -
+```
+
+### A.5 Configure GitHub Secrets and Environment
+
+1. Go to **Repository → Settings → Environments → New environment**
+2. Name: `production`
+3. Enable **Required reviewers** if you want manual approval (optional)
+4. Under **Deployment branches and tags**, select **Selected branches and tags**
+5. Add rule: **Branch name pattern**: `main`
+
+Then add these secrets under **Repository → Settings → Secrets and variables → Actions → Repository secrets**:
+
+| Secret Name | Value | Description |
+|-------------|-------|-------------|
+| `DEPLOY_SSH_KEY` | Private key contents | The ed25519 private key (including `-----BEGIN/END-----`) |
+| `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan` output | The host key line from ssh-keyscan |
+| `DEPLOY_HOST` | VM IP or hostname | e.g., `finance.eduardomotta.dev` or `129.146.x.y` |
+| `DEPLOY_USER` | SSH username | Usually `ubuntu` or `opc` |
+
+**Important**: All four secrets must be scoped to the `production` environment or be repository-level secrets.
+
+### A.6 Test the Connection
+
+Before the first automated deploy, test SSH access:
+
+```bash
+# Locally, test with the same command GitHub Actions will use
+ssh -i ~/.ssh/deploy_ed25519 \
+    -o StrictHostKeyChecking=yes \
+    ubuntu@<VM-IP> \
+    "sha-0000000"
+```
+
+This should fail with "Invalid tag format" (since that tag doesn't exist), but it proves SSH and the forced command work.
+
+### A.7 Manual Rollback
+
+If an automated deployment causes issues and you need to roll back manually:
+
+```bash
+# SSH to the VM
+ssh ubuntu@<VM-IP>
+
+# Find a working previous version
+git -C /opt/portfolio-manager-v2 log --oneline -10
+
+# Deploy that version
+cd /opt/portfolio-manager-v2
+./scripts/deploy.py up -d --tag sha-abc1234
+```
+
+Or use the remote deploy script directly with a known-good tag:
+
+```bash
+SSH_ORIGINAL_COMMAND="sha-abc1234" /opt/portfolio-manager-v2/scripts/remote-deploy.sh
+```
+
+**Important**: Database migrations are NOT automatically rolled back. If a migration caused the issue, you must manually apply a reverse migration or restore from backup.
+
+### A.8 Viewing Deploy History
+
+The deploy script logs all deployments to `/opt/portfolio-manager-v2/deploy-history.log`:
+
+```bash
+# View recent deploys
+tail -50 /opt/portfolio-manager-v2/deploy-history.log
+
+# Watch deploys in real-time
+tail -f /opt/portfolio-manager-v2/deploy-history.log
+```
