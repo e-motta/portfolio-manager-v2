@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AuthError, getJson } from "../api/client";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { isActivePath, NAV_SECTIONS, type NavItem } from "../lib/nav";
 
 type Session = {
@@ -12,10 +13,23 @@ type Session = {
   display_timezone_label: string;
 };
 
+const MOBILE_BREAKPOINT = "(max-width: 820px)";
+
 export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useFocusTrap(menuOpen);
+
+  useEffect(() => {
+    const mql = window.matchMedia(MOBILE_BREAKPOINT);
+    setIsMobile(mql.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
 
   const session = useQuery({
     queryKey: ["session"],
@@ -36,7 +50,10 @@ export function AppShell() {
   useEffect(() => {
     if (!menuOpen) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -64,9 +81,17 @@ export function AppShell() {
     <div className="app-shell">
       <div
         className={`drawer-backdrop${menuOpen ? " is-open" : ""}`}
-        onClick={() => setMenuOpen(false)}
+        onClick={() => {
+          setMenuOpen(false);
+          menuButtonRef.current?.focus();
+        }}
       />
-      <aside className={`sidebar${menuOpen ? " is-open" : ""}`} id="app-sidebar">
+      <aside
+        ref={sidebarRef}
+        className={`sidebar${menuOpen ? " is-open" : ""}`}
+        id="app-sidebar"
+        aria-hidden={isMobile && !menuOpen ? "true" : undefined}
+      >
         <Link to="/" className="brand" onClick={() => setMenuOpen(false)}>
           <strong>Portfolio</strong>
           <span>Manager</span>
@@ -115,6 +140,7 @@ export function AppShell() {
       <div className="app-main">
         <header className="topbar">
           <button
+            ref={menuButtonRef}
             type="button"
             className="menu-btn"
             aria-expanded={menuOpen}

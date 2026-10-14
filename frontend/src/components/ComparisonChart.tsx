@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { asNumber, formatPctPoints } from "../lib/format";
 
 type Row = {
@@ -8,6 +9,7 @@ type Row = {
 };
 
 export function ComparisonChart({ rows }: { rows: Row[] }) {
+  const chartId = useId();
   const items = rows.map((row) => {
     const current = asNumber(row.current) * 100;
     const target = asNumber(row.target) * 100;
@@ -18,14 +20,25 @@ export function ComparisonChart({ rows }: { rows: Row[] }) {
   const maxDrift = Math.max(1, ...items.map((row) => Math.abs(row.drift)));
 
   return (
-    <div className="compare compare--drift">
-      {items.map((row) => {
+    <div
+      className="compare compare--drift"
+      role="group"
+      aria-label="Portfolio allocation drift from targets"
+    >
+      {items.map((row, index) => {
         const barWidth = Math.abs(row.drift) / maxDrift * 50;
         const isOver = row.drift > 0;
+        const driftLabel = isOver ? "overweight" : row.drift < 0 ? "underweight" : "on target";
+        const rowId = `${chartId}-row-${index}`;
         return (
-          <div key={row.label} className="compare-row">
-            <div className="compare-label">{row.label}</div>
-            <div className="compare-drift-track">
+          <div
+            key={row.label}
+            className="compare-row"
+            role="group"
+            aria-label={`${row.label}: ${formatPctPoints(row.drift / 100)} ${driftLabel}`}
+          >
+            <div className="compare-label" id={rowId}>{row.label}</div>
+            <div className="compare-drift-track" aria-hidden="true">
               <div className="compare-drift-center" />
               {row.drift !== 0 && (
                 <div
@@ -46,7 +59,7 @@ export function ComparisonChart({ rows }: { rows: Row[] }) {
           </div>
         );
       })}
-      <div className="compare-legend">
+      <div className="compare-legend" aria-hidden="true">
         <span><i className="swatch over" /> Overweight</span>
         <span><i className="swatch under" /> Underweight</span>
       </div>
