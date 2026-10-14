@@ -10,6 +10,7 @@ from starlette.responses import Response
 
 from app.core.config import settings
 from app.core.db import init_db, run_migrations
+from app.core.ratelimit import setup_rate_limiting
 from app.web.middleware import RequireAuthMiddleware
 from app.web.router import router as web_router
 
@@ -56,6 +57,8 @@ app.add_middleware(
     same_site="lax",
     https_only=settings.is_production,
 )
+
+setup_rate_limiting(app)
 
 app.include_router(web_router)
 

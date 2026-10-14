@@ -3,12 +3,13 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 
 from sqlmodel import select
 
 from app.core.db import SessionDep
+
 from app.models.dividend import Dividend
 from app.models.security import SecurityLot
 from app.models.symbol_target import SymbolTarget
@@ -137,13 +138,14 @@ def target_weight_total_partial(session: SessionDep):
 
 
 @router.post("/ptax/refresh")
-def refresh_ptax_rates(session: SessionDep) -> RedirectResponse:
+def refresh_ptax_rates(request: Request, session: SessionDep) -> RedirectResponse:
     refresh_provisional_ptax_rates(session)
     return RedirectResponse(url="/portfolio/holdings", status_code=303)
 
 
 @router.post("/import/preview")
 def preview_statement_import(
+    request: Request,
     session: SessionDep,
     statement: UploadFile,
 ):
@@ -192,6 +194,7 @@ def preview_statement_import(
 
 @router.post("/import/confirm")
 def confirm_statement_import(
+    request: Request,
     session: SessionDep,
     import_token: Annotated[str, Form()],
     lots: Annotated[list[str] | None, Form()] = None,
@@ -244,6 +247,7 @@ def confirm_statement_import(
 
 @router.post("/dividends/import/preview")
 def preview_dividend_import(
+    request: Request,
     session: SessionDep,
     statement: UploadFile,
 ):
@@ -291,6 +295,7 @@ def preview_dividend_import(
 
 @router.post("/dividends/import/confirm")
 def confirm_dividend_import(
+    request: Request,
     session: SessionDep,
     import_token: Annotated[str, Form()],
     dividends: Annotated[list[str] | None, Form()] = None,

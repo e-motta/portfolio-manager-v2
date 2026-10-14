@@ -3,10 +3,11 @@ from decimal import Decimal, InvalidOperation
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Form, HTTPException, status
+from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
 from app.core.db import SessionDep
+
 from app.models.asset_type import AssetType
 from app.services.allocation import has_type_target, validate_type_targets
 from app.web.helpers import (
@@ -84,6 +85,7 @@ def list_asset_types(session: SessionDep):
 
 @router.post("")
 def create_asset_type(
+    request: Request,
     session: SessionDep,
     name: Annotated[str, Form()],
     target_pct: Annotated[str, Form()] = "",
@@ -115,6 +117,7 @@ def create_asset_type(
 
 @router.post("/{asset_type_id}")
 def update_asset_type(
+    request: Request,
     session: SessionDep,
     asset_type_id: UUID,
     name: str = Form(default=""),
@@ -152,6 +155,7 @@ def update_asset_type(
 
 @router.delete("/{asset_type_id}")
 def delete_asset_type(
+    request: Request,
     session: SessionDep,
     asset_type_id: UUID,
 ):

@@ -1,10 +1,11 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Form, HTTPException, status
+from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
 from app.core.db import SessionDep
+
 from app.services.snapshots import (
     build_snapshot_dashboard,
     capture_portfolio_snapshot,
@@ -34,6 +35,7 @@ def snapshots_dashboard(session: SessionDep):
 
 @router.post("")
 def create_snapshot(
+    request: Request,
     session: SessionDep,
     snapshot_date: str = Form(default=""),
 ) -> RedirectResponse:
@@ -66,6 +68,7 @@ def snapshot_detail(
 
 @router.delete("/{snapshot_id}")
 def delete_snapshot(
+    request: Request,
     session: SessionDep,
     snapshot_id: UUID,
 ):
