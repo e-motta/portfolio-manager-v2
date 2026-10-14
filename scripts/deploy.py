@@ -6,11 +6,17 @@ and passes them to docker-compose via environment variables. Secrets are never
 written to disk - they exist only in the process environment.
 
 Usage:
-    ./scripts/deploy.py up -d --build
+    ./scripts/deploy.py up -d                 # Pull and deploy latest image
+    ./scripts/deploy.py up -d --tag sha-abc   # Deploy specific image tag
+    ./scripts/deploy.py up -d --build         # Build locally instead of pulling
     ./scripts/deploy.py down
     ./scripts/deploy.py logs -f app
 
-Any arguments are passed directly to 'docker compose'.
+Options:
+    --tag TAG    Image tag to deploy (default: latest). Also sets APP_IMAGE_TAG.
+    --build      Build locally instead of pulling from GHCR.
+
+Any other arguments are passed directly to 'docker compose'.
 
 Required environment variables:
     OCI_VAULT_OCID: OCID of the OCI Vault
@@ -20,6 +26,7 @@ The script requires the OCI Python SDK and instance principal authentication
 configured via dynamic group and IAM policy.
 """
 
+import argparse
 import base64
 import os
 import subprocess
@@ -39,9 +46,17 @@ SECRET_MAP = {
 
 REQUIRED_SECRETS = {"SECRET_KEY", "POSTGRES_PASSWORD", "DATABASE_URL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"}
 
+GHCR_TOKEN_SECRET = "portfolio-ghcr-token"
+GHCR_REGISTRY = "ghcr.io"
+GHCR_USERNAME = "e-motta"
 
-def fetch_vault_secrets() -> dict[str, str]:
-    """Fetch secrets from OCI Vault using instance principal."""
+
+def fetch_vault_secrets(include_ghcr: bool = False) -> tuple[dict[str, str], str | None]:
+    """Fetch secrets from OCI Vault using instance principal.
+    
+    Returns:
+        Tuple of (secrets dict, ghcr_token or None)
+    """
     vault_ocid = os.environ.get("OCI_VAULT_OCID")
     compartment_id = os.environ.get("OCI_COMPARTMENT_ID")
 
@@ -70,8 +85,14 @@ def fetch_vault_secrets() -> dict[str, str]:
 
     print("Fetching secrets from OCI Vault...", file=sys.stderr)
     secrets = {}
+    ghcr_token = None
 
-    for secret_name, env_var in SECRET_MAP.items():
+    # Build list of secrets to fetch
+    secrets_to_fetch = dict(SECRET_MAP)
+    if include_ghcr:
+        secrets_to_fetch[GHCR_TOKEN_SECRET] = "_GHCR_TOKEN"
+
+    for secret_name, env_var in secrets_to_fetch.items():
         try:
             secrets_list = vault_client.list_secrets(
                 compartment_id=compartment_id,
@@ -81,7 +102,10 @@ def fetch_vault_secrets() -> dict[str, str]:
             ).data
 
             if not secrets_list:
-                print(f"  {env_var}: not found", file=sys.stderr)
+                if secret_name == GHCR_TOKEN_SECRET:
+                    print("  GHCR token: not found (will skip registry login)", file=sys.stderr)
+                else:
+                    print(f"  {env_var}: not found", file=sys.stderr)
                 continue
 
             secret_id = secrets_list[0].id
@@ -93,10 +117,17 @@ def fetch_vault_secrets() -> dict[str, str]:
             else:
                 value = content.content
 
-            secrets[env_var] = value
-            print(f"  {env_var}: loaded", file=sys.stderr)
+            if secret_name == GHCR_TOKEN_SECRET:
+                ghcr_token = value
+                print("  GHCR token: loaded", file=sys.stderr)
+            else:
+                secrets[env_var] = value
+                print(f"  {env_var}: loaded", file=sys.stderr)
         except Exception as e:
-            print(f"  {env_var}: failed ({e})", file=sys.stderr)
+            if secret_name == GHCR_TOKEN_SECRET:
+                print(f"  GHCR token: failed ({e})", file=sys.stderr)
+            else:
+                print(f"  {env_var}: failed ({e})", file=sys.stderr)
 
     # Check required secrets
     missing = REQUIRED_SECRETS - set(secrets.keys())
@@ -104,7 +135,48 @@ def fetch_vault_secrets() -> dict[str, str]:
         print(f"ERROR: Missing required secrets: {', '.join(sorted(missing))}", file=sys.stderr)
         sys.exit(1)
 
-    return secrets
+    return secrets, ghcr_token
+
+
+def docker_login_ghcr(token: str) -> bool:
+    """Log in to GHCR using the provided token via stdin.
+    
+    Returns True if login succeeded.
+    """
+    print(f"Logging in to {GHCR_REGISTRY}...", file=sys.stderr)
+    result = subprocess.run(
+        ["docker", "login", GHCR_REGISTRY, "-u", GHCR_USERNAME, "--password-stdin"],
+        input=token.encode(),
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        print(f"WARNING: GHCR login failed: {result.stderr.decode()}", file=sys.stderr)
+        return False
+    print(f"  Logged in to {GHCR_REGISTRY}", file=sys.stderr)
+    return True
+
+
+def docker_logout_ghcr() -> None:
+    """Log out from GHCR to remove credentials from ~/.docker/config.json."""
+    print(f"Logging out from {GHCR_REGISTRY}...", file=sys.stderr)
+    subprocess.run(
+        ["docker", "logout", GHCR_REGISTRY],
+        capture_output=True,
+    )
+
+
+def parse_args():
+    """Parse command-line arguments, extracting deploy.py-specific options."""
+    parser = argparse.ArgumentParser(
+        description="Deploy Portfolio Manager with OCI Vault secrets",
+        add_help=False,
+    )
+    parser.add_argument("--tag", default="latest", help="Image tag to deploy (default: latest)")
+    parser.add_argument("--build", action="store_true", help="Build locally instead of pulling")
+    
+    # Parse known args, pass the rest to docker compose
+    args, docker_args = parser.parse_known_args()
+    return args, docker_args
 
 
 def main():
@@ -112,23 +184,64 @@ def main():
         print(__doc__)
         sys.exit(0)
 
+    args, docker_args = parse_args()
+    
+    # Determine if we need to pull (need GHCR login)
+    needs_pull = not args.build and any(
+        cmd in docker_args for cmd in ["up", "pull", "create"]
+    )
+
     # Fetch secrets from Vault
-    secrets = fetch_vault_secrets()
+    secrets, ghcr_token = fetch_vault_secrets(include_ghcr=needs_pull)
 
     # Build environment with secrets
     env = os.environ.copy()
     env.update(secrets)
+    env["APP_IMAGE_TAG"] = args.tag
 
-    # Run docker compose with the secrets in environment
-    compose_files = [
-        "-f", "docker-compose.yml",
-        "-f", "docker-compose.production.yml",
-    ]
+    # Log in to GHCR if we have a token and need to pull
+    logged_in = False
+    if needs_pull and ghcr_token:
+        logged_in = docker_login_ghcr(ghcr_token)
 
-    cmd = ["docker", "compose"] + compose_files + sys.argv[1:]
-    print(f"\nRunning: {' '.join(cmd)}", file=sys.stderr)
+    try:
+        # Run docker compose with the secrets in environment
+        compose_files = [
+            "-f", "docker-compose.yml",
+            "-f", "docker-compose.production.yml",
+        ]
 
-    result = subprocess.run(cmd, env=env)
+        # If pulling, do pull first then up without --build
+        if needs_pull and "up" in docker_args:
+            pull_cmd = ["docker", "compose"] + compose_files + ["pull", "app"]
+            print(f"\nPulling image (tag: {args.tag})...", file=sys.stderr)
+            print(f"Running: {' '.join(pull_cmd)}", file=sys.stderr)
+            pull_result = subprocess.run(pull_cmd, env=env)
+            if pull_result.returncode != 0:
+                print("ERROR: Failed to pull image", file=sys.stderr)
+                sys.exit(pull_result.returncode)
+
+        # Build the docker compose command
+        cmd = ["docker", "compose"] + compose_files + docker_args
+        
+        # Add --build if requested
+        if args.build and "up" in docker_args and "--build" not in docker_args:
+            cmd.append("--build")
+        
+        print(f"\nRunning: {' '.join(cmd)}", file=sys.stderr)
+        result = subprocess.run(cmd, env=env)
+        
+    finally:
+        # Always log out if we logged in
+        # Note: This removes the credential from ~/.docker/config.json
+        # Consequence: subsequent `docker pull` without deploy.py will fail
+        # for private packages. This is acceptable because:
+        # 1. deploy.py is the intended deployment method
+        # 2. Leaving credentials on disk is a security risk
+        # 3. The package can be made public if passwordless pulls are needed
+        if logged_in:
+            docker_logout_ghcr()
+
     sys.exit(result.returncode)
 
 
