@@ -292,7 +292,7 @@ class TestRateLimitIntegration:
 
     def test_auth_route_rate_limit_triggers_429_on_11th_request(self):
         """Test that real rate limiting works: 10 allowed, 11th returns 429."""
-        from app.core.ratelimit import storage, AUTH_LIMIT
+        from app.core.ratelimit import storage
 
         class ClientIPOverrideApp:
             """ASGI wrapper that overrides the client IP in scope."""
