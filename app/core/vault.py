@@ -77,12 +77,17 @@ def _fetch_secret_value(
         return None
 
 
+REQUIRED_SECRETS = {"SECRET_KEY", "DATABASE_URL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"}
+
+
 @lru_cache(maxsize=1)
 def load_vault_secrets() -> dict[str, str]:
     """Load all configured secrets from OCI Vault into memory.
 
     Returns a dict mapping environment variable names to secret values.
     Only returns secrets that were successfully fetched.
+
+    Raises VaultError if authentication fails or required secrets cannot be loaded.
 
     This function is cached - secrets are loaded once at startup.
     """
@@ -104,12 +109,8 @@ def load_vault_secrets() -> dict[str, str]:
         signer = _get_instance_principal_signer()
         secrets_client = SecretsClient(config={}, signer=signer)
         vault_client = VaultsClient(config={}, signer=signer)
-    except ImportError:
-        logger.warning("OCI SDK not available, skipping Vault integration")
-        return {}
-    except VaultError as e:
-        logger.error("OCI Vault authentication failed: %s", e)
-        return {}
+    except ImportError as e:
+        raise VaultError(f"OCI SDK not available: {e}") from e
 
     secrets: dict[str, str] = {}
     for secret_name, env_var in SECRET_NAME_TO_ENV_VAR.items():
@@ -123,6 +124,11 @@ def load_vault_secrets() -> dict[str, str]:
         if value:
             secrets[env_var] = value
             logger.info("  Loaded: %s", env_var)
+
+    # Check for missing required secrets
+    missing = REQUIRED_SECRETS - set(secrets.keys())
+    if missing:
+        raise VaultError(f"Required secrets not found in Vault: {', '.join(sorted(missing))}")
 
     logger.info("Loaded %d secrets from OCI Vault", len(secrets))
     return secrets
