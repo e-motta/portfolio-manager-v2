@@ -234,3 +234,58 @@ def test_export_includes_open_finance_metadata(session, exchange_type):
     assert payload["finance_expenses"][0]["external_id"] == "tx-abc"
     assert payload["investments"][0]["source"] == "open_finance"
     assert payload["investments"][0]["external_id"] == "inv-abc"
+
+
+def test_backup_restore_roundtrip_with_finance_investments(session):
+    """Backup and restore preserves finance investment entries with source field."""
+    user = _test_user(session)
+    session.add(
+        FinanceInvestmentEntry(
+            user_id=user.id,
+            year=2026,
+            month=5,
+            broker="interactive_brokers",
+            amount=Decimal("5000.00"),
+            source="manual",
+        )
+    )
+    session.add(
+        FinanceInvestmentEntry(
+            user_id=user.id,
+            year=2026,
+            month=6,
+            broker="nubank",
+            amount=Decimal("2500.00"),
+            source="open_finance",
+        )
+    )
+    session.commit()
+
+    raw = export_portfolio_json(session)
+
+    session.add(
+        FinanceInvestmentEntry(
+            user_id=user.id,
+            year=2026,
+            month=7,
+            broker="xp",
+            amount=Decimal("1000.00"),
+        )
+    )
+    session.commit()
+
+    restore_portfolio_json(session, raw)
+
+    entries = session.exec(
+        select(FinanceInvestmentEntry)
+        .where(FinanceInvestmentEntry.user_id == user.id)
+        .order_by(FinanceInvestmentEntry.month)
+    ).all()
+
+    assert len(entries) == 2
+    assert entries[0].broker == "interactive_brokers"
+    assert entries[0].amount == Decimal("5000.00")
+    assert entries[0].source == "manual"
+    assert entries[1].broker == "nubank"
+    assert entries[1].amount == Decimal("2500.00")
+    assert entries[1].source == "open_finance"

@@ -1,5 +1,8 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.auth import CurrentUserDep
 from app.core.config import settings
@@ -17,6 +20,8 @@ from app.services.google_drive import (
 from app.services.google_oauth import DRIVE_SCOPES, oauth, refresh_access_token
 from app.services.google_drive_auth import OAUTH_PURPOSE_DRIVE
 from app.web.jsonutil import json_ok
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/backups", tags=["backups"])
 
@@ -132,6 +137,13 @@ def restore_backup(
         restore_portfolio_json(session, raw)
     except (ValueError, KeyError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        session.rollback()
+        logger.exception("Database error during backup restore: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail="Database error during restore. The backup may be incompatible.",
+        ) from exc
 
     return RedirectResponse(url="/backups?restored=1", status_code=303)
 
