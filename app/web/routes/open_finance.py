@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 
 from app.core.auth import CurrentUserDep
 from app.core.db import SessionDep
+from app.core.ratelimit import api_rate_limit
 from app.services.cumbuca_oauth import (
     disconnect_cumbuca,
     user_has_cumbuca,
@@ -118,7 +119,9 @@ def open_finance_tools_partial(
 
 
 @router.post("/disconnect")
+@api_rate_limit
 def disconnect_open_finance(
+    request: Request,
     session: SessionDep,
     user: CurrentUserDep,
 ) -> RedirectResponse:
@@ -212,6 +215,7 @@ def _preview_expense_import(
 
 
 @router.post("/sync/credit-card/preview")
+@api_rate_limit
 def preview_credit_card_sync(
     request: Request,
     session: SessionDep,
@@ -400,6 +404,7 @@ async def _confirm_expense_import(
 
 
 @router.post("/sync/credit-card/confirm")
+@api_rate_limit
 async def confirm_credit_card_sync(
     request: Request,
     session: SessionDep,
@@ -409,6 +414,7 @@ async def confirm_credit_card_sync(
 
 
 @router.post("/sync/account-debits/preview")
+@api_rate_limit
 def preview_account_debits_sync(
     request: Request,
     session: SessionDep,
@@ -440,6 +446,7 @@ def preview_account_debits_sync(
 
 
 @router.post("/sync/account-debits/confirm")
+@api_rate_limit
 async def confirm_account_debits_sync(
     request: Request,
     session: SessionDep,
@@ -449,6 +456,7 @@ async def confirm_account_debits_sync(
 
 
 @router.post("/sync/account-credits/preview")
+@api_rate_limit
 def preview_account_credits_sync(
     request: Request,
     session: SessionDep,
@@ -516,6 +524,7 @@ def preview_account_credits_sync(
 
 
 @router.post("/sync/account-deposits/preview")
+@api_rate_limit
 def preview_account_deposits_sync(
     request: Request,
     session: SessionDep,
@@ -527,6 +536,7 @@ def preview_account_deposits_sync(
 
 
 @router.post("/sync/account-credits/confirm")
+@api_rate_limit
 async def confirm_account_credits_sync(
     request: Request,
     session: SessionDep,
@@ -567,6 +577,7 @@ async def confirm_account_credits_sync(
 
 
 @router.post("/sync/account-deposits/confirm")
+@api_rate_limit
 async def confirm_account_deposits_sync(
     request: Request,
     session: SessionDep,
@@ -576,7 +587,9 @@ async def confirm_account_deposits_sync(
 
 
 @router.post("/sync/investments/preview")
+@api_rate_limit
 def preview_investment_sync(
+    request: Request,
     session: SessionDep,
     user: CurrentUserDep,
 ):
@@ -617,7 +630,9 @@ def preview_investment_sync(
 
 
 @router.post("/sync/investments/confirm")
+@api_rate_limit
 def confirm_investment_sync(
+    request: Request,
     session: SessionDep,
     user: CurrentUserDep,
     import_token: str = Form(...),
