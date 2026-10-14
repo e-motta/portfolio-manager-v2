@@ -1,33 +1,70 @@
 type ModalEntry = {
   id: string;
-  onClose: () => void;
+  onCloseRef: { current: () => void };
 };
 
 const stack: ModalEntry[] = [];
+const subscribers = new Set<() => void>();
+let escapeHandler: ((event: KeyboardEvent) => void) | null = null;
 
-export function pushModal(id: string, onClose: () => void): void {
-  stack.push({ id, onClose });
-  
+function notifySubscribers(): void {
+  subscribers.forEach((callback) => callback());
+}
+
+function attachEscapeListener(): void {
+  if (escapeHandler) return;
+
+  escapeHandler = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && stack.length > 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      const topModal = stack[stack.length - 1];
+      topModal.onCloseRef.current();
+    }
+  };
+
+  window.addEventListener("keydown", escapeHandler, true);
+}
+
+function detachEscapeListener(): void {
+  if (escapeHandler) {
+    window.removeEventListener("keydown", escapeHandler, true);
+    escapeHandler = null;
+  }
+}
+
+export function pushModal(id: string, onCloseRef: { current: () => void }): void {
+  const existing = stack.findIndex((entry) => entry.id === id);
+  if (existing !== -1) return;
+
+  stack.push({ id, onCloseRef });
+
   if (stack.length === 1) {
     const root = document.getElementById("root");
     if (root) {
       root.setAttribute("inert", "");
     }
+    attachEscapeListener();
   }
+
+  notifySubscribers();
 }
 
 export function popModal(id: string): void {
   const index = stack.findIndex((entry) => entry.id === id);
-  if (index !== -1) {
-    stack.splice(index, 1);
-  }
-  
+  if (index === -1) return;
+
+  stack.splice(index, 1);
+
   if (stack.length === 0) {
     const root = document.getElementById("root");
     if (root) {
       root.removeAttribute("inert");
     }
+    detachEscapeListener();
   }
+
+  notifySubscribers();
 }
 
 export function isTopModal(id: string): boolean {
@@ -38,33 +75,25 @@ export function getStackSize(): number {
   return stack.length;
 }
 
-export function handleEscape(): boolean {
-  if (stack.length === 0) return false;
-  
-  const topModal = stack[stack.length - 1];
-  topModal.onClose();
-  return true;
+export function subscribe(callback: () => void): () => void {
+  subscribers.add(callback);
+  return () => {
+    subscribers.delete(callback);
+  };
 }
 
-let escapeListenerAttached = false;
+export function getSnapshot(): number {
+  return stack.length;
+}
 
-export function attachEscapeListener(): void {
-  if (escapeListenerAttached) return;
-  
-  const handler = (event: KeyboardEvent) => {
-    if (event.key === "Escape" && stack.length > 0) {
-      event.preventDefault();
-      event.stopPropagation();
-      handleEscape();
-    }
-  };
-  
-  window.addEventListener("keydown", handler, true);
-  escapeListenerAttached = true;
+export function isEscapeListenerAttached(): boolean {
+  return escapeHandler !== null;
 }
 
 export function _resetForTesting(): void {
   stack.length = 0;
+  subscribers.clear();
+  detachEscapeListener();
   const root = document.getElementById("root");
   if (root) {
     root.removeAttribute("inert");

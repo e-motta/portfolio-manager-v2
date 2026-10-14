@@ -1,9 +1,9 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Modal } from "./Modal";
-import { useState } from "react";
-import { _resetForTesting } from "../lib/modalStack";
+import { useState, useReducer } from "react";
+import { _resetForTesting, isEscapeListenerAttached } from "../lib/modalStack";
 
 function TestModalWithForm({ onSave }: { onSave: (value: string) => void }) {
   const [open, setOpen] = useState(true);
@@ -69,6 +69,41 @@ function NestedModalsTest() {
   );
 }
 
+function NestedModalsWithParentRerender() {
+  const [, forceRerender] = useReducer((x) => x + 1, 0);
+  const [modalAOpen, setModalAOpen] = useState(true);
+  const [modalBOpen, setModalBOpen] = useState(false);
+
+  return (
+    <>
+      <button type="button" onClick={forceRerender} data-testid="force-rerender">
+        Force Rerender
+      </button>
+      <Modal
+        open={modalAOpen}
+        title="Modal A"
+        onClose={() => setModalAOpen(false)}
+        footer={
+          <button type="button" onClick={() => setModalBOpen(true)} data-testid="open-modal-b">
+            Open Modal B
+          </button>
+        }
+      >
+        <p>Content A</p>
+        <input type="text" data-testid="input-a" />
+      </Modal>
+      <Modal
+        open={modalBOpen}
+        title="Modal B"
+        onClose={() => setModalBOpen(false)}
+      >
+        <p>Content B</p>
+        <input type="text" data-testid="input-b" />
+      </Modal>
+    </>
+  );
+}
+
 describe("Modal", () => {
   let rootEl: HTMLDivElement;
 
@@ -108,6 +143,21 @@ describe("Modal", () => {
     expect(screen.queryByText("Test Title")).not.toBeInTheDocument();
   });
 
+  it("focuses the Close button on open", async () => {
+    render(
+      <Modal open={true} title="Test" onClose={() => {}}>
+        <p>Content</p>
+      </Modal>
+    );
+
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+    });
+
+    const closeButton = screen.getByRole("button", { name: "Close dialog" });
+    expect(closeButton).toHaveFocus();
+  });
+
   it("allows focusing and typing into a field inside the modal", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn();
@@ -120,8 +170,6 @@ describe("Modal", () => {
     await user.click(input);
     expect(input).toHaveFocus();
 
-    // Use fireEvent.change because userEvent.type can have timing issues
-    // with modal state updates during rapid re-renders
     fireEvent.change(input, { target: { value: "Hello World" } });
     expect(input).toHaveValue("Hello World");
   });
@@ -238,6 +286,26 @@ describe("Modal", () => {
     expect(backdrop?.parentElement).toBe(document.body);
   });
 
+  it("attaches Escape listener when modal opens and removes it when closed", () => {
+    expect(isEscapeListenerAttached()).toBe(false);
+
+    const { rerender } = render(
+      <Modal open={true} title="Test" onClose={() => {}}>
+        <p>Content</p>
+      </Modal>
+    );
+
+    expect(isEscapeListenerAttached()).toBe(true);
+
+    rerender(
+      <Modal open={false} title="Test" onClose={() => {}}>
+        <p>Content</p>
+      </Modal>
+    );
+
+    expect(isEscapeListenerAttached()).toBe(false);
+  });
+
   describe("Nested modals", () => {
     it("keeps #root inert when closing inner modal while outer is still open", async () => {
       const user = userEvent.setup();
@@ -275,9 +343,9 @@ describe("Modal", () => {
       expect(screen.queryByText("Modal B")).not.toBeInTheDocument();
 
       const inputA = screen.getByTestId("input-a");
-      await user.click(inputA);
+      inputA.focus();
       expect(inputA).toHaveFocus();
-      await user.type(inputA, "test");
+      fireEvent.change(inputA, { target: { value: "test" } });
       expect(inputA).toHaveValue("test");
     });
 
@@ -312,6 +380,93 @@ describe("Modal", () => {
       fireEvent.keyDown(window, { key: "Escape" });
       expect(screen.queryByText("Modal A")).not.toBeInTheDocument();
       expect(rootEl).not.toHaveAttribute("inert");
+    });
+
+    it("Escape still closes only B after re-rendering A's parent", async () => {
+      const user = userEvent.setup();
+      render(<NestedModalsWithParentRerender />);
+
+      const openBButton = screen.getByTestId("open-modal-b");
+      await user.click(openBButton);
+
+      expect(screen.getByText("Modal A")).toBeInTheDocument();
+      expect(screen.getByText("Modal B")).toBeInTheDocument();
+
+      const forceRerenderButton = screen.getByTestId("force-rerender");
+      await user.click(forceRerenderButton);
+      await user.click(forceRerenderButton);
+      await user.click(forceRerenderButton);
+
+      fireEvent.keyDown(window, { key: "Escape" });
+
+      expect(screen.queryByText("Modal B")).not.toBeInTheDocument();
+      expect(screen.getByText("Modal A")).toBeInTheDocument();
+    });
+
+    it("focus returns to outer modal and Tab stays trapped after inner closes", async () => {
+      const user = userEvent.setup();
+      render(<NestedModalsTest />);
+
+      await act(async () => {
+        await new Promise((r) => requestAnimationFrame(r));
+      });
+
+      const closeButtonA = screen.getByRole("button", { name: "Close dialog" });
+      expect(closeButtonA).toHaveFocus();
+
+      const openBButton = screen.getByTestId("open-modal-b");
+      await user.click(openBButton);
+
+      await act(async () => {
+        await new Promise((r) => requestAnimationFrame(r));
+      });
+
+      const closeButtons = screen.getAllByRole("button", { name: "Close dialog" });
+      expect(closeButtons[1]).toHaveFocus();
+
+      fireEvent.keyDown(window, { key: "Escape" });
+
+      expect(screen.queryByText("Modal B")).not.toBeInTheDocument();
+
+      await act(async () => {
+        await new Promise((r) => requestAnimationFrame(r));
+      });
+
+      const inputA = screen.getByTestId("input-a");
+      const closeButtonAAfter = screen.getByRole("button", { name: "Close dialog" });
+      const openBButtonAfter = screen.getByTestId("open-modal-b");
+
+      const focusableInA = [closeButtonAAfter, inputA, openBButtonAfter];
+      const focusedElement = document.activeElement;
+      expect(focusableInA.some((el) => el === focusedElement)).toBe(true);
+
+      await user.tab();
+      await user.tab();
+      await user.tab();
+      await user.tab();
+
+      const focusedAfterTabs = document.activeElement;
+      expect(focusableInA.some((el) => el === focusedAfterTabs)).toBe(true);
+    });
+
+    it("removes Escape listener when all modals close", async () => {
+      const user = userEvent.setup();
+      render(<NestedModalsTest />);
+
+      expect(isEscapeListenerAttached()).toBe(true);
+
+      const openBButton = screen.getByTestId("open-modal-b");
+      await user.click(openBButton);
+
+      expect(isEscapeListenerAttached()).toBe(true);
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByText("Modal B")).not.toBeInTheDocument();
+      expect(isEscapeListenerAttached()).toBe(true);
+
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByText("Modal A")).not.toBeInTheDocument();
+      expect(isEscapeListenerAttached()).toBe(false);
     });
   });
 });

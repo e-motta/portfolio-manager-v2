@@ -1,7 +1,7 @@
-import { type ReactNode, useEffect, useId, useRef } from "react";
+import { type ReactNode, useEffect, useId, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { pushModal, popModal, isTopModal, attachEscapeListener } from "../lib/modalStack";
+import { pushModal, popModal, isTopModal, subscribe, getSnapshot } from "../lib/modalStack";
 
 type ModalProps = {
   title: string;
@@ -18,19 +18,24 @@ export function Modal({ title, open, onClose, children, footer, wide, initialFoc
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  onCloseRef.current = onClose;
+
+  useSyncExternalStore(subscribe, getSnapshot);
+
   const isTop = open && isTopModal(modalId);
   const focusTrapRef = useFocusTrap(open && isTop, initialFocusRef ?? closeButtonRef);
 
   useEffect(() => {
     if (!open) return;
 
-    attachEscapeListener();
-    pushModal(modalId, onClose);
+    pushModal(modalId, onCloseRef);
 
     return () => {
       popModal(modalId);
     };
-  }, [open, modalId, onClose]);
+  }, [open, modalId]);
 
   if (!open) return null;
 
