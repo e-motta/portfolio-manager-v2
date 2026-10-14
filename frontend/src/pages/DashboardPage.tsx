@@ -53,13 +53,20 @@ export function DashboardPage() {
           <dd>{formatBrl(data.allocation_sleeve_value)}</dd>
           <div className="meta">{total > 0 ? `${((sleeve / total) * 100).toFixed(1)}% of total` : "—"}</div>
         </div>
-        <div className="stat">
+        <div className="stat stat--desktop-only">
           <dt>Overweight</dt>
           <dd>{data.overweight > 0 ? `▲ ${data.overweight}` : data.overweight}</dd>
         </div>
-        <div className="stat">
+        <div className="stat stat--desktop-only">
           <dt>Underweight</dt>
           <dd>{data.underweight > 0 ? `▼ ${data.underweight}` : data.underweight}</dd>
+        </div>
+        <div className="stat stat--combined stat--phone-only">
+          <dt>Balance</dt>
+          <dd>
+            <span>{data.overweight} ▲</span>
+            <span style={{ marginLeft: "0.75rem" }}>{data.underweight} ▼</span>
+          </dd>
         </div>
       </dl>
       <section className="panel">

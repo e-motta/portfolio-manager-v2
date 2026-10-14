@@ -7,10 +7,11 @@ import { EmptyState } from "../components/EmptyState";
 import { FinanceTabs } from "../components/FinanceTabs";
 import { Modal } from "../components/Modal";
 import { MonthChart } from "../components/MonthChart";
+import { PageState } from "../components/PageState";
 import { PeriodBar } from "../components/PeriodBar";
 import { QueryFlash } from "../components/QueryFlash";
 import { RankedBars } from "../components/RankedBars";
-import { showToast } from "../components/inputs";
+import { MoneyInput, showToast } from "../components/inputs";
 import { asNumber, formatBrl, formatDate, parseDecimalInput } from "../lib/format";
 import { useFinancePeriod } from "../lib/finance";
 
@@ -64,7 +65,6 @@ type Payload = {
 
 export function FinanceExpensesPage() {
   const { query } = useFinancePeriod();
-  const navigate = useNavigate();
   const client = useQueryClient();
   const dataQuery = useQuery({
     queryKey: ["finance-expenses", query],
@@ -94,8 +94,63 @@ export function FinanceExpensesPage() {
     },
   });
 
-  if (dataQuery.isLoading) return <p className="empty">Loading expenses…</p>;
-  const data = dataQuery.data!;
+  return (
+    <PageState query={dataQuery} loadingText="Loading expenses…">
+      <FinanceExpensesContent
+        data={dataQuery.data!}
+        create={create}
+        editing={editing}
+        draft={draft}
+        setEditing={setEditing}
+        setDraft={setDraft}
+        pending={pending}
+        setPending={setPending}
+        linkFor={linkFor}
+        setLinkFor={setLinkFor}
+        targetId={targetId}
+        setTargetId={setTargetId}
+        open={open}
+        setOpen={setOpen}
+        client={client}
+      />
+    </PageState>
+  );
+}
+
+function FinanceExpensesContent({
+  data,
+  create,
+  editing,
+  draft,
+  setEditing,
+  setDraft,
+  pending,
+  setPending,
+  linkFor,
+  setLinkFor,
+  targetId,
+  setTargetId,
+  open,
+  setOpen,
+  client,
+}: {
+  data: Payload;
+  create: ReturnType<typeof useMutation<unknown, Error, Record<string, string>>>;
+  editing: string | null;
+  draft: ExpenseDraft;
+  setEditing: (id: string | null) => void;
+  setDraft: (value: ExpenseDraft) => void;
+  pending: Entry | null;
+  setPending: (entry: Entry | null) => void;
+  linkFor: Entry | null;
+  setLinkFor: (entry: Entry | null) => void;
+  targetId: string;
+  setTargetId: (id: string) => void;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  client: ReturnType<typeof useQueryClient>;
+}) {
+  const navigate = useNavigate();
   const grouped: Array<[string, string[]]> = data.expense_category_groups.length
     ? data.expense_category_groups
     : [["All", data.expense_categories]];
@@ -162,7 +217,11 @@ export function FinanceExpensesPage() {
           })}
         </Fragment>
       ))}
-      <Modal open={open} title="Add expense" onClose={() => setOpen(false)} footer={<button form="add-expense" className="btn" type="submit">Save</button>}>
+      <Modal open={open} title="Add expense" onClose={() => setOpen(false)} footer={
+        <button form="add-expense" className="btn" type="submit" disabled={create.isPending}>
+          {create.isPending ? "Saving…" : "Save"}
+        </button>
+      }>
         <ExpenseForm data={data} onSubmit={(values) => create.mutate(values)} />
       </Modal>
       <Modal open={Boolean(linkFor)} title="Unify reversal" onClose={() => setLinkFor(null)} footer={<button type="button" className="btn" onClick={async () => {
@@ -366,6 +425,13 @@ function ExpenseTable({
 function ExpenseForm({ data, onSubmit }: { data: Payload; onSubmit: (values: Record<string, string>) => void }) {
   const [category, setCategory] = useState(data.expense_categories[0] || "");
   const [vendor, setVendor] = useState("");
+  const [installmentsEnabled, setInstallmentsEnabled] = useState(false);
+  const [amount, setAmount] = useState("");
+
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  const [transactionDate, setTransactionDate] = useState(todayStr);
+  const derivedMonth = transactionDate ? new Date(transactionDate).getMonth() + 1 : data.form_default_month;
 
   async function onVendorBlur() {
     if (!vendor) return;
@@ -379,20 +445,32 @@ function ExpenseForm({ data, onSubmit }: { data: Payload; onSubmit: (values: Rec
       const form = new FormData(event.currentTarget);
       onSubmit({
         year: String(data.year),
-        month: String(form.get("month") || data.form_default_month),
+        month: String(derivedMonth),
         category,
         vendor: String(form.get("vendor") || ""),
         payment_account: String(form.get("payment_account") || ""),
-        amount: String(form.get("amount") || ""),
-        transaction_date: String(form.get("transaction_date") || ""),
-        installments: String(form.get("installments") || ""),
-        installments_enabled: form.get("installments_enabled") ? "1" : "",
+        amount: amount,
+        transaction_date: transactionDate,
+        installments: installmentsEnabled ? String(form.get("installments") || "") : "",
+        installments_enabled: installmentsEnabled ? "1" : "",
         subcategory: String(form.get("subcategory") || ""),
         description: String(form.get("description") || ""),
       });
     }}>
-      <label className="field">Month<select name="month" defaultValue={data.form_default_month}>{data.month_labels.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}</select></label>
-      <label className="field">Date<input name="transaction_date" type="date" /></label>
+      <label className="field">
+        Date
+        <input
+          name="transaction_date"
+          type="date"
+          value={transactionDate}
+          onChange={(e) => setTransactionDate(e.target.value)}
+          autoFocus
+        />
+      </label>
+      <label className="field">
+        Month
+        <input type="text" value={data.month_labels[derivedMonth - 1] || ""} readOnly disabled />
+      </label>
       <label className="field">Vendor<input name="vendor" value={vendor} onChange={(e) => setVendor(e.target.value)} onBlur={() => void onVendorBlur()} required /></label>
       <label className="field">
         Category
@@ -410,14 +488,20 @@ function ExpenseForm({ data, onSubmit }: { data: Payload; onSubmit: (values: Rec
         </label>
       ) : null}
       <label className="field">Payment account<select name="payment_account">{data.payment_accounts.map((account) => <option key={account}>{account}</option>)}</select></label>
-      <label className="field">Amount<input name="amount" required /></label>
+      <MoneyInput label="Amount" name="amount" onValueChange={setAmount} required />
       <label className="field">Description<input name="description" /></label>
       <label className="field">
-        Installments
         <span style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <input type="checkbox" name="installments_enabled" value="1" />
-          <input name="installments" placeholder="2–48" />
+          <input
+            type="checkbox"
+            checked={installmentsEnabled}
+            onChange={(e) => setInstallmentsEnabled(e.target.checked)}
+          />
+          Installments
         </span>
+        {installmentsEnabled && (
+          <input name="installments" placeholder="2–48" inputMode="numeric" style={{ marginTop: "0.35rem" }} />
+        )}
       </label>
     </form>
   );

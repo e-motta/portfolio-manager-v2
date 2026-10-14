@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -11,30 +12,45 @@ type PeriodBarProps = {
 
 export function PeriodBar({ year, month, yearOptions, basePath }: PeriodBarProps) {
   const navigate = useNavigate();
+  const scrollRef = useRef<HTMLDivElement>(null);
   const href = (nextYear: number, nextMonth: number | null) => {
     const params = new URLSearchParams({ year: String(nextYear) });
     if (nextMonth) params.set("month", String(nextMonth));
     return `${basePath}?${params.toString()}`;
   };
 
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const activeEl = container.querySelector(".is-active") as HTMLElement | null;
+    if (activeEl) {
+      const containerRect = container.getBoundingClientRect();
+      const activeRect = activeEl.getBoundingClientRect();
+      const scrollLeft = activeRect.left - containerRect.left - containerRect.width / 2 + activeRect.width / 2;
+      container.scrollBy({ left: scrollLeft, behavior: "smooth" });
+    }
+  }, [month]);
+
   return (
-    <div className="toolbar">
-      <div className="month-pills">
-        <Link to={href(year, null)} className={month === null ? "is-active" : ""}>
-          Year
-        </Link>
-        {MONTHS.map((label, index) => {
-          const value = index + 1;
-          return (
-            <Link
-              key={label}
-              to={href(year, value)}
-              className={month === value ? "is-active" : ""}
-            >
-              {label}
-            </Link>
-          );
-        })}
+    <div className="toolbar period-bar">
+      <div className="period-bar-wrap">
+        <div className="month-pills" ref={scrollRef}>
+          <Link to={href(year, null)} className={month === null ? "is-active" : ""}>
+            Year
+          </Link>
+          {MONTHS.map((label, index) => {
+            const value = index + 1;
+            return (
+              <Link
+                key={label}
+                to={href(year, value)}
+                className={month === value ? "is-active" : ""}
+              >
+                {label}
+              </Link>
+            );
+          })}
+        </div>
       </div>
       <label className="field" style={{ minWidth: "7rem" }}>
         <span className="sr-only">Year</span>
