@@ -1,50 +1,53 @@
 # syntax=docker/dockerfile:1
-FROM python:3.12-slim AS builder
 
-WORKDIR /app
+# Stage 1: Build frontend
+FROM node:22-slim AS frontend-builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app/frontend
 
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
+COPY frontend/package*.json ./
+RUN npm ci
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir uv \
-    && uv pip install --system --no-cache .
+COPY frontend/ ./
+RUN npm run build
 
-COPY frontend/package*.json frontend/
-RUN cd frontend && npm ci
-
-COPY frontend/ frontend/
-RUN cd frontend && npm run build
-
+# Stage 2: Python runtime with dependencies
 FROM python:3.12-slim AS runtime
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -r app && useradd -r -g app app
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir uv \
-    && uv pip install --system --no-cache .
+# Install uv
+RUN pip install --no-cache-dir uv
 
-COPY --from=builder /app/frontend/dist frontend/dist
+# Copy dependency files and source (hatchling needs app/ for packages=["app"])
+COPY pyproject.toml uv.lock ./
+COPY app/ app/
 COPY alembic.ini ./
 COPY alembic/ alembic/
-COPY app/ app/
+
+# Install dependencies from lockfile (frozen = respect uv.lock exactly)
+RUN uv sync --frozen --no-dev --no-editable
+
+# Copy built frontend
+COPY --from=frontend-builder /app/frontend/dist frontend/dist
 
 RUN chown -R app:app /app
 USER app
 
 ENV APP_ENV=production
 ENV PYTHONUNBUFFERED=1
+ENV PATH="/app/.venv/bin:$PATH"
+# Trust proxy headers from Docker internal network (Caddy container)
+ENV FORWARDED_ALLOW_IPS="172.16.0.0/12,192.168.0.0/16,10.0.0.0/8"
 
 EXPOSE 8000
 
-CMD ["fastapi", "run", "--host", "0.0.0.0", "--port", "8000"]
+# Use proxy-headers to trust X-Forwarded-* from Caddy
+# --forwarded-allow-ips controls which source IPs are trusted to set these headers
+CMD ["sh", "-c", "fastapi run --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips \"$FORWARDED_ALLOW_IPS\""]
