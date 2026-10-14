@@ -1,10 +1,13 @@
 # Production override for OCI deployment with Vault secrets
 #
-# Usage: ./scripts/deploy.py up -d --build
+# Usage: ./scripts/deploy.py up -d
 #
 # The deploy.py script fetches secrets from OCI Vault using instance principal
 # authentication and passes them to docker-compose via environment variables.
 # Secrets are never written to disk - they exist only in process memory.
+#
+# By default, deploy.py pulls a pre-built image from GHCR. Use --build to
+# build locally instead (slower but doesn't require GHCR access).
 #
 # Required setup:
 #   1. Create OCI Vault with secrets (see docs/deploy-oci.md)
@@ -16,6 +19,7 @@
 
 services:
   app:
+    image: ghcr.io/e-motta/portfolio-manager-v2:${APP_IMAGE_TAG:-latest}
     logging:
       driver: json-file
       options:

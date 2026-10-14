@@ -21,17 +21,39 @@ This guide covers deploying Portfolio Manager to OCI Always Free tier at `https:
 │  │ :80/443 │     │  :8000  │     │     :5432       │   │
 │  └─────────┘     └─────────┘     └─────────────────┘   │
 │       │               │                   │             │
-│       │               │    ┌──────────────┘             │
-│       │               │    ▼                            │
-│       │               │  postgres_data                  │
-│       │               │  (volume)                       │
-│       │               ▼                                 │
-│       │          OCI Vault ←── deploy.py fetches        │
-│       │          (secrets)     secrets at startup       │
+│       │               ▼                   ▼             │
+│       │          OCI Vault           postgres_data      │
+│       │          (secrets)           (volume)           │
 └───────│─────────────────────────────────────────────────┘
-        │
-        ▼
-   Internet (:443)
+        │                        ▲
+        ▼                        │ docker pull
+   Internet (:443)               │
+                          ┌──────┴──────┐
+                          │    GHCR     │
+                          │ (pre-built  │
+                          │   images)   │
+                          └─────────────┘
+```
+
+## Deployment Flow
+
+The deployment process has been optimized for speed:
+
+1. **CI builds images** — GitHub Actions builds the Docker image on every push to `main` and pushes to GitHub Container Registry (GHCR)
+2. **VM pulls images** — `deploy.py` pulls the pre-built image from GHCR (~30 seconds) instead of building locally (~25 minutes on 1GB VM)
+3. **Secrets from Vault** — `deploy.py` fetches secrets from OCI Vault and passes them to containers
+
+### Deploy Commands
+
+```bash
+# Standard deploy (pull latest image)
+./scripts/deploy.py up -d
+
+# Deploy specific version (for rollback or testing)
+./scripts/deploy.py up -d --tag sha-abc1234
+
+# Build locally (fallback if GHCR is unavailable)
+./scripts/deploy.py up -d --build
 ```
 
 ## Secrets Handling
@@ -98,6 +120,7 @@ Allow only necessary ports:
    | `portfolio-google-redirect-uri` | `GOOGLE_REDIRECT_URI` | No | OAuth callback URL |
    | `portfolio-cumbuca-redirect-uri` | `CUMBUCA_REDIRECT_URI` | No | Cumbuca callback |
    | `portfolio-allowed-emails` | `ALLOWED_GOOGLE_EMAILS` | No | Email allowlist |
+   | `portfolio-ghcr-token` | (internal) | No | GHCR read token for pulling images |
 
    **Generating secret values:**
    ```bash
@@ -133,6 +156,33 @@ Allow only necessary ports:
    ```
    Allow dynamic-group portfolio-instances to read secret-family in compartment <your-compartment>
    ```
+
+### 1.6 Create GitHub Personal Access Token for GHCR
+
+The production image is stored in GitHub Container Registry (GHCR). If the package is private, the VM needs a token to pull images.
+
+1. Go to [GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens](https://github.com/settings/tokens?type=beta)
+
+2. Click **Generate new token**
+
+3. Configure the token:
+   - **Token name**: `portfolio-ghcr-pull`
+   - **Expiration**: Choose an appropriate expiration (e.g., 90 days, or no expiration)
+   - **Repository access**: Select **Only select repositories** → `e-motta/portfolio-manager-v2`
+   - **Permissions**: 
+     - **Packages**: Read-only (this is all that's needed to pull)
+
+4. Click **Generate token** and copy the token value
+
+5. Create the OCI Vault secret:
+   - Go to your OCI Vault → Secrets → Create Secret
+   - **Name**: `portfolio-ghcr-token`
+   - **Secret Contents**: Paste the GitHub token
+   - Click **Create Secret**
+
+**Note**: If you make the GHCR package public, you can skip this step. The deploy script will work without the token for public packages.
+
+**Token rotation**: When the token expires, generate a new one and update the OCI Vault secret. The next deploy will use the new token automatically.
 
 ## 2. Configure DNS
 
@@ -216,10 +266,10 @@ echo 'export OCI_COMPARTMENT_ID="ocid1.compartment.oc1..xxx"' >> ~/.bashrc
 
 ### 6.2 Deploy Using deploy.py
 
-The deploy script fetches secrets from Vault and passes them to docker-compose:
+The deploy script fetches secrets from Vault, pulls the pre-built image from GHCR, and starts the containers:
 
 ```bash
-./scripts/deploy.py up -d --build
+./scripts/deploy.py up -d
 ```
 
 You should see:
@@ -231,9 +281,29 @@ Fetching secrets from OCI Vault...
   DATABASE_URL: loaded
   GOOGLE_CLIENT_ID: loaded
   GOOGLE_CLIENT_SECRET: loaded
+  GHCR token: loaded
   ...
 
-Running: docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
+Logging in to ghcr.io...
+  Logged in to ghcr.io
+
+Pulling image (tag: latest)...
+Running: docker compose -f docker-compose.yml -f docker-compose.production.yml pull app
+
+Running: docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+Logging out from ghcr.io...
+```
+
+**Deploy options:**
+```bash
+# Deploy latest image (default)
+./scripts/deploy.py up -d
+
+# Deploy specific version by SHA
+./scripts/deploy.py up -d --tag sha-abc1234
+
+# Build locally instead of pulling (slower, but works without GHCR)
+./scripts/deploy.py up -d --build
 ```
 
 ### 6.3 Verify Deployment
@@ -265,7 +335,9 @@ RemainAfterExit=yes
 WorkingDirectory=/home/ubuntu/portfolio-manager-v2
 Environment="OCI_VAULT_OCID=ocid1.vault.oc1.xxx.yyy"
 Environment="OCI_COMPARTMENT_ID=ocid1.compartment.oc1..xxx"
-ExecStart=/home/ubuntu/portfolio-manager-v2/scripts/deploy.py up -d
+# Use --build as fallback since systemd starts before network may be fully up
+# For faster restarts, consider using a timer to pull the latest image periodically
+ExecStart=/home/ubuntu/portfolio-manager-v2/scripts/deploy.py up -d --build
 ExecStop=/home/ubuntu/portfolio-manager-v2/scripts/deploy.py down
 User=ubuntu
 
@@ -289,13 +361,30 @@ sudo systemctl enable portfolio
 
 ### 8.2 Update Application
 
+The image is automatically built and pushed to GHCR when changes are merged to `main`. To deploy the latest version:
+
 ```bash
 cd portfolio-manager-v2
-git pull
-./scripts/deploy.py up -d --build
+git pull  # Update deploy.py and compose files if needed
+./scripts/deploy.py up -d
 ```
 
-### 8.3 View Logs
+### 8.3 Rollback to Previous Version
+
+If a deploy causes issues, roll back to a previous image by SHA:
+
+```bash
+# Find the SHA of the last known-good commit
+git log --oneline -10
+
+# Deploy that specific version
+./scripts/deploy.py up -d --tag sha-abc1234
+```
+
+Image tags follow the pattern `sha-<7-char-sha>`. You can also see available tags at:
+https://github.com/e-motta/portfolio-manager-v2/pkgs/container/portfolio-manager-v2
+
+### 8.4 View Logs
 
 ```bash
 ./scripts/deploy.py logs -f app
@@ -377,8 +466,20 @@ The app trusts proxy headers from Docker internal networks (172.x, 192.168.x, 10
 | `portfolio-google-redirect-uri` | `GOOGLE_REDIRECT_URI` | No |
 | `portfolio-cumbuca-redirect-uri` | `CUMBUCA_REDIRECT_URI` | No |
 | `portfolio-allowed-emails` | `ALLOWED_GOOGLE_EMAILS` | No |
+| `portfolio-ghcr-token` | (used for docker login) | No |
 
 This mapping is defined in `scripts/deploy.py` and `app/core/vault.py`.
+
+## GHCR Authentication Tradeoff
+
+The deploy script logs out of GHCR after pulling images to avoid leaving credentials in `~/.docker/config.json`. This means:
+
+- **Pro**: No credentials stored on disk between deploys
+- **Con**: Manual `docker pull ghcr.io/...` commands won't work outside of deploy.py
+
+If you need passwordless pulls (e.g., for debugging), you can:
+1. Make the GHCR package public (Settings → Change visibility), or
+2. Run `docker login ghcr.io` manually (credentials will persist until logout)
 
 ## Design Tradeoffs
 
