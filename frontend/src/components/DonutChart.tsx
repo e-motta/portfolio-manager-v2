@@ -6,6 +6,8 @@ type Slice = {
   value: number;
 };
 
+type PreparedSlice = Slice & { key: string };
+
 type DonutChartProps = {
   slices: Slice[];
   centerLabel?: string;
@@ -14,8 +16,9 @@ type DonutChartProps = {
 
 const MAX_SLICES = 10;
 const MIN_PCT_THRESHOLD = 0.02;
+const GROUPED_OUTROS_KEY = "__grouped_outros__";
 
-function prepareSlices(slices: Slice[], total: number): Slice[] {
+function prepareSlices(slices: Slice[], total: number): PreparedSlice[] {
   if (total <= 0) return [];
 
   const sorted = [...slices]
@@ -23,7 +26,7 @@ function prepareSlices(slices: Slice[], total: number): Slice[] {
     .filter((s) => s.value > 0)
     .sort((a, b) => b.value - a.value);
 
-  const significant: Slice[] = [];
+  const significant: PreparedSlice[] = [];
   let otherValue = 0;
 
   for (const slice of sorted) {
@@ -31,12 +34,12 @@ function prepareSlices(slices: Slice[], total: number): Slice[] {
     if (pct < MIN_PCT_THRESHOLD || significant.length >= MAX_SLICES - 1) {
       otherValue += slice.value;
     } else {
-      significant.push(slice);
+      significant.push({ ...slice, key: slice.label });
     }
   }
 
   if (otherValue > 0) {
-    significant.push({ label: "Outros", value: otherValue });
+    significant.push({ label: "Outros", value: otherValue, key: GROUPED_OUTROS_KEY });
   }
 
   return significant;
@@ -82,7 +85,7 @@ export function DonutChart({ slices, centerLabel = "Total", centerValue }: Donut
               const dash = circ * frac;
               const node = (
                 <circle
-                  key={slice.label}
+                  key={slice.key}
                   cx={cx}
                   cy={cy}
                   r={radius}
@@ -110,7 +113,7 @@ export function DonutChart({ slices, centerLabel = "Total", centerValue }: Donut
         {prepared.map((slice, index) => {
           const pct = total > 0 ? (slice.value / total) * 100 : 0;
           return (
-            <li key={slice.label}>
+            <li key={slice.key}>
               <i style={{ background: sliceColor(index) }} />
               <span>{slice.label}</span>
               <strong>

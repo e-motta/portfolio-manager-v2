@@ -422,16 +422,33 @@ function ExpenseTable({
   );
 }
 
+export function localDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function parseYearMonth(dateStr: string): { year: number; month: number } | null {
+  if (!dateStr || dateStr.length < 7) return null;
+  const year = parseInt(dateStr.slice(0, 4), 10);
+  const month = parseInt(dateStr.slice(5, 7), 10);
+  if (isNaN(year) || isNaN(month) || month < 1 || month > 12) return null;
+  return { year, month };
+}
+
 function ExpenseForm({ data, onSubmit }: { data: Payload; onSubmit: (values: Record<string, string>) => void }) {
   const [category, setCategory] = useState(data.expense_categories[0] || "");
   const [vendor, setVendor] = useState("");
   const [installmentsEnabled, setInstallmentsEnabled] = useState(false);
   const [amount, setAmount] = useState("");
+  const [amountError, setAmountError] = useState<string | null>(null);
 
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
+  const todayStr = localDateStr(new Date());
   const [transactionDate, setTransactionDate] = useState(todayStr);
-  const derivedMonth = transactionDate ? new Date(transactionDate).getMonth() + 1 : data.form_default_month;
+  const parsed = parseYearMonth(transactionDate);
+  const derivedYear = parsed?.year ?? data.year;
+  const derivedMonth = parsed?.month ?? data.form_default_month;
 
   async function onVendorBlur() {
     if (!vendor) return;
@@ -439,12 +456,18 @@ function ExpenseForm({ data, onSubmit }: { data: Payload; onSubmit: (values: Rec
     if (suggestion.category) setCategory(suggestion.category);
   }
 
+  function handleAmountChange(value: string, error: string | null) {
+    setAmount(value);
+    setAmountError(error);
+  }
+
   return (
     <form id="add-expense" className="form-grid" onSubmit={(event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
+      if (amountError) return;
       const form = new FormData(event.currentTarget);
       onSubmit({
-        year: String(data.year),
+        year: String(derivedYear),
         month: String(derivedMonth),
         category,
         vendor: String(form.get("vendor") || ""),
@@ -488,7 +511,7 @@ function ExpenseForm({ data, onSubmit }: { data: Payload; onSubmit: (values: Rec
         </label>
       ) : null}
       <label className="field">Payment account<select name="payment_account">{data.payment_accounts.map((account) => <option key={account}>{account}</option>)}</select></label>
-      <MoneyInput label="Amount" name="amount" onValueChange={setAmount} required />
+      <MoneyInput label="Amount" name="amount" onValueChange={handleAmountChange} error={amountError ?? undefined} required />
       <label className="field">Description<input name="description" /></label>
       <label className="field">
         <span style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
