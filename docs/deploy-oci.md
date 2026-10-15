@@ -81,7 +81,9 @@ See [Appendix: Auto-Deploy Setup](#appendix-auto-deploy-setup) for detailed inst
 
 1. **`scripts/deploy.py`** runs on the host, fetches all secrets from OCI Vault using instance principal authentication, and passes them to `docker compose` via environment variables. Secrets exist only in the deploy script's process memory.
 
-2. **Docker containers** receive secrets via environment variables from the deploy script. The Postgres container gets `POSTGRES_PASSWORD`, and the app container gets all other secrets.
+2. **Docker containers** receive secrets via environment variables from the deploy script. The Postgres container gets `POSTGRES_PASSWORD`, and the app container gets all other secrets (including optional `PLUGGY_CLIENT_ID` / `PLUGGY_CLIENT_SECRET`).
+
+Auto-deploy does not inject Pluggy credentials from GitHub Actions. The CI `deploy` job SSHs to the VM with only the image tag; `scripts/remote-deploy.sh` checks out that commit and runs `deploy.py`, which loads `SECRET_MAP` from Vault and interpolates the values into `docker-compose.yml` + `docker-compose.production.yml`. After merge, create the optional Vault secrets `portfolio-pluggy-client-id` and `portfolio-pluggy-client-secret` so the next auto-deploy enables Meu Pluggy.
 
 This design ensures:
 - No `.env` files with production secrets on disk
@@ -139,6 +141,8 @@ Allow only necessary ports:
    | `portfolio-google-redirect-uri` | `GOOGLE_REDIRECT_URI` | No | OAuth callback URL |
    | `portfolio-cumbuca-redirect-uri` | `CUMBUCA_REDIRECT_URI` | No | Cumbuca callback |
    | `portfolio-allowed-emails` | `ALLOWED_GOOGLE_EMAILS` | No | Email allowlist |
+   | `portfolio-pluggy-client-id` | `PLUGGY_CLIENT_ID` | No | Meu Pluggy client ID (app starts without it; Open Finance Pluggy stays disabled) |
+   | `portfolio-pluggy-client-secret` | `PLUGGY_CLIENT_SECRET` | No | Meu Pluggy client secret |
    | `portfolio-ghcr-token` | (internal) | No | GHCR read token for pulling images |
 
    **Generating secret values:**
@@ -300,6 +304,8 @@ Fetching secrets from OCI Vault...
   DATABASE_URL: loaded
   GOOGLE_CLIENT_ID: loaded
   GOOGLE_CLIENT_SECRET: loaded
+  PLUGGY_CLIENT_ID: loaded
+  PLUGGY_CLIENT_SECRET: loaded
   GHCR token: loaded
   ...
 
@@ -485,6 +491,8 @@ The app trusts proxy headers from Docker internal networks (172.x, 192.168.x, 10
 | `portfolio-google-redirect-uri` | `GOOGLE_REDIRECT_URI` | No |
 | `portfolio-cumbuca-redirect-uri` | `CUMBUCA_REDIRECT_URI` | No |
 | `portfolio-allowed-emails` | `ALLOWED_GOOGLE_EMAILS` | No |
+| `portfolio-pluggy-client-id` | `PLUGGY_CLIENT_ID` | No |
+| `portfolio-pluggy-client-secret` | `PLUGGY_CLIENT_SECRET` | No |
 | `portfolio-ghcr-token` | (used for docker login) | No |
 
 This mapping is defined in `scripts/deploy.py` and `app/core/vault.py`.

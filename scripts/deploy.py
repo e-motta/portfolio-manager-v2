@@ -42,6 +42,8 @@ SECRET_MAP = {
     "portfolio-google-redirect-uri": "GOOGLE_REDIRECT_URI",
     "portfolio-cumbuca-redirect-uri": "CUMBUCA_REDIRECT_URI",
     "portfolio-allowed-emails": "ALLOWED_GOOGLE_EMAILS",
+    "portfolio-pluggy-client-id": "PLUGGY_CLIENT_ID",
+    "portfolio-pluggy-client-secret": "PLUGGY_CLIENT_SECRET",
 }
 
 REQUIRED_SECRETS = {"SECRET_KEY", "POSTGRES_PASSWORD", "DATABASE_URL", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"}

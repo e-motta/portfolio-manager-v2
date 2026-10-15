@@ -20,6 +20,9 @@
 services:
   app:
     image: ghcr.io/e-motta/portfolio-manager-v2:${APP_IMAGE_TAG:-latest}
+    environment:
+      PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
+      PLUGGY_CLIENT_SECRET: ${PLUGGY_CLIENT_SECRET:-}
     logging:
       driver: json-file
       options:
