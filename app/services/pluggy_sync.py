@@ -21,6 +21,7 @@ from app.models.finance import (
 from app.models.investment import Investment
 from app.models.open_finance import OpenFinanceConnection
 from app.services.pluggy_client import (
+    PaginationCapWarning,
     PluggyError,
     fetch_accounts,
     fetch_investments,
@@ -364,7 +365,12 @@ def _existing_pluggy_investment_import_ids(session: Session, user_id: UUID) -> s
     return {row for row in rows if row and row.startswith("pluggy:")}
 
 
-def _existing_investment_map(session: Session) -> dict[str, Investment]:
+def _existing_investment_map(session: Session, user_id: UUID | None = None) -> dict[str, Investment]:
+    """Get existing Pluggy investments.
+
+    Note: The Investment model is portfolio-scoped, not user-scoped directly.
+    We filter by external_id prefix to find Pluggy-imported investments.
+    """
     from app.web.helpers import get_investments
     investments = get_investments(session)
     return {
@@ -400,6 +406,7 @@ def build_pluggy_expense_import_rows(
     for connection in connections:
         try:
             accounts = fetch_accounts(connection.external_id)
+            warnings.extend(PaginationCapWarning.pop_all())
         except PluggyError as exc:
             warnings.append(f"{connection.institution_name}: {exc}")
             continue
@@ -415,6 +422,7 @@ def build_pluggy_expense_import_rows(
 
             try:
                 transactions = fetch_transactions(account_id, from_date=start_date, to_date=end_date)
+                warnings.extend(PaginationCapWarning.pop_all())
             except PluggyError as exc:
                 warnings.append(f"{connection.institution_name} ({account.get('name', 'account')}): {exc}")
                 continue
@@ -539,6 +547,7 @@ def build_pluggy_income_import_rows(
     for connection in connections:
         try:
             accounts = fetch_accounts(connection.external_id)
+            warnings.extend(PaginationCapWarning.pop_all())
         except PluggyError as exc:
             warnings.append(f"{connection.institution_name}: {exc}")
             continue
@@ -551,6 +560,7 @@ def build_pluggy_income_import_rows(
 
             try:
                 transactions = fetch_transactions(account_id, from_date=start_date, to_date=end_date)
+                warnings.extend(PaginationCapWarning.pop_all())
             except PluggyError as exc:
                 warnings.append(f"{connection.institution_name} ({account.get('name', 'account')}): {exc}")
                 continue
@@ -611,6 +621,7 @@ def _normalize_pluggy_income_transaction(
 
 def build_pluggy_investment_import_rows(
     session: Session,
+    user_id: UUID,
     connections: list[OpenFinanceConnection],
 ) -> tuple[list[PluggyImportInvestmentRow], list[str]]:
     """Build investment import rows from Pluggy investments."""
@@ -625,11 +636,12 @@ def build_pluggy_investment_import_rows(
     name_to_slug = {at.name.lower(): at.slug for at in asset_types}
     slug_by_name.update(name_to_slug)
 
-    existing = _existing_investment_map(session)
+    existing = _existing_investment_map(session, user_id)
 
     for connection in connections:
         try:
             investments = fetch_investments(connection.external_id)
+            warnings.extend(PaginationCapWarning.pop_all())
         except PluggyError as exc:
             warnings.append(f"{connection.institution_name}: {exc}")
             continue

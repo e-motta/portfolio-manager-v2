@@ -8,6 +8,7 @@ from sqlmodel import Field, SQLModel
 
 class FinanceIncomeEntry(SQLModel, table=True):
     __tablename__ = "finance_income_entries"
+    __table_args__ = (UniqueConstraint("user_id", "external_id", name="uq_income_user_external_id"),)
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(foreign_key="users.id", ondelete="CASCADE", index=True)
@@ -24,6 +25,7 @@ class FinanceIncomeEntry(SQLModel, table=True):
 
 class FinanceExpenseEntry(SQLModel, table=True):
     __tablename__ = "finance_expense_entries"
+    __table_args__ = (UniqueConstraint("user_id", "external_id", name="uq_expense_user_external_id"),)
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(foreign_key="users.id", ondelete="CASCADE", index=True)
@@ -72,6 +74,7 @@ class FinanceInvestmentOpenFinanceImport(SQLModel, table=True):
 
 class FinanceTransferEntry(SQLModel, table=True):
     __tablename__ = "finance_transfer_entries"
+    __table_args__ = (UniqueConstraint("user_id", "external_id", name="uq_transfer_user_external_id"),)
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(foreign_key="users.id", ondelete="CASCADE", index=True)

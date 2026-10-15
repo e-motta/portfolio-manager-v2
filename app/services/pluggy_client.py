@@ -11,12 +11,17 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 import httpx
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class PluggyInvalidItemIdError(Exception):
+    """Invalid Pluggy item ID (not a valid UUID)."""
 
 
 class PluggyError(Exception):
@@ -103,8 +108,11 @@ def _make_headers() -> dict[str, str]:
     }
 
 
-def _get(path: str, params: dict[str, Any] | None = None) -> Any:
-    """Make authenticated GET request to Pluggy API."""
+def _get(path: str, params: dict[str, Any] | None = None, *, _retry_on_401: bool = True) -> Any:
+    """Make authenticated GET request to Pluggy API.
+
+    On a 401 response, clears the cached API key and retries once.
+    """
     url = f"{_get_base_url()}{path}"
     headers = _make_headers()
 
@@ -117,6 +125,9 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
         if exc.response.status_code == 401:
             global _api_key_cache
             _api_key_cache = None
+            if _retry_on_401:
+                logger.info("Retrying Pluggy request after 401: %s", path)
+                return _get(path, params, _retry_on_401=False)
             raise PluggyAuthError("Pluggy authentication expired.") from exc
         raise PluggyError(f"Pluggy API error: {exc.response.status_code}") from exc
     except httpx.HTTPError as exc:
@@ -124,13 +135,37 @@ def _get(path: str, params: dict[str, Any] | None = None) -> Any:
         raise PluggyError("Could not connect to Pluggy.") from exc
 
 
-def _paginate(path: str, params: dict[str, Any] | None = None, max_pages: int = 50) -> list[dict]:
-    """Fetch all pages of a paginated Pluggy endpoint."""
+PAGE_SIZE = 500
+MAX_PAGES = 100
+
+
+class PaginationCapWarning:
+    """Container for pagination cap warnings."""
+
+    _warnings: list[str] = []
+
+    @classmethod
+    def add(cls, message: str) -> None:
+        cls._warnings.append(message)
+
+    @classmethod
+    def pop_all(cls) -> list[str]:
+        warnings = cls._warnings[:]
+        cls._warnings = []
+        return warnings
+
+
+def _paginate(path: str, params: dict[str, Any] | None = None) -> list[dict]:
+    """Fetch all pages of a paginated Pluggy endpoint.
+
+    Uses pageSize=500 per request. Warns if the page cap is hit.
+    """
     results: list[dict] = []
     page = 1
     params = dict(params or {})
+    params["pageSize"] = PAGE_SIZE
 
-    while page <= max_pages:
+    while page <= MAX_PAGES:
         params["page"] = page
         data = _get(path, params)
 
@@ -139,7 +174,14 @@ def _paginate(path: str, params: dict[str, Any] | None = None, max_pages: int = 
             if isinstance(items, list):
                 results.extend(items)
             total_pages = data.get("totalPages", 1)
+            total_items = data.get("total", len(results))
             if page >= total_pages:
+                break
+            if page >= MAX_PAGES and total_pages > MAX_PAGES:
+                PaginationCapWarning.add(
+                    f"Pluggy pagination cap reached for {path}: "
+                    f"fetched {len(results)} of {total_items} items"
+                )
                 break
         else:
             break
@@ -149,14 +191,30 @@ def _paginate(path: str, params: dict[str, Any] | None = None, max_pages: int = 
     return results
 
 
+def _validate_uuid(value: str) -> str:
+    """Validate that a string is a valid UUID, returning it in lowercase canonical form.
+
+    Raises PluggyInvalidItemIdError if the value is not a valid UUID.
+    This is critical for security to prevent path injection attacks.
+    """
+    try:
+        parsed = UUID(value)
+        return str(parsed)
+    except (ValueError, TypeError) as exc:
+        raise PluggyInvalidItemIdError(f"Invalid item ID: {value!r} is not a valid UUID.") from exc
+
+
 def fetch_item(item_id: str) -> dict[str, Any]:
     """Fetch a single item by ID.
 
     Note: Meu Pluggy (personal/free) accounts cannot list items via API.
     Users must manually provide item IDs from the Meu Pluggy dashboard.
     This endpoint validates that the item exists and returns its details.
+
+    Raises PluggyInvalidItemIdError if item_id is not a valid UUID.
     """
-    return _get(f"/items/{item_id}")
+    validated_id = _validate_uuid(item_id)
+    return _get(f"/items/{validated_id}")
 
 
 def validate_item(item_id: str) -> tuple[bool, dict[str, Any] | str]:
@@ -169,6 +227,8 @@ def validate_item(item_id: str) -> tuple[bool, dict[str, Any] | str]:
         if not data or not data.get("id"):
             return False, "Item not found."
         return True, data
+    except PluggyInvalidItemIdError as exc:
+        return False, str(exc)
     except PluggyAuthError as exc:
         return False, str(exc)
     except PluggyError as exc:
@@ -177,7 +237,8 @@ def validate_item(item_id: str) -> tuple[bool, dict[str, Any] | str]:
 
 def fetch_accounts(item_id: str) -> list[dict[str, Any]]:
     """Fetch accounts for an item."""
-    return _paginate("/accounts", {"itemId": item_id})
+    validated_id = _validate_uuid(item_id)
+    return _paginate("/accounts", {"itemId": validated_id})
 
 
 def fetch_transactions(
@@ -186,7 +247,8 @@ def fetch_transactions(
     to_date: date | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch transactions for an account with optional date range."""
-    params: dict[str, Any] = {"accountId": account_id}
+    validated_id = _validate_uuid(account_id)
+    params: dict[str, Any] = {"accountId": validated_id}
     if from_date:
         params["from"] = from_date.isoformat()
     if to_date:
@@ -196,14 +258,18 @@ def fetch_transactions(
 
 
 def fetch_credit_cards(item_id: str) -> list[dict[str, Any]]:
-    """Fetch credit card accounts for an item."""
+    """Fetch credit card accounts for an item.
+
+    Note: item_id is validated as a UUID by fetch_accounts.
+    """
     accounts = fetch_accounts(item_id)
     return [acc for acc in accounts if acc.get("type") == "CREDIT"]
 
 
 def fetch_credit_card_bills(account_id: str) -> list[dict[str, Any]]:
     """Fetch credit card bills for an account."""
-    return _paginate("/bills", {"accountId": account_id})
+    validated_id = _validate_uuid(account_id)
+    return _paginate("/bills", {"accountId": validated_id})
 
 
 def fetch_bill_transactions(bill_id: str) -> list[dict[str, Any]]:
@@ -213,7 +279,8 @@ def fetch_bill_transactions(bill_id: str) -> list[dict[str, Any]]:
     filtered by date range from the bill. This method fetches the bill
     and then its transactions.
     """
-    bill = _get(f"/bills/{bill_id}")
+    validated_bill_id = _validate_uuid(bill_id)
+    bill = _get(f"/bills/{validated_bill_id}")
     if not bill:
         return []
 
@@ -233,7 +300,8 @@ def fetch_bill_transactions(bill_id: str) -> list[dict[str, Any]]:
 
 def fetch_investments(item_id: str) -> list[dict[str, Any]]:
     """Fetch investment positions for an item."""
-    return _paginate("/investments", {"itemId": item_id})
+    validated_id = _validate_uuid(item_id)
+    return _paginate("/investments", {"itemId": validated_id})
 
 
 def fetch_investment_transactions(
@@ -242,7 +310,8 @@ def fetch_investment_transactions(
     to_date: date | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch transactions for a specific investment."""
-    params: dict[str, Any] = {"investmentId": investment_id}
+    validated_id = _validate_uuid(investment_id)
+    params: dict[str, Any] = {"investmentId": validated_id}
     if from_date:
         params["from"] = from_date.isoformat()
     if to_date:
@@ -254,12 +323,13 @@ def fetch_investment_transactions(
 def fetch_identity(item_id: str) -> dict[str, Any] | None:
     """Fetch identity info for an item (CPF holder info)."""
     try:
-        data = _get("/identity", {"itemId": item_id})
+        validated_id = _validate_uuid(item_id)
+        data = _get("/identity", {"itemId": validated_id})
         if isinstance(data, dict) and "results" in data:
             results = data["results"]
             return results[0] if results else None
         return data if isinstance(data, dict) else None
-    except PluggyError:
+    except (PluggyError, PluggyInvalidItemIdError):
         return None
 
 

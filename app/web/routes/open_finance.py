@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import date
 from uuid import UUID
 
@@ -65,9 +66,28 @@ _INVESTMENT_TOOL_NAMES = {"list_investments", "openfinance_list_investments"}
 _CREDIT_CARD_TOOL_NAMES = {"list_credit_card_bill_transactions"}
 _ACCOUNT_TOOL_NAMES = {"list_account_transactions"}
 
-_pluggy_expense_stash: dict[str, list[PluggyImportExpenseRow]] = {}
-_pluggy_income_stash: dict[str, list[PluggyImportIncomeRow]] = {}
-_pluggy_investment_stash: dict[str, list[PluggyImportInvestmentRow]] = {}
+
+@dataclass
+class StashedPluggyExpenseImport:
+    user_id: UUID
+    rows: list[PluggyImportExpenseRow]
+
+
+@dataclass
+class StashedPluggyIncomeImport:
+    user_id: UUID
+    rows: list[PluggyImportIncomeRow]
+
+
+@dataclass
+class StashedPluggyInvestmentImport:
+    user_id: UUID
+    rows: list[PluggyImportInvestmentRow]
+
+
+_pluggy_expense_stash: dict[str, StashedPluggyExpenseImport] = {}
+_pluggy_income_stash: dict[str, StashedPluggyIncomeImport] = {}
+_pluggy_investment_stash: dict[str, StashedPluggyInvestmentImport] = {}
 
 
 def _year_options(current_year: int) -> list[int]:
@@ -694,12 +714,19 @@ def add_pluggy_connection_endpoint(
     The user obtains the item ID from the Meu Pluggy dashboard after connecting
     their bank. This endpoint validates the item ID and stores the connection.
     """
+    from uuid import UUID as UUIDType
+
     if not is_pluggy_available():
         raise HTTPException(status_code=503, detail="Pluggy is not configured.")
 
     item_id = item_id.strip()
     if not item_id:
         raise HTTPException(status_code=400, detail="Item ID is required.")
+
+    try:
+        UUIDType(item_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Item ID must be a valid UUID.")
 
     connection, error = add_pluggy_connection(session, user.id, item_id)
     if error:
@@ -757,37 +784,55 @@ def pluggy_status(
 # --- Pluggy Sync Endpoints ---
 
 
-def _stash_pluggy_expense_import(rows: list[PluggyImportExpenseRow]) -> str:
+def _stash_pluggy_expense_import(user_id: UUID, rows: list[PluggyImportExpenseRow]) -> str:
     from uuid import uuid4
     token = str(uuid4())
-    _pluggy_expense_stash[token] = rows
+    _pluggy_expense_stash[token] = StashedPluggyExpenseImport(user_id=user_id, rows=rows)
     return token
 
 
-def _pop_pluggy_expense_import(token: str) -> list[PluggyImportExpenseRow] | None:
-    return _pluggy_expense_stash.pop(token, None)
+def _pop_pluggy_expense_import(token: str, user_id: UUID) -> list[PluggyImportExpenseRow] | None:
+    """Pop stashed expense import, verifying user ownership."""
+    stashed = _pluggy_expense_stash.pop(token, None)
+    if stashed is None:
+        return None
+    if stashed.user_id != user_id:
+        return None
+    return stashed.rows
 
 
-def _stash_pluggy_income_import(rows: list[PluggyImportIncomeRow]) -> str:
+def _stash_pluggy_income_import(user_id: UUID, rows: list[PluggyImportIncomeRow]) -> str:
     from uuid import uuid4
     token = str(uuid4())
-    _pluggy_income_stash[token] = rows
+    _pluggy_income_stash[token] = StashedPluggyIncomeImport(user_id=user_id, rows=rows)
     return token
 
 
-def _pop_pluggy_income_import(token: str) -> list[PluggyImportIncomeRow] | None:
-    return _pluggy_income_stash.pop(token, None)
+def _pop_pluggy_income_import(token: str, user_id: UUID) -> list[PluggyImportIncomeRow] | None:
+    """Pop stashed income import, verifying user ownership."""
+    stashed = _pluggy_income_stash.pop(token, None)
+    if stashed is None:
+        return None
+    if stashed.user_id != user_id:
+        return None
+    return stashed.rows
 
 
-def _stash_pluggy_investment_import(rows: list[PluggyImportInvestmentRow]) -> str:
+def _stash_pluggy_investment_import(user_id: UUID, rows: list[PluggyImportInvestmentRow]) -> str:
     from uuid import uuid4
     token = str(uuid4())
-    _pluggy_investment_stash[token] = rows
+    _pluggy_investment_stash[token] = StashedPluggyInvestmentImport(user_id=user_id, rows=rows)
     return token
 
 
-def _pop_pluggy_investment_import(token: str) -> list[PluggyImportInvestmentRow] | None:
-    return _pluggy_investment_stash.pop(token, None)
+def _pop_pluggy_investment_import(token: str, user_id: UUID) -> list[PluggyImportInvestmentRow] | None:
+    """Pop stashed investment import, verifying user ownership."""
+    stashed = _pluggy_investment_stash.pop(token, None)
+    if stashed is None:
+        return None
+    if stashed.user_id != user_id:
+        return None
+    return stashed.rows
 
 
 @router.post("/pluggy/sync/expenses/preview")
@@ -815,7 +860,7 @@ def preview_pluggy_expenses(
         month=resolved_month,
     )
 
-    import_token = _stash_pluggy_expense_import(rows)
+    import_token = _stash_pluggy_expense_import(user.id, rows)
     new_count = sum(1 for row in rows if not row.already_exists)
     existing_count = sum(1 for row in rows if row.already_exists)
 
@@ -883,7 +928,7 @@ async def confirm_pluggy_expenses(
     import_token = str(form.get("import_token") or "")
     selected_rows = form.getlist("selected_rows")
 
-    rows = _pop_pluggy_expense_import(import_token)
+    rows = _pop_pluggy_expense_import(import_token, user.id)
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
@@ -891,6 +936,7 @@ async def confirm_pluggy_expenses(
         ImportExpenseRow,
         import_selected_account_debits as cumbuca_import_debits,
     )
+    from app.services.pluggy_sync import PLUGGY_SOURCE
 
     converted_rows = [
         ImportExpenseRow(
@@ -928,6 +974,7 @@ async def confirm_pluggy_expenses(
             subcategory_overrides=_parse_expense_subcategory_overrides(form),
             period_overrides=_parse_period_overrides(form),
             description_overrides=_parse_expense_description_overrides(form),
+            source=PLUGGY_SOURCE,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -967,7 +1014,7 @@ def preview_pluggy_income(
         month=resolved_month,
     )
 
-    import_token = _stash_pluggy_income_import(rows)
+    import_token = _stash_pluggy_income_import(user.id, rows)
     new_count = sum(1 for row in rows if not row.already_exists)
     existing_count = sum(1 for row in rows if row.already_exists)
 
@@ -1022,7 +1069,7 @@ async def confirm_pluggy_income(
     import_token = str(form.get("import_token") or "")
     selected_rows = form.getlist("selected_rows")
 
-    rows = _pop_pluggy_income_import(import_token)
+    rows = _pop_pluggy_income_import(import_token, user.id)
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
@@ -1030,6 +1077,7 @@ async def confirm_pluggy_income(
         ImportIncomeRow,
         import_selected_account_credits as cumbuca_import_credits,
     )
+    from app.services.pluggy_sync import PLUGGY_SOURCE
 
     converted_rows = [
         ImportIncomeRow(
@@ -1058,6 +1106,7 @@ async def confirm_pluggy_income(
             kind_overrides=_parse_credit_import_kind_overrides(form),
             broker_overrides=_parse_broker_overrides(form),
             period_overrides=_parse_period_overrides(form),
+            source=PLUGGY_SOURCE,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1083,9 +1132,9 @@ def preview_pluggy_investments(
     if not connections:
         raise HTTPException(status_code=400, detail="No Pluggy connections. Add one first.")
 
-    rows, warnings = build_pluggy_investment_import_rows(session, connections)
+    rows, warnings = build_pluggy_investment_import_rows(session, user.id, connections)
 
-    import_token = _stash_pluggy_investment_import(rows)
+    import_token = _stash_pluggy_investment_import(user.id, rows)
     new_count = sum(1 for row in rows if not row.already_exists)
     update_count = sum(1 for row in rows if row.is_update)
 
@@ -1127,7 +1176,7 @@ def confirm_pluggy_investments(
     selected_rows: list[str] = Form(default=[]),
 ) -> RedirectResponse:
     """Confirm Pluggy investment import."""
-    rows = _pop_pluggy_investment_import(import_token)
+    rows = _pop_pluggy_investment_import(import_token, user.id)
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
@@ -1135,6 +1184,7 @@ def confirm_pluggy_investments(
         ImportInvestmentRow,
         import_selected_investments as cumbuca_import_investments,
     )
+    from app.services.pluggy_sync import PLUGGY_SOURCE
 
     converted_rows = [
         ImportInvestmentRow(
@@ -1151,7 +1201,9 @@ def confirm_pluggy_investments(
         for row in rows
     ]
 
-    created, updated = cumbuca_import_investments(session, converted_rows, set(selected_rows))
+    created, updated = cumbuca_import_investments(
+        session, converted_rows, set(selected_rows), source=PLUGGY_SOURCE
+    )
 
     for conn in get_pluggy_connections(session, user.id):
         update_connection_last_synced(session, conn)
