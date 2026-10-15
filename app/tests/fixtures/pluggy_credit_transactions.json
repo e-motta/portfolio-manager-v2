@@ -4,7 +4,7 @@
       "id": "tx-pluggy-cc-001",
       "accountId": "acc-pluggy-credit-001",
       "description": "iFood",
-      "amount": -89.90,
+      "amount": 89.90,
       "currencyCode": "BRL",
       "date": "2026-06-03",
       "type": "DEBIT",
@@ -19,7 +19,7 @@
       "id": "tx-pluggy-cc-002",
       "accountId": "acc-pluggy-credit-001",
       "description": "Magazine Luiza",
-      "amount": -200.00,
+      "amount": 200.00,
       "currencyCode": "BRL",
       "date": "2026-06-10",
       "type": "DEBIT",
@@ -34,14 +34,23 @@
       "id": "tx-pluggy-cc-003",
       "accountId": "acc-pluggy-credit-001",
       "description": "Pagamento recebido",
-      "amount": 2500.00,
+      "amount": -2500.00,
       "currencyCode": "BRL",
       "date": "2026-06-12",
       "type": "CREDIT",
-      "category": "Transfer"
+      "category": "Credit card payment",
+      "categoryId": "05090000"
+    },
+    {
+      "id": "tx-pluggy-cc-004",
+      "accountId": "acc-pluggy-credit-001",
+      "description": "Estorno iFood",
+      "amount": -45.00,
+      "currencyCode": "BRL",
+      "date": "2026-06-18",
+      "type": "CREDIT",
+      "category": "Food"
     }
   ],
-  "page": 1,
-  "total": 3,
-  "totalPages": 1
+  "next": null
 }

@@ -63,15 +63,31 @@ NEEDS_ATTENTION_ITEM_STATUSES = frozenset({
 })
 SYNCABLE_CONNECTION_STATUSES = frozenset({"active", "needs_attention"})
 
-TRANSFER_CATEGORIES = frozenset({
-    "transfer",
-    "transfers",
-    "transferência",
-    "transferencia",
-    "pix",
-    "ted",
-    "doc",
-    "internal transfer",
+# Own-account transfers only. Do not substring-match "pix"/"ted" — ordinary
+# Pix purchases are often categorized as "Transfer - PIX".
+OWN_ACCOUNT_TRANSFER_CATEGORIES = frozenset({
+    "same person transfer",
+    "same person transfer - cash",
+    "same person transfer - pix",
+    "same person transfer - ted",
+    "transfer - internal",
+    "transferência entre a mesma pessoa",
+    "transferencia entre a mesma pessoa",
+    "transferência entre a mesma pessoa - dinheiro",
+    "transferencia entre a mesma pessoa - dinheiro",
+    "transferência entre a mesma pessoa - pix",
+    "transferencia entre a mesma pessoa - pix",
+    "transferência entre a mesma pessoa - ted",
+    "transferencia entre a mesma pessoa - ted",
+    "transferência - interna",
+    "transferencia - interna",
+})
+OWN_ACCOUNT_TRANSFER_CATEGORY_IDS = frozenset({
+    "04000000",  # Same person transfer
+    "04010000",  # Same person transfer - Cash
+    "04020000",  # Same person transfer - PIX
+    "04030000",  # Same person transfer - TED
+    "05060000",  # Transfer - Internal
 })
 INVESTMENT_CATEGORIES = frozenset({
     "investment",
@@ -93,6 +109,14 @@ TRANSFER_VENDOR_KEYWORDS = (
     "pix enviado",
     "entre contas",
 )
+BILL_PAYMENT_CATEGORIES = frozenset({
+    "credit card payment",
+    "pagamento com cartão de crédito",
+    "pagamento com cartao de credito",
+})
+BILL_PAYMENT_CATEGORY_IDS = frozenset({
+    "05090000",  # Credit card payment
+})
 BILL_PAYMENT_KEYWORDS = (
     "pagamento de fatura",
     "pagamento da fatura",
@@ -389,6 +413,27 @@ def _haystacks(text: str) -> tuple[str, ...]:
     return (lowered, normalized)
 
 
+def _pluggy_category_fields(tx: dict[str, Any]) -> tuple[str, str]:
+    category = str(tx.get("category") or "").strip()
+    category_id = str(tx.get("categoryId") or tx.get("category_id") or "").strip()
+    return category, category_id
+
+
+def is_own_account_transfer(tx: dict[str, Any]) -> bool:
+    """True when Pluggy labels the row as a transfer between the user's own accounts."""
+    category, category_id = _pluggy_category_fields(tx)
+    if category_id and category_id in OWN_ACCOUNT_TRANSFER_CATEGORY_IDS:
+        return True
+    return category.lower() in OWN_ACCOUNT_TRANSFER_CATEGORIES
+
+
+def is_bill_payment_category(tx: dict[str, Any]) -> bool:
+    category, category_id = _pluggy_category_fields(tx)
+    if category_id and category_id in BILL_PAYMENT_CATEGORY_IDS:
+        return True
+    return category.lower() in BILL_PAYMENT_CATEGORIES
+
+
 def is_bill_payment_description(description: str) -> bool:
     return any(
         keyword in haystack
@@ -397,14 +442,21 @@ def is_bill_payment_description(description: str) -> bool:
     )
 
 
+def is_bill_payment(tx: dict[str, Any], description: str) -> bool:
+    """Prefer Pluggy's credit-card-payment category; fall back to keywords."""
+    if is_bill_payment_category(tx):
+        return True
+    return is_bill_payment_description(description)
+
+
 def suggest_pluggy_debit_import_kind(tx: dict[str, Any], vendor: str) -> str:
     """Default classification from Pluggy category/type and description."""
     category = str(tx.get("category") or "").strip().lower()
     if category in INVESTMENT_CATEGORIES or any(token in category for token in INVESTMENT_CATEGORIES):
         return "investment"
-    if category in TRANSFER_CATEGORIES or any(token in category for token in TRANSFER_CATEGORIES):
+    if is_own_account_transfer(tx):
         return "transfer"
-    if is_bill_payment_description(vendor):
+    if is_bill_payment(tx, vendor):
         return "transfer"
     for haystack in _haystacks(vendor):
         if any(keyword in haystack for keyword in TRANSFER_VENDOR_KEYWORDS):
@@ -416,7 +468,7 @@ def suggest_pluggy_credit_import_kind(tx: dict[str, Any], description: str) -> s
     category = str(tx.get("category") or "").strip().lower()
     if category in INVESTMENT_CATEGORIES or any(token in category for token in INVESTMENT_CATEGORIES):
         return "investment"
-    if category in TRANSFER_CATEGORIES or any(token in category for token in TRANSFER_CATEGORIES):
+    if is_own_account_transfer(tx):
         return "income"
     return "income"
 
@@ -632,7 +684,18 @@ def _normalize_pluggy_expense_transaction(
     month: int,
     vendor_rules: dict[str, VendorRule] | None = None,
 ) -> PluggyImportExpenseRow | None:
-    """Normalize a Pluggy bank or credit-card transaction to an import row."""
+    """Normalize a Pluggy bank or credit-card transaction to an import row.
+
+    Real Nubank CREDIT accounts send purchases as ``type=DEBIT`` with a
+    *positive* amount and refunds/payments as ``type=CREDIT`` with a
+    *negative* amount. Classification follows ``type`` regardless of sign:
+
+    - DEBIT: purchase, stored as a negative expense
+    - CREDIT + bill payment (Pluggy category ``Credit card payment``, then
+      keywords): skip — the settlement is not an expense
+    - CREDIT otherwise: refund, stored as a positive expense with
+      ``is_reversal=True`` (Cumbuca convention: ``amount > 0`` offsets spend)
+    """
     external_id = f"pluggy:{tx.get('id', '')}"
     if not tx.get("id"):
         return None
@@ -645,18 +708,20 @@ def _normalize_pluggy_expense_transaction(
     tx_type = str(tx.get("type") or "").upper()
     description = str(tx.get("description") or "").strip()
     vendor = description or "Unknown"
-    bill_payment = is_bill_payment_description(vendor)
+    bill_payment = is_bill_payment(tx, vendor)
 
     if is_credit_account:
         if bill_payment:
             return None
         tx_date = _credit_card_purchase_date(tx)
-        if tx_type == "CREDIT" and amount_raw > 0:
+        if tx_type == "CREDIT":
             is_reversal = True
             amount = abs(amount_raw)
-        else:
+        elif tx_type == "DEBIT":
             is_reversal = False
             amount = -abs(amount_raw)
+        else:
+            return None
         import_kind = "expense"
         to_account = None
         broker = None

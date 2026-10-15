@@ -31,6 +31,7 @@ from app.services.pluggy_sync import (
     map_category,
     map_payment_account,
     remove_pluggy_connection,
+    suggest_pluggy_debit_import_kind,
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -566,6 +567,35 @@ class TestPluggyClassification:
         assert transfer is not None
         assert transfer.import_kind == "transfer"
 
+    def test_pix_purchase_is_not_a_transfer(self):
+        tx = {
+            "id": "tx-pix-ifood",
+            "description": "PIX IFOOD",
+            "amount": -42.00,
+            "type": "DEBIT",
+            "category": "Transfer - PIX",
+            "categoryId": "05070000",
+        }
+        assert suggest_pluggy_debit_import_kind(tx, "PIX IFOOD") == "expense"
+
+    def test_own_account_transfer_matches_exact_category_id(self):
+        tx = {
+            "id": "tx-own",
+            "description": "PIX para conta XP",
+            "category": "Same person transfer - PIX",
+            "categoryId": "04020000",
+        }
+        assert suggest_pluggy_debit_import_kind(tx, tx["description"]) == "transfer"
+
+    def test_ted_purchase_category_is_not_a_transfer(self):
+        tx = {
+            "id": "tx-ted-shop",
+            "description": "Magazine Luiza",
+            "category": "Transfer - TED",
+            "categoryId": "05080000",
+        }
+        assert suggest_pluggy_debit_import_kind(tx, tx["description"]) == "expense"
+
     def test_bill_payment_left_unselected(self, session, pluggy_accounts):
         user = session.exec(select(User)).one()
         _add_pluggy_connection(session, user)
@@ -578,6 +608,36 @@ class TestPluggyClassification:
             "date": "2026-06-12",
             "type": "DEBIT",
             "category": "Transfer",
+        }
+
+        with patch("app.services.pluggy_sync.fetch_accounts") as mock_accounts, \
+             patch("app.services.pluggy_sync.fetch_transactions") as mock_tx:
+            mock_accounts.return_value = [
+                acc for acc in pluggy_accounts["results"] if acc["type"] != "CREDIT"
+            ]
+            mock_tx.return_value = [bill_tx]
+            rows, _ = build_pluggy_expense_import_rows(
+                session, user.id, connections, year=2026, month=6
+            )
+
+        assert len(rows) == 1
+        assert rows[0].import_kind == "transfer"
+        assert rows[0].is_bill_payment
+        assert not rows[0].selected
+
+    def test_bill_payment_prefers_pluggy_category(self, session, pluggy_accounts):
+        user = session.exec(select(User)).one()
+        _add_pluggy_connection(session, user)
+        connections = get_pluggy_connections(session, user.id)
+        bill_tx = {
+            "id": "tx-bill-cat",
+            "accountId": "acc-pluggy-checking-001",
+            "description": "Nubank Mastercard",
+            "amount": -1800.00,
+            "date": "2026-06-12",
+            "type": "DEBIT",
+            "category": "Credit card payment",
+            "categoryId": "05090000",
         }
 
         with patch("app.services.pluggy_sync.fetch_accounts") as mock_accounts, \
@@ -631,6 +691,12 @@ class TestPluggyCreditCards:
         installment = next(row for row in rows if row.vendor == "Magazine Luiza")
         assert installment.transaction_date == date(2026, 5, 10)
         assert installment.amount == Decimal("-200.00")
+
+        refund = next(row for row in rows if row.vendor == "Estorno iFood")
+        assert refund.is_reversal
+        assert refund.amount == Decimal("45.00")
+        assert refund.import_kind == "expense"
+        assert refund.selected
 
 
 class TestCrossProviderDedupe:

@@ -8,7 +8,8 @@
       "currencyCode": "BRL",
       "date": "2026-06-05",
       "type": "CREDIT",
-      "category": "Salary"
+      "category": "Salary",
+      "categoryId": "01010000"
     },
     {
       "id": "tx-pluggy-002",
@@ -18,7 +19,8 @@
       "currencyCode": "BRL",
       "date": "2026-06-08",
       "type": "DEBIT",
-      "category": "Groceries"
+      "category": "Groceries",
+      "categoryId": "08000000"
     },
     {
       "id": "tx-pluggy-003",
@@ -28,7 +30,8 @@
       "currencyCode": "BRL",
       "date": "2026-06-10",
       "type": "DEBIT",
-      "category": "Transport"
+      "category": "Transport",
+      "categoryId": "13000000"
     },
     {
       "id": "tx-pluggy-004",
@@ -38,7 +41,8 @@
       "currencyCode": "BRL",
       "date": "2026-06-01",
       "type": "DEBIT",
-      "category": "Housing"
+      "category": "Housing",
+      "categoryId": "12000000"
     },
     {
       "id": "tx-pluggy-005",
@@ -48,7 +52,8 @@
       "currencyCode": "BRL",
       "date": "2026-06-12",
       "type": "DEBIT",
-      "category": "Food"
+      "category": "Food",
+      "categoryId": "09000000"
     },
     {
       "id": "tx-pluggy-006",
@@ -58,10 +63,9 @@
       "currencyCode": "BRL",
       "date": "2026-06-15",
       "type": "DEBIT",
-      "category": "Transfer"
+      "category": "Same person transfer - PIX",
+      "categoryId": "04020000"
     }
   ],
-  "page": 1,
-  "total": 6,
-  "totalPages": 1
+  "next": null
 }
