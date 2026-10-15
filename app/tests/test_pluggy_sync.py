@@ -11,6 +11,7 @@ import pytest
 from sqlmodel import select
 
 from app.models.finance import FinanceExpenseEntry
+from app.models.investment import Investment
 from app.models.open_finance import OpenFinanceConnection
 from app.models.user import User
 from app.services.pluggy_client import (
@@ -411,7 +412,7 @@ class TestPluggyInvestmentImport:
         with patch("app.services.pluggy_sync.fetch_investments") as mock_inv:
             mock_inv.return_value = pluggy_investments["results"]
 
-            rows, warnings = build_pluggy_investment_import_rows(session, connections)
+            rows, warnings = build_pluggy_investment_import_rows(session, user.id, connections)
 
         names = {row.name for row in rows}
         assert "CDB Nubank 100% CDI" in names
@@ -436,7 +437,7 @@ class TestPluggyInvestmentImport:
         with patch("app.services.pluggy_sync.fetch_investments") as mock_inv:
             mock_inv.return_value = pluggy_investments["results"]
 
-            rows, _ = build_pluggy_investment_import_rows(session, connections)
+            rows, _ = build_pluggy_investment_import_rows(session, user.id, connections)
 
         cdb = next((r for r in rows if "CDB" in r.name), None)
         assert cdb is not None
@@ -530,3 +531,372 @@ class TestPluggyDeduplication:
         assert supermarket is not None
         assert supermarket.already_exists
         assert not supermarket.selected
+
+
+def _add_pluggy_connection(session, user, *, status="active", institution="Nubank"):
+    connection = OpenFinanceConnection(
+        user_id=user.id,
+        provider=PLUGGY_PROVIDER,
+        external_id="550e8400-e29b-41d4-a716-446655440000",
+        institution_name=institution,
+        status=status,
+    )
+    session.add(connection)
+    session.commit()
+    return connection
+
+
+class TestPluggyClassification:
+    def test_transfer_category_defaults_to_transfer(self, session, pluggy_accounts, pluggy_transactions):
+        user = session.exec(select(User)).one()
+        _add_pluggy_connection(session, user)
+        connections = get_pluggy_connections(session, user.id)
+
+        with patch("app.services.pluggy_sync.fetch_accounts") as mock_accounts, \
+             patch("app.services.pluggy_sync.fetch_transactions") as mock_tx:
+            mock_accounts.return_value = [
+                acc for acc in pluggy_accounts["results"] if acc["type"] != "CREDIT"
+            ]
+            mock_tx.return_value = pluggy_transactions["results"]
+            rows, _ = build_pluggy_expense_import_rows(
+                session, user.id, connections, year=2026, month=6
+            )
+
+        transfer = next((r for r in rows if "Transferência" in r.vendor), None)
+        assert transfer is not None
+        assert transfer.import_kind == "transfer"
+
+    def test_bill_payment_left_unselected(self, session, pluggy_accounts):
+        user = session.exec(select(User)).one()
+        _add_pluggy_connection(session, user)
+        connections = get_pluggy_connections(session, user.id)
+        bill_tx = {
+            "id": "tx-bill-001",
+            "accountId": "acc-pluggy-checking-001",
+            "description": "Pagamento de fatura Nubank",
+            "amount": -2500.00,
+            "date": "2026-06-12",
+            "type": "DEBIT",
+            "category": "Transfer",
+        }
+
+        with patch("app.services.pluggy_sync.fetch_accounts") as mock_accounts, \
+             patch("app.services.pluggy_sync.fetch_transactions") as mock_tx:
+            mock_accounts.return_value = [
+                acc for acc in pluggy_accounts["results"] if acc["type"] != "CREDIT"
+            ]
+            mock_tx.return_value = [bill_tx]
+            rows, _ = build_pluggy_expense_import_rows(
+                session, user.id, connections, year=2026, month=6
+            )
+
+        assert len(rows) == 1
+        assert rows[0].import_kind == "transfer"
+        assert rows[0].is_bill_payment
+        assert not rows[0].selected
+
+
+class TestPluggyCreditCards:
+    def test_imports_credit_card_purchases_and_skips_bill(self, session, pluggy_accounts):
+        user = session.exec(select(User)).one()
+        _add_pluggy_connection(session, user)
+        connections = get_pluggy_connections(session, user.id)
+        credit_txs = _load_fixture("pluggy_credit_transactions.json")["results"]
+
+        def _transactions(account_id, **_kwargs):
+            if account_id == "acc-pluggy-credit-001":
+                return credit_txs
+            return []
+
+        with patch("app.services.pluggy_sync.fetch_accounts") as mock_accounts, \
+             patch("app.services.pluggy_sync.fetch_transactions") as mock_tx:
+            mock_accounts.return_value = pluggy_accounts["results"]
+            mock_tx.side_effect = _transactions
+            rows, _ = build_pluggy_expense_import_rows(
+                session, user.id, connections, year=2026, month=6
+            )
+
+        vendors = {row.vendor for row in rows}
+        assert "iFood" in vendors
+        assert "Magazine Luiza" in vendors
+        assert "Pagamento recebido" not in vendors
+
+        ifood = next(row for row in rows if row.vendor == "iFood")
+        assert ifood.amount == Decimal("-89.90")
+        assert ifood.payment_account == "Nubank"
+        assert ifood.transaction_date == date(2026, 6, 3)
+        assert ifood.import_kind == "expense"
+        assert ifood.selected
+
+        installment = next(row for row in rows if row.vendor == "Magazine Luiza")
+        assert installment.transaction_date == date(2026, 5, 10)
+        assert installment.amount == Decimal("-200.00")
+
+
+class TestCrossProviderDedupe:
+    def test_flags_matching_cumbuca_expense(self, session, pluggy_accounts, pluggy_transactions):
+        user = session.exec(select(User)).one()
+        session.add(FinanceExpenseEntry(
+            user_id=user.id,
+            year=2026,
+            month=6,
+            transaction_date=date(2026, 6, 8),
+            category="Supermercado",
+            vendor="Supermercado Extra",
+            payment_account="Nuconta",
+            amount=Decimal("-350.50"),
+            source="open_finance",
+            external_id="cumbuca-tx-002",
+        ))
+        session.commit()
+        _add_pluggy_connection(session, user)
+        connections = get_pluggy_connections(session, user.id)
+
+        with patch("app.services.pluggy_sync.fetch_accounts") as mock_accounts, \
+             patch("app.services.pluggy_sync.fetch_transactions") as mock_tx:
+            mock_accounts.return_value = [
+                acc for acc in pluggy_accounts["results"] if acc["type"] != "CREDIT"
+            ]
+            mock_tx.return_value = pluggy_transactions["results"]
+            rows, _ = build_pluggy_expense_import_rows(
+                session, user.id, connections, year=2026, month=6
+            )
+
+        supermarket = next(row for row in rows if "Supermercado Extra" in row.vendor)
+        assert supermarket.likely_duplicate
+        assert not supermarket.selected
+        assert not supermarket.already_exists
+
+
+class TestPluggyItemStatus:
+    def test_waiting_user_input_needs_attention(self, session, pluggy_item):
+        from app.services.pluggy_sync import map_pluggy_item_status
+
+        assert map_pluggy_item_status("UPDATED") == "active"
+        assert map_pluggy_item_status("UPDATING") == "active"
+        assert map_pluggy_item_status("WAITING_USER_INPUT") == "needs_attention"
+        assert map_pluggy_item_status("LOGIN_ERROR") == "needs_attention"
+        assert map_pluggy_item_status("OUTDATED") == "needs_attention"
+        assert map_pluggy_item_status("UNKNOWN") == "inactive"
+
+        user = session.exec(select(User)).one()
+        item = dict(pluggy_item)
+        item["status"] = "WAITING_USER_INPUT"
+        with patch("app.services.pluggy_sync.is_pluggy_available", return_value=True), \
+             patch("app.services.pluggy_sync.validate_item", return_value=(True, item)):
+            connection, error = add_pluggy_connection(
+                session, user.id, "550e8400-e29b-41d4-a716-446655440001"
+            )
+        assert error is None
+        assert connection is not None
+        assert connection.status == "needs_attention"
+
+
+class TestPluggyResyncDedupe:
+    def test_imported_pluggy_rows_are_not_selected_again(self, session, pluggy_accounts, pluggy_transactions):
+        from app.services.cumbuca_sync import ImportExpenseRow, import_selected_account_debits
+        from app.services.pluggy_sync import PLUGGY_SOURCE
+
+        user = session.exec(select(User)).one()
+        _add_pluggy_connection(session, user)
+        connections = get_pluggy_connections(session, user.id)
+
+        with patch("app.services.pluggy_sync.fetch_accounts") as mock_accounts, \
+             patch("app.services.pluggy_sync.fetch_transactions") as mock_tx:
+            mock_accounts.return_value = [
+                acc for acc in pluggy_accounts["results"] if acc["type"] != "CREDIT"
+            ]
+            mock_tx.return_value = pluggy_transactions["results"]
+            rows, _ = build_pluggy_expense_import_rows(
+                session, user.id, connections, year=2026, month=6
+            )
+
+        converted = [
+            ImportExpenseRow(
+                row_key=row.row_key,
+                external_id=row.external_id,
+                year=row.year,
+                month=row.month,
+                category=row.category,
+                vendor=row.vendor,
+                payment_account=row.payment_account,
+                amount=row.amount,
+                transaction_date=row.transaction_date,
+                already_exists=row.already_exists,
+                selected=row.selected,
+                import_kind="expense",
+            )
+            for row in rows
+            if row.import_kind == "expense"
+        ]
+        created, _, _ = import_selected_account_debits(
+            session,
+            user.id,
+            converted,
+            {row.row_key for row in converted},
+            source=PLUGGY_SOURCE,
+        )
+        assert created == len(converted)
+
+        saved = session.exec(select(FinanceExpenseEntry).where(FinanceExpenseEntry.source == "pluggy")).all()
+        assert len(saved) == created
+        assert all(entry.external_id.startswith("pluggy:") for entry in saved)
+
+        with patch("app.services.pluggy_sync.fetch_accounts") as mock_accounts, \
+             patch("app.services.pluggy_sync.fetch_transactions") as mock_tx:
+            mock_accounts.return_value = [
+                acc for acc in pluggy_accounts["results"] if acc["type"] != "CREDIT"
+            ]
+            mock_tx.return_value = pluggy_transactions["results"]
+            again, _ = build_pluggy_expense_import_rows(
+                session, user.id, connections, year=2026, month=6
+            )
+
+        expenses_again = [row for row in again if row.import_kind == "expense"]
+        assert expenses_again
+        assert all(row.already_exists and not row.selected for row in expenses_again)
+
+
+class TestInvestmentLookupByUser:
+    def test_ignores_other_users_investments(self, session, pluggy_investments):
+        from app.models.portfolio import Portfolio
+        from app.services.auth import ensure_user_portfolio
+        from app.tests.conftest import make_investment
+
+        user = session.exec(select(User)).one()
+        other = User(email="other@example.com", google_sub="other-sub", name="Other")
+        session.add(other)
+        session.commit()
+        session.refresh(other)
+        ensure_user_portfolio(session, other)
+
+        other_types = session.exec(
+            select(Portfolio).where(Portfolio.user_id == other.id)
+        ).one()
+        from app.models.asset_type import AssetType
+        other_bonds = session.exec(
+            select(AssetType).where(AssetType.portfolio_id == other_types.id)
+        ).first()
+        assert other_bonds is not None
+        make_investment(
+            session,
+            other_bonds.id,
+            "CDB Nubank 100% CDI",
+            Decimal("1"),
+        )
+        # Tag as a Pluggy investment belonging to the other user
+        inv = session.exec(select(Investment).where(Investment.name == "CDB Nubank 100% CDI")).one()
+        inv.external_id = "pluggy:inv-other"
+        session.add(inv)
+        session.commit()
+
+        _add_pluggy_connection(session, user)
+        connections = get_pluggy_connections(session, user.id)
+        with patch("app.services.pluggy_sync.fetch_investments") as mock_inv:
+            mock_inv.return_value = pluggy_investments["results"]
+            rows, _ = build_pluggy_investment_import_rows(session, user.id, connections)
+
+        cdb = next(row for row in rows if "CDB" in row.name)
+        assert not cdb.already_exists
+        assert not cdb.is_update
+
+
+class TestPluggyRoutes:
+    def test_add_connection_rejects_non_uuid(self, client):
+        with patch("app.web.routes.open_finance.is_pluggy_available", return_value=True):
+            response = client.post(
+                "/api/open-finance/pluggy/connections",
+                data={"item_id": "../items/secret"},
+            )
+        assert response.status_code == 400
+        assert "UUID" in response.json()["detail"]
+
+    def test_confirm_rejects_preview_from_other_user(self, client, session):
+        from app.web.routes import open_finance as routes
+        from app.services.pluggy_sync import PluggyImportExpenseRow
+        from uuid import uuid4
+
+        other_user_id = uuid4()
+        token = routes._stash_pluggy_expense_import(
+            other_user_id,
+            [
+                PluggyImportExpenseRow(
+                    row_key="pluggy:x",
+                    external_id="pluggy:x",
+                    year=2026,
+                    month=6,
+                    category="Outros",
+                    vendor="Test",
+                    payment_account="Nuconta",
+                    amount=Decimal("-10"),
+                    transaction_date=date(2026, 6, 1),
+                    already_exists=False,
+                    selected=True,
+                )
+            ],
+        )
+        response = client.post(
+            "/api/open-finance/pluggy/sync/expenses/confirm",
+            data={"import_token": token, "selected_rows": ["pluggy:x"]},
+        )
+        assert response.status_code == 400
+
+
+class TestOpenFinanceMatch:
+    def test_overlapping_institutions_detects_same_bank(self, session):
+        from app.services.open_finance_match import (
+            both_providers_connected,
+            overlapping_institutions,
+        )
+
+        user = session.exec(select(User)).one()
+        session.add(OpenFinanceConnection(
+            user_id=user.id,
+            provider="cumbuca",
+            external_id="",
+            institution_name="Nubank",
+            status="active",
+            refresh_token="refresh",
+        ))
+        session.add(OpenFinanceConnection(
+            user_id=user.id,
+            provider=PLUGGY_PROVIDER,
+            external_id="550e8400-e29b-41d4-a716-446655440000",
+            institution_name="Nu Pagamentos",
+            status="active",
+        ))
+        session.commit()
+        connections = list(session.exec(select(OpenFinanceConnection)).all())
+        assert overlapping_institutions(connections) == ["nubank"]
+        assert both_providers_connected(connections)
+
+
+def test_unique_external_id_constraint_blocks_duplicate_expenses(session):
+    from sqlalchemy.exc import IntegrityError
+
+    user = session.exec(select(User)).one()
+    session.add(FinanceExpenseEntry(
+        user_id=user.id,
+        year=2026,
+        month=6,
+        category="Outros",
+        vendor="A",
+        payment_account="Nuconta",
+        amount=Decimal("-1"),
+        source="pluggy",
+        external_id="pluggy:dup",
+    ))
+    session.commit()
+    session.add(FinanceExpenseEntry(
+        user_id=user.id,
+        year=2026,
+        month=6,
+        category="Outros",
+        vendor="B",
+        payment_account="Nuconta",
+        amount=Decimal("-2"),
+        source="pluggy",
+        external_id="pluggy:dup",
+    ))
+    with pytest.raises(IntegrityError):
+        session.commit()

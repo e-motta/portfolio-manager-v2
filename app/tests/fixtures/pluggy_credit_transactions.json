@@ -1,0 +1,47 @@
+{
+  "results": [
+    {
+      "id": "tx-pluggy-cc-001",
+      "accountId": "acc-pluggy-credit-001",
+      "description": "iFood",
+      "amount": -89.90,
+      "currencyCode": "BRL",
+      "date": "2026-06-03",
+      "type": "DEBIT",
+      "category": "Food",
+      "creditCardMetadata": {
+        "purchaseDate": "2026-06-03",
+        "installmentNumber": 1,
+        "totalInstallments": 1
+      }
+    },
+    {
+      "id": "tx-pluggy-cc-002",
+      "accountId": "acc-pluggy-credit-001",
+      "description": "Magazine Luiza",
+      "amount": -200.00,
+      "currencyCode": "BRL",
+      "date": "2026-06-10",
+      "type": "DEBIT",
+      "category": "Shopping",
+      "creditCardMetadata": {
+        "purchaseDate": "2026-05-10",
+        "installmentNumber": 2,
+        "totalInstallments": 3
+      }
+    },
+    {
+      "id": "tx-pluggy-cc-003",
+      "accountId": "acc-pluggy-credit-001",
+      "description": "Pagamento recebido",
+      "amount": 2500.00,
+      "currencyCode": "BRL",
+      "date": "2026-06-12",
+      "type": "CREDIT",
+      "category": "Transfer"
+    }
+  ],
+  "page": 1,
+  "total": 3,
+  "totalPages": 1
+}
