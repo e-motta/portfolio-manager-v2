@@ -31,6 +31,7 @@ type Status = {
   has_cumbuca: boolean;
   has_pluggy: boolean;
   total_count: number;
+  same_institution_warning?: string | null;
 };
 
 type Tools = {
@@ -257,6 +258,9 @@ export function OpenFinancePage() {
       </p>
       <QueryFlash />
       {previewError ? <Alert tone="error">{previewError}</Alert> : null}
+      {status.data?.same_institution_warning ? (
+        <Alert tone="warn">{status.data.same_institution_warning}</Alert>
+      ) : null}
 
       {!connected ? (
         <DisconnectedHub />
@@ -556,8 +560,13 @@ function PluggySection({
                 <div className="of-connections__info">
                   <strong>{conn.institution_name}</strong>
                   <span className={`badge badge--${conn.status === "active" ? "ok" : "warn"}`}>
-                    {conn.status}
+                    {conn.status === "needs_attention" ? "Needs attention" : conn.status}
                   </span>
+                  {conn.status === "needs_attention" ? (
+                    <span className="of-connections__meta">
+                      Reconnect this bank in Meu Pluggy (login error, outdated, or waiting for input).
+                    </span>
+                  ) : null}
                   {conn.last_synced_at ? (
                     <span className="of-connections__meta">
                       Last synced: {new Date(conn.last_synced_at).toLocaleDateString()}
@@ -789,8 +798,15 @@ function OpenFinancePreview({
     () => rows.filter((row) => isInvestments || !row.already_exists).map((row) => String(row.row_key)),
     [rows, isInvestments],
   );
+  const initiallySelected = useMemo(
+    () =>
+      rows
+        .filter((row) => isInvestments || (!row.already_exists && !row.likely_duplicate && !row.is_bill_payment))
+        .map((row) => String(row.row_key)),
+    [rows, isInvestments],
+  );
 
-  const [selected, setSelected] = useState<string[]>(selectable);
+  const [selected, setSelected] = useState<string[]>(initiallySelected);
   const [overrides, setOverrides] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     for (const row of rows) {
@@ -1209,9 +1225,15 @@ function OpenFinancePreview({
                         )}
                         <td className="num">{formatBrl(row.amount)}</td>
                         <td>
-                          <span className={`badge ${existing ? "badge--src" : "badge--ok"}`}>
-                            {existing ? "Imported" : "New"}
-                          </span>
+                          {existing ? (
+                            <span className="badge badge--src">Imported</span>
+                          ) : row.likely_duplicate ? (
+                            <span className="badge badge--warn">Likely duplicate</span>
+                          ) : row.is_bill_payment ? (
+                            <span className="badge badge--warn">Card bill</span>
+                          ) : (
+                            <span className="badge badge--ok">New</span>
+                          )}
                         </td>
                       </>
                     )}
