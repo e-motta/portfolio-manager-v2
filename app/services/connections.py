@@ -98,8 +98,11 @@ def get_cumbuca_connection_or_from_user(
 
 
 def user_has_cumbuca_connection(session: Session, user: User) -> bool:
-    """Check if user has a Cumbuca connection (in either location)."""
-    return get_cumbuca_connection_or_from_user(session, user) is not None
+    """Check if user has an active Cumbuca connection (in either location)."""
+    connection = get_cumbuca_connection(session, user.id)
+    if connection:
+        return connection.status == "active" and bool(connection.refresh_token)
+    return bool(user.cumbuca_refresh_token)
 
 
 def create_or_update_cumbuca_connection(
@@ -132,6 +135,8 @@ def create_or_update_cumbuca_connection(
         connection.access_token = access_token
     if token_expires_at is not None:
         connection.token_expires_at = token_expires_at
+    if refresh_token or access_token:
+        connection.status = "active"
     connection.updated_at = datetime.utcnow()
 
     session.add(connection)
@@ -176,6 +181,8 @@ def update_cumbuca_tokens(
         connection.token_expires_at = expires_at
         user.cumbuca_token_expires_at = expires_at
 
+    if refresh_token or access_token:
+        connection.status = "active"
     connection.updated_at = now
     user.cumbuca_connected_at = now
 
@@ -185,10 +192,16 @@ def update_cumbuca_tokens(
 
 
 def disconnect_cumbuca_connection(session: Session, user: User) -> None:
-    """Disconnect Cumbuca by removing the connection and clearing user columns."""
+    """Disconnect Cumbuca by clearing tokens/secret and marking the row disconnected."""
     connection = get_cumbuca_connection(session, user.id)
     if connection:
-        session.delete(connection)
+        connection.refresh_token = None
+        connection.access_token = None
+        connection.token_expires_at = None
+        connection.oauth_client_secret = None
+        connection.status = "disconnected"
+        connection.updated_at = datetime.now(timezone.utc)
+        session.add(connection)
 
     user.cumbuca_refresh_token = None
     user.cumbuca_access_token = None
@@ -249,7 +262,13 @@ def connections_summary(connections: list[OpenFinanceConnection]) -> dict:
             for conn in connections
         ],
         "by_provider": by_provider,
-        "has_cumbuca": any(c.provider == PROVIDER_CUMBUCA for c in connections),
-        "has_pluggy": any(c.provider == PROVIDER_PLUGGY for c in connections),
+        "has_cumbuca": any(
+            c.provider == PROVIDER_CUMBUCA and c.status == "active" and bool(c.refresh_token)
+            for c in connections
+        ),
+        "has_pluggy": any(
+            c.provider == PROVIDER_PLUGGY and c.status not in {"disconnected", "inactive"}
+            for c in connections
+        ),
         "total_count": len(connections),
     }

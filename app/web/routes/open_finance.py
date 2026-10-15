@@ -34,6 +34,10 @@ from app.services.connections import (
     connections_summary,
     get_all_connections,
 )
+from app.services.open_finance_match import (
+    both_providers_connected,
+    overlapping_institutions,
+)
 from app.services.pluggy_client import is_pluggy_available
 from app.services.pluggy_sync import (
     PluggyImportExpenseRow,
@@ -114,7 +118,7 @@ def _cc_expense_period(year: int, month: int) -> tuple[int, int, str]:
 def _open_finance_tools_context(session, user) -> dict:
     tool_names: list[str] = []
     tools_error = None
-    if user_has_cumbuca(user):
+    if user_has_cumbuca(user, session):
         try:
             access_token = get_access_token_for_user(session, user)
             from app.services.cumbuca_mcp import list_tool_names
@@ -147,13 +151,28 @@ def open_finance_page(
     connections = get_all_connections(session, user.id)
     summary = connections_summary(connections)
 
-    has_cumbuca = user_has_cumbuca(user) or summary["has_cumbuca"]
+    has_cumbuca = user_has_cumbuca(user, session) or summary["has_cumbuca"]
+    overlap = overlapping_institutions(connections)
+    same_institution_warning = None
+    if both_providers_connected(connections) or overlap:
+        if overlap:
+            names = ", ".join(name.title() for name in overlap)
+            same_institution_warning = (
+                f"{names} appears connected via both Cumbuca and Pluggy. "
+                "Likely duplicate transactions are left unselected at preview."
+            )
+        else:
+            same_institution_warning = (
+                "Cumbuca and Pluggy are both connected. Transactions from the "
+                "same bank may appear twice — likely duplicates are left unselected."
+            )
 
     return json_ok(
         {
             "connected": has_cumbuca,
             "connected_at": user.cumbuca_connected_at,
             "pluggy_available": is_pluggy_available(),
+            "same_institution_warning": same_institution_warning,
             **summary,
         }
     )
@@ -164,7 +183,7 @@ def open_finance_tools_partial(
     session: SessionDep,
     user: CurrentUserDep,
 ):
-    if not user_has_cumbuca(user):
+    if not user_has_cumbuca(user, session):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
 
     return json_ok(_open_finance_tools_context(session, user))
@@ -196,7 +215,7 @@ def _preview_expense_import(
     default_import_month: int | None = None,
     allow_transfer_import: bool = False,
 ):
-    if not user_has_cumbuca(user):
+    if not user_has_cumbuca(user, session):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
 
     resolved_year = resolve_year(year)
@@ -215,7 +234,7 @@ def _preview_expense_import(
             month=resolved_month,
             access_token=access_token,
         )
-        import_token = stash_finance_import(rows)
+        import_token = stash_finance_import(user.id, rows)
         if not rows and warnings:
             error = "; ".join(warnings)
     except HTTPException as exc:
@@ -381,7 +400,7 @@ async def _confirm_account_debits_import(
     form = await request.form()
     import_token = str(form.get("import_token") or "")
     selected_rows = form.getlist("selected_rows")
-    rows = pop_stashed_finance_import(import_token)
+    rows = pop_stashed_finance_import(import_token, user.id)
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
@@ -433,7 +452,7 @@ async def _confirm_expense_import(
     form = await request.form()
     import_token = str(form.get("import_token") or "")
     selected_rows = form.getlist("selected_rows")
-    rows = pop_stashed_finance_import(import_token)
+    rows = pop_stashed_finance_import(import_token, user.id)
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
@@ -510,7 +529,7 @@ def preview_account_credits_sync(
     year: int = Form(default=0),
     month: int = Form(default=0),
 ):
-    if not user_has_cumbuca(user):
+    if not user_has_cumbuca(user, session):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
 
     resolved_year = resolve_year(year)
@@ -530,7 +549,7 @@ def preview_account_credits_sync(
             month=resolved_month,
             access_token=access_token,
         )
-        import_token = stash_income_import(rows)
+        import_token = stash_income_import(user.id, rows)
         if not rows and warnings:
             error = "; ".join(warnings)
     except HTTPException as exc:
@@ -589,7 +608,7 @@ async def confirm_account_credits_sync(
     form = await request.form()
     import_token = str(form.get("import_token") or "")
     selected_rows = form.getlist("selected_rows")
-    rows = pop_stashed_income_import(import_token)
+    rows = pop_stashed_income_import(import_token, user.id)
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
@@ -635,7 +654,7 @@ def preview_investment_sync(
     session: SessionDep,
     user: CurrentUserDep,
 ):
-    if not user_has_cumbuca(user):
+    if not user_has_cumbuca(user, session):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
 
     error = None
@@ -644,8 +663,8 @@ def preview_investment_sync(
 
     try:
         access_token = get_access_token_for_user(session, user)
-        rows = build_investment_import_rows(session, access_token=access_token)
-        import_token = stash_investment_import(rows)
+        rows = build_investment_import_rows(session, access_token=access_token, user_id=user.id)
+        import_token = stash_investment_import(user.id, rows)
     except HTTPException as exc:
         error = exc.detail
     except Exception as exc:
@@ -679,11 +698,13 @@ def confirm_investment_sync(
     import_token: str = Form(...),
     selected_rows: list[str] = Form(default=[]),
 ) -> RedirectResponse:
-    rows = pop_stashed_investment_import(import_token)
+    rows = pop_stashed_investment_import(import_token, user.id)
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
-    created, updated = import_selected_investments(session, rows, set(selected_rows))
+    created, updated = import_selected_investments(
+        session, rows, set(selected_rows), user_id=user.id
+    )
     return RedirectResponse(
         url=f"/portfolio/investments?imported={created}&updated={updated}",
         status_code=303,
@@ -914,6 +935,8 @@ def _expense_row_to_dict(row: PluggyImportExpenseRow) -> dict:
         "to_account": row.to_account,
         "broker": row.broker,
         "description": row.description,
+        "likely_duplicate": row.likely_duplicate,
+        "is_bill_payment": row.is_bill_payment,
     }
 
 
@@ -1055,6 +1078,7 @@ def _income_row_to_dict(row: PluggyImportIncomeRow) -> dict:
         "selected": row.selected,
         "import_kind": row.import_kind,
         "broker": row.broker,
+        "likely_duplicate": row.likely_duplicate,
     }
 
 
@@ -1202,7 +1226,7 @@ def confirm_pluggy_investments(
     ]
 
     created, updated = cumbuca_import_investments(
-        session, converted_rows, set(selected_rows), source=PLUGGY_SOURCE
+        session, converted_rows, set(selected_rows), source=PLUGGY_SOURCE, user_id=user.id
     )
 
     for conn in get_pluggy_connections(session, user.id):

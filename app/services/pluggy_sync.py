@@ -29,20 +29,89 @@ from app.services.pluggy_client import (
     is_pluggy_available,
     validate_item,
 )
+from app.models.asset_type import AssetType
+from app.models.portfolio import Portfolio
 from app.services.finance import (
     BILLS_CATEGORY,
     EXPENSE_CATEGORIES,
     PAYMENT_ACCOUNTS,
+    TRANSFER_ACCOUNTS,
     load_import_vendor_rule_map,
     normalize_vendor_key,
     resolve_expense_subcategory,
     suggest_expense_category,
+    suggest_investment_broker,
     VendorRule,
+)
+from app.services.open_finance_match import (
+    CUMBUCA_SOURCE,
+    expense_match_key,
+    existing_cross_provider_expense_keys,
+    existing_cross_provider_income_keys,
+    income_match_key,
 )
 from app.web.helpers import get_investable_asset_types
 
 PLUGGY_SOURCE = "pluggy"
 PLUGGY_PROVIDER = "pluggy"
+
+ACTIVE_ITEM_STATUSES = frozenset({"UPDATED", "UPDATING"})
+NEEDS_ATTENTION_ITEM_STATUSES = frozenset({
+    "WAITING_USER_INPUT",
+    "LOGIN_ERROR",
+    "OUTDATED",
+})
+SYNCABLE_CONNECTION_STATUSES = frozenset({"active", "needs_attention"})
+
+TRANSFER_CATEGORIES = frozenset({
+    "transfer",
+    "transfers",
+    "transferência",
+    "transferencia",
+    "pix",
+    "ted",
+    "doc",
+    "internal transfer",
+})
+INVESTMENT_CATEGORIES = frozenset({
+    "investment",
+    "investments",
+    "investimento",
+    "investimentos",
+    "application",
+    "aplicação",
+    "aplicacao",
+    "redemption",
+    "resgate",
+})
+TRANSFER_VENDOR_KEYWORDS = (
+    "transferencia",
+    "transferência",
+    "transf ",
+    "ted ",
+    "doc ",
+    "pix enviado",
+    "entre contas",
+)
+BILL_PAYMENT_KEYWORDS = (
+    "pagamento de fatura",
+    "pagamento da fatura",
+    "pagamento fatura",
+    "pagamento cartao",
+    "pagamento cartão",
+    "fatura cartao",
+    "fatura cartão",
+    "fatura do cartao",
+    "fatura do cartão",
+    "credit card payment",
+    "card bill payment",
+    "pagamento recebido",
+)
+CREDIT_PAYMENT_ACCOUNT_RULES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("nubank", "nu pagamentos"), "Nubank"),
+    (("xp",), "XP Crédito"),
+    (("banco do brasil", "bb"), "BB Crédito"),
+)
 
 EXCHANGE_TRADED_INVESTMENT_TYPES = frozenset({"EQUITY", "MUTUAL_FUND", "ETF", "STOCK"})
 
@@ -113,6 +182,9 @@ class PluggyImportExpenseRow:
     broker: str | None = None
     description: str = ""
     item_id: str = ""
+    likely_duplicate: bool = False
+    is_bill_payment: bool = False
+    account_type: str = ""
 
 
 @dataclass
@@ -130,6 +202,7 @@ class PluggyImportIncomeRow:
     import_kind: str = "income"
     broker: str | None = None
     item_id: str = ""
+    likely_duplicate: bool = False
 
 
 @dataclass
@@ -146,14 +219,28 @@ class PluggyImportInvestmentRow:
     item_id: str = ""
 
 
+def map_pluggy_item_status(pluggy_status: str) -> str:
+    """Map a Pluggy item status to a connection status.
+
+    UPDATED/UPDATING are active. WAITING_USER_INPUT, LOGIN_ERROR, and
+    OUTDATED need attention. Everything else is inactive.
+    """
+    status = (pluggy_status or "").upper()
+    if status in ACTIVE_ITEM_STATUSES:
+        return "active"
+    if status in NEEDS_ATTENTION_ITEM_STATUSES:
+        return "needs_attention"
+    return "inactive"
+
+
 def get_pluggy_connections(session: Session, user_id: UUID) -> list[OpenFinanceConnection]:
-    """Get all Pluggy connections for a user."""
+    """Get Pluggy connections that can still be listed or synced."""
     return list(
         session.exec(
             select(OpenFinanceConnection)
             .where(OpenFinanceConnection.user_id == user_id)
             .where(OpenFinanceConnection.provider == PLUGGY_PROVIDER)
-            .where(OpenFinanceConnection.status == "active")
+            .where(OpenFinanceConnection.status != "disconnected")
         ).all()
     )
 
@@ -197,7 +284,7 @@ def add_pluggy_connection(
         external_id=item_id,
         institution_name=institution_name,
         institution_id=institution_id,
-        status="active" if status in ("UPDATED", "UPDATING", "WAITING_USER_INPUT") else "inactive",
+        status=map_pluggy_item_status(status),
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
@@ -245,7 +332,7 @@ def refresh_pluggy_connection(
     connector = item_data.get("connector", {})
     connection.institution_name = connector.get("institutionName") or connector.get("name") or connection.institution_name
     status = item_data.get("status", "UNKNOWN")
-    connection.status = "active" if status in ("UPDATED", "UPDATING", "WAITING_USER_INPUT") else "inactive"
+    connection.status = map_pluggy_item_status(status)
     connection.updated_at = datetime.utcnow()
     session.add(connection)
     session.commit()
@@ -287,10 +374,75 @@ def _month_bounds(year: int, month: int) -> tuple[date, date]:
 def map_payment_account(institution_name: str, account_type: str = "") -> str:
     """Map Pluggy institution/account to app payment account."""
     haystack = f"{institution_name} {account_type}".lower()
-    for keywords, payment_account in PAYMENT_ACCOUNT_RULES:
+    rules = CREDIT_PAYMENT_ACCOUNT_RULES if account_type.upper() == "CREDIT" else PAYMENT_ACCOUNT_RULES
+    for keywords, payment_account in rules:
         if any(keyword in haystack for keyword in keywords):
             return payment_account
-    return "Nuconta"
+    return "Nubank" if account_type.upper() == "CREDIT" else "Nuconta"
+
+
+def _haystacks(text: str) -> tuple[str, ...]:
+    lowered = text.lower()
+    normalized = lowered.replace(" de ", " ").replace(" da ", " ")
+    if normalized == lowered:
+        return (lowered,)
+    return (lowered, normalized)
+
+
+def is_bill_payment_description(description: str) -> bool:
+    return any(
+        keyword in haystack
+        for haystack in _haystacks(description)
+        for keyword in BILL_PAYMENT_KEYWORDS
+    )
+
+
+def suggest_pluggy_debit_import_kind(tx: dict[str, Any], vendor: str) -> str:
+    """Default classification from Pluggy category/type and description."""
+    category = str(tx.get("category") or "").strip().lower()
+    if category in INVESTMENT_CATEGORIES or any(token in category for token in INVESTMENT_CATEGORIES):
+        return "investment"
+    if category in TRANSFER_CATEGORIES or any(token in category for token in TRANSFER_CATEGORIES):
+        return "transfer"
+    if is_bill_payment_description(vendor):
+        return "transfer"
+    for haystack in _haystacks(vendor):
+        if any(keyword in haystack for keyword in TRANSFER_VENDOR_KEYWORDS):
+            return "transfer"
+    return "expense"
+
+
+def suggest_pluggy_credit_import_kind(tx: dict[str, Any], description: str) -> str:
+    category = str(tx.get("category") or "").strip().lower()
+    if category in INVESTMENT_CATEGORIES or any(token in category for token in INVESTMENT_CATEGORIES):
+        return "investment"
+    if category in TRANSFER_CATEGORIES or any(token in category for token in TRANSFER_CATEGORIES):
+        return "income"
+    return "income"
+
+
+def suggest_transfer_to_account(vendor: str, from_account: str) -> str | None:
+    haystack = vendor.lower()
+    for keywords, payment_account in PAYMENT_ACCOUNT_RULES + CREDIT_PAYMENT_ACCOUNT_RULES:
+        if payment_account == from_account:
+            continue
+        if payment_account not in TRANSFER_ACCOUNTS:
+            continue
+        if any(keyword in haystack for keyword in keywords):
+            return payment_account
+    defaults = {
+        "Nuconta": "Nubank",
+        "Nubank": "Nuconta",
+        "BB Débito": "Nuconta",
+        "Wise": "Nuconta",
+    }
+    suggested = defaults.get(from_account)
+    if suggested and suggested != from_account:
+        return suggested
+    for account in TRANSFER_ACCOUNTS:
+        if account != from_account:
+            return account
+    return None
 
 
 def map_category(pluggy_category: str | None, description: str) -> str:
@@ -365,14 +517,15 @@ def _existing_pluggy_investment_import_ids(session: Session, user_id: UUID) -> s
     return {row for row in rows if row and row.startswith("pluggy:")}
 
 
-def _existing_investment_map(session: Session, user_id: UUID | None = None) -> dict[str, Investment]:
-    """Get existing Pluggy investments.
-
-    Note: The Investment model is portfolio-scoped, not user-scoped directly.
-    We filter by external_id prefix to find Pluggy-imported investments.
-    """
-    from app.web.helpers import get_investments
-    investments = get_investments(session)
+def _existing_investment_map(session: Session, user_id: UUID) -> dict[str, Investment]:
+    """Get existing Pluggy investments for a user's portfolio only."""
+    investments = session.exec(
+        select(Investment)
+        .join(AssetType)
+        .join(Portfolio)
+        .where(Portfolio.user_id == user_id)
+        .where(AssetType.is_exchange_traded.is_(False))  # type: ignore[attr-defined]
+    ).all()
     return {
         investment.external_id: investment
         for investment in investments
@@ -388,7 +541,14 @@ def build_pluggy_expense_import_rows(
     year: int,
     month: int,
 ) -> tuple[list[PluggyImportExpenseRow], list[str]]:
-    """Build expense import rows from Pluggy transactions."""
+    """Build expense import rows from Pluggy bank and credit-card transactions.
+
+    Credit card purchases are imported individually as expenses using the
+    purchase date (or the installment charge date). Bank-account bill
+    payments for those cards are classified as transfers and left
+    unselected so the purchase and the bill settlement are not both
+    counted as expenses.
+    """
     warnings: list[str] = []
     rows: list[PluggyImportExpenseRow] = []
 
@@ -400,10 +560,13 @@ def build_pluggy_expense_import_rows(
         | _existing_pluggy_transfer_ids(session, user_id)
         | _existing_pluggy_investment_import_ids(session, user_id)
     )
+    cross_keys = existing_cross_provider_expense_keys(session, user_id, CUMBUCA_SOURCE)
     vendor_rules = load_import_vendor_rule_map(session, user_id)
     start_date, end_date = _month_bounds(year, month)
 
     for connection in connections:
+        if connection.status not in SYNCABLE_CONNECTION_STATUSES:
+            continue
         try:
             accounts = fetch_accounts(connection.external_id)
             warnings.extend(PaginationCapWarning.pop_all())
@@ -413,11 +576,8 @@ def build_pluggy_expense_import_rows(
 
         for account in accounts:
             account_id = account.get("id")
-            account_type = account.get("type", "")
+            account_type = str(account.get("type") or "")
             if not account_id:
-                continue
-
-            if account_type == "CREDIT":
                 continue
 
             try:
@@ -434,6 +594,7 @@ def build_pluggy_expense_import_rows(
                     tx,
                     connection,
                     payment_account,
+                    account_type,
                     year,
                     month,
                     vendor_rules,
@@ -441,22 +602,37 @@ def build_pluggy_expense_import_rows(
                 if row is None:
                     continue
                 row.already_exists = row.external_id in existing_ids
-                row.selected = not row.already_exists
+                row.likely_duplicate = (
+                    not row.already_exists
+                    and expense_match_key(row.transaction_date, row.amount, row.vendor) in cross_keys
+                )
+                row.selected = not row.already_exists and not row.likely_duplicate and not row.is_bill_payment
                 rows.append(row)
 
     rows.sort(key=lambda r: (r.transaction_date, r.vendor))
     return rows, warnings
 
 
+def _credit_card_purchase_date(tx: dict[str, Any]) -> date | None:
+    """Prefer the purchase date, then the installment charge date."""
+    metadata = tx.get("creditCardMetadata") or tx.get("credit_card_metadata") or {}
+    if isinstance(metadata, dict):
+        purchase = _parse_date(metadata.get("purchaseDate") or metadata.get("purchase_date"))
+        if purchase is not None:
+            return purchase
+    return _parse_date(tx.get("date"))
+
+
 def _normalize_pluggy_expense_transaction(
     tx: dict[str, Any],
     connection: OpenFinanceConnection,
     payment_account: str,
+    account_type: str,
     year: int,
     month: int,
     vendor_rules: dict[str, VendorRule] | None = None,
 ) -> PluggyImportExpenseRow | None:
-    """Normalize a Pluggy transaction to an expense import row."""
+    """Normalize a Pluggy bank or credit-card transaction to an import row."""
     external_id = f"pluggy:{tx.get('id', '')}"
     if not tx.get("id"):
         return None
@@ -465,15 +641,38 @@ def _normalize_pluggy_expense_transaction(
     if amount_raw is None or amount_raw == 0:
         return None
 
-    if amount_raw > 0:
-        return None
+    is_credit_account = account_type.upper() == "CREDIT"
+    tx_type = str(tx.get("type") or "").upper()
+    description = str(tx.get("description") or "").strip()
+    vendor = description or "Unknown"
+    bill_payment = is_bill_payment_description(vendor)
 
-    tx_date = _parse_date(tx.get("date"))
+    if is_credit_account:
+        if bill_payment:
+            return None
+        tx_date = _credit_card_purchase_date(tx)
+        if tx_type == "CREDIT" and amount_raw > 0:
+            is_reversal = True
+            amount = abs(amount_raw)
+        else:
+            is_reversal = False
+            amount = -abs(amount_raw)
+        import_kind = "expense"
+        to_account = None
+        broker = None
+    else:
+        if amount_raw > 0:
+            return None
+        tx_date = _parse_date(tx.get("date"))
+        is_reversal = False
+        amount = amount_raw
+        import_kind = suggest_pluggy_debit_import_kind(tx, vendor)
+        to_account = suggest_transfer_to_account(vendor, payment_account) if import_kind == "transfer" else None
+        broker = suggest_investment_broker(payment_account, vendor) if import_kind == "investment" else None
+
     if tx_date is None:
         return None
 
-    description = str(tx.get("description") or "").strip()
-    vendor = description or "Unknown"
     pluggy_category = tx.get("category")
     vendor_key = normalize_vendor_key(vendor)
     saved_rule = (vendor_rules or {}).get(vendor_key)
@@ -491,7 +690,7 @@ def _normalize_pluggy_expense_transaction(
         category = "Outros"
 
     if payment_account not in PAYMENT_ACCOUNTS:
-        payment_account = "Nuconta"
+        payment_account = "Nubank" if is_credit_account else "Nuconta"
 
     subcategory = None
     row_description = ""
@@ -512,14 +711,19 @@ def _normalize_pluggy_expense_transaction(
         category=category,
         vendor=vendor,
         payment_account=payment_account,
-        amount=amount_raw,
+        amount=amount,
         transaction_date=tx_date,
         already_exists=False,
         selected=True,
-        is_reversal=False,
+        is_reversal=is_reversal,
         subcategory=subcategory,
+        import_kind=import_kind,
+        to_account=to_account,
+        broker=broker,
         description=row_description,
         item_id=connection.external_id,
+        is_bill_payment=bill_payment and not is_credit_account,
+        account_type=account_type,
     )
 
 
@@ -542,9 +746,12 @@ def build_pluggy_income_import_rows(
         _existing_pluggy_income_ids(session, user_id)
         | _existing_pluggy_investment_import_ids(session, user_id)
     )
+    cross_keys = existing_cross_provider_income_keys(session, user_id, CUMBUCA_SOURCE)
     start_date, end_date = _month_bounds(year, month)
 
     for connection in connections:
+        if connection.status not in SYNCABLE_CONNECTION_STATUSES:
+            continue
         try:
             accounts = fetch_accounts(connection.external_id)
             warnings.extend(PaginationCapWarning.pop_all())
@@ -574,7 +781,12 @@ def build_pluggy_income_import_rows(
                 if row.transaction_date.month != month or row.transaction_date.year != year:
                     continue
                 row.already_exists = row.external_id in existing_ids
-                row.selected = not row.already_exists
+                row.likely_duplicate = (
+                    not row.already_exists
+                    and income_match_key(row.year, row.month, row.amount, row.description) in cross_keys
+                )
+                leave_unselected = row.import_kind != "income" or row.likely_duplicate
+                row.selected = not row.already_exists and not leave_unselected
                 rows.append(row)
 
     rows.sort(key=lambda r: (r.transaction_date, r.description))
@@ -604,6 +816,9 @@ def _normalize_pluggy_income_transaction(
     if payment_account not in PAYMENT_ACCOUNTS:
         payment_account = "Nuconta"
 
+    import_kind = suggest_pluggy_credit_import_kind(tx, description)
+    broker = suggest_investment_broker(payment_account, description) if import_kind == "investment" else None
+
     return PluggyImportIncomeRow(
         row_key=external_id,
         external_id=external_id,
@@ -615,6 +830,8 @@ def _normalize_pluggy_income_transaction(
         payment_account=payment_account,
         already_exists=False,
         selected=True,
+        import_kind=import_kind,
+        broker=broker,
         item_id=connection.external_id,
     )
 
@@ -639,6 +856,8 @@ def build_pluggy_investment_import_rows(
     existing = _existing_investment_map(session, user_id)
 
     for connection in connections:
+        if connection.status not in SYNCABLE_CONNECTION_STATUSES:
+            continue
         try:
             investments = fetch_investments(connection.external_id)
             warnings.extend(PaginationCapWarning.pop_all())

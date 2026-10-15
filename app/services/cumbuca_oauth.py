@@ -22,8 +22,16 @@ OAUTH_PURPOSE_CUMBUCA = "cumbuca"
 OPEN_FINANCE_SOURCE = "open_finance"
 
 
-def user_has_cumbuca(user: User) -> bool:
-    """Check if user has Cumbuca connection (via user columns, for backward compat)."""
+def user_has_cumbuca(user: User, session: Session | None = None) -> bool:
+    """Check if the user has an active Cumbuca connection.
+
+    Prefers the connections table when a session is provided, and falls
+    back to the legacy user columns for one release.
+    """
+    if session is not None:
+        from app.services.connections import user_has_cumbuca_connection
+
+        return user_has_cumbuca_connection(session, user)
     return bool(user.cumbuca_refresh_token)
 
 

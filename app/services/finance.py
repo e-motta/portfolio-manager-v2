@@ -138,6 +138,7 @@ TRANSFER_ACCOUNTS = tuple(account for account in PAYMENT_ACCOUNTS if account != 
 FINANCE_SOURCE_LABELS = {
     "manual": "Manual",
     "open_finance": "Open Finance",
+    "pluggy": "Pluggy",
 }
 
 
