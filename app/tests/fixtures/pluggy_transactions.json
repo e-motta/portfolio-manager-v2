@@ -1,0 +1,67 @@
+{
+  "results": [
+    {
+      "id": "tx-pluggy-001",
+      "accountId": "acc-pluggy-checking-001",
+      "description": "PIX Recebido - Salário",
+      "amount": 12000.00,
+      "currencyCode": "BRL",
+      "date": "2026-06-05",
+      "type": "CREDIT",
+      "category": "Salary"
+    },
+    {
+      "id": "tx-pluggy-002",
+      "accountId": "acc-pluggy-checking-001",
+      "description": "Supermercado Extra",
+      "amount": -350.50,
+      "currencyCode": "BRL",
+      "date": "2026-06-08",
+      "type": "DEBIT",
+      "category": "Groceries"
+    },
+    {
+      "id": "tx-pluggy-003",
+      "accountId": "acc-pluggy-checking-001",
+      "description": "Uber Trip",
+      "amount": -45.90,
+      "currencyCode": "BRL",
+      "date": "2026-06-10",
+      "type": "DEBIT",
+      "category": "Transport"
+    },
+    {
+      "id": "tx-pluggy-004",
+      "accountId": "acc-pluggy-checking-001",
+      "description": "Aluguel - Apartamento",
+      "amount": -3500.00,
+      "currencyCode": "BRL",
+      "date": "2026-06-01",
+      "type": "DEBIT",
+      "category": "Housing"
+    },
+    {
+      "id": "tx-pluggy-005",
+      "accountId": "acc-pluggy-checking-001",
+      "description": "Restaurante Italiano",
+      "amount": -185.00,
+      "currencyCode": "BRL",
+      "date": "2026-06-12",
+      "type": "DEBIT",
+      "category": "Food"
+    },
+    {
+      "id": "tx-pluggy-006",
+      "accountId": "acc-pluggy-checking-001",
+      "description": "Transferência para XP",
+      "amount": -5000.00,
+      "currencyCode": "BRL",
+      "date": "2026-06-15",
+      "type": "DEBIT",
+      "category": "Transfer"
+    }
+  ],
+  "page": 1,
+  "total": 6,
+  "totalPages": 1
+}

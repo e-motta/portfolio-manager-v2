@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     CUMBUCA_OAUTH_SCOPES: str = "openid profile offline_access open-finance"
     ALLOWED_GOOGLE_EMAILS: str = ""
 
+    # Pluggy (Meu Pluggy) - optional, app starts without them
+    PLUGGY_CLIENT_ID: str = ""
+    PLUGGY_CLIENT_SECRET: str = ""
+    PLUGGY_API_URL: str = "https://api.pluggy.ai"
+
     @property
     def is_production(self) -> bool:
         return self.APP_ENV == "production"

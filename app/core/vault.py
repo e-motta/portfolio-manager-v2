@@ -28,6 +28,9 @@ SECRET_NAME_TO_ENV_VAR: dict[str, str] = {
     "portfolio-google-redirect-uri": "GOOGLE_REDIRECT_URI",
     "portfolio-cumbuca-redirect-uri": "CUMBUCA_REDIRECT_URI",
     "portfolio-allowed-emails": "ALLOWED_GOOGLE_EMAILS",
+    # Pluggy credentials are optional - app starts without them
+    "portfolio-pluggy-client-id": "PLUGGY_CLIENT_ID",
+    "portfolio-pluggy-client-secret": "PLUGGY_CLIENT_SECRET",
 }
 
 

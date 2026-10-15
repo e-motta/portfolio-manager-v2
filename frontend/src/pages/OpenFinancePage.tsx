@@ -13,9 +13,24 @@ const FALLBACK_MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+type Connection = {
+  id: string;
+  provider: "cumbuca" | "pluggy";
+  external_id: string;
+  institution_name: string;
+  status: string;
+  last_synced_at: string | null;
+  created_at: string | null;
+};
+
 type Status = {
   connected: boolean;
   connected_at: string | null;
+  pluggy_available: boolean;
+  connections: Connection[];
+  has_cumbuca: boolean;
+  has_pluggy: boolean;
+  total_count: number;
 };
 
 type Tools = {
@@ -155,6 +170,13 @@ export function OpenFinancePage() {
   const [creditPeriod, setCreditPeriod] = useState<Period | null>(null);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
 
+  // Pluggy state
+  const [pluggyItemId, setPluggyItemId] = useState("");
+  const [pluggyError, setPluggyError] = useState<string | null>(null);
+  const [pluggyDebitPeriod, setPluggyDebitPeriod] = useState<Period | null>(null);
+  const [pluggyCreditPeriod, setPluggyCreditPeriod] = useState<Period | null>(null);
+  const [removeConnectionId, setRemoveConnectionId] = useState<string | null>(null);
+
   const disconnect = useMutation({
     mutationFn: () => sendForm("/api/open-finance/disconnect", {}),
     onSuccess: (response) => {
@@ -162,6 +184,30 @@ export function OpenFinancePage() {
       void client.invalidateQueries({ queryKey: ["open-finance"] });
       const loc = redirectLocation(response);
       if (loc) navigate(pathFromRedirect(loc), { replace: true });
+    },
+  });
+
+  const addPluggyConnection = useMutation({
+    mutationFn: (itemId: string) => sendForm("/api/open-finance/pluggy/connections", { item_id: itemId }),
+    onSuccess: () => {
+      setPluggyItemId("");
+      setPluggyError(null);
+      void client.invalidateQueries({ queryKey: ["open-finance"] });
+    },
+    onError: (error) => {
+      setPluggyError(error instanceof Error ? error.message : "Failed to add connection.");
+    },
+  });
+
+  const removePluggyConnection = useMutation({
+    mutationFn: async (connectionId: string) => {
+      const response = await fetch(`/api/open-finance/pluggy/connections/${connectionId}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Failed to remove connection.");
+      return response.json();
+    },
+    onSuccess: () => {
+      setRemoveConnectionId(null);
+      void client.invalidateQueries({ queryKey: ["open-finance"] });
     },
   });
 
@@ -353,6 +399,29 @@ export function OpenFinancePage() {
               ) : null}
             </>
           )}
+
+          {/* Pluggy Section */}
+          {status.data?.pluggy_available ? (
+            <PluggySection
+              connections={status.data?.connections?.filter((c) => c.provider === "pluggy") ?? []}
+              itemId={pluggyItemId}
+              onItemIdChange={setPluggyItemId}
+              error={pluggyError}
+              onClearError={() => setPluggyError(null)}
+              onAddConnection={() => addPluggyConnection.mutate(pluggyItemId)}
+              addingConnection={addPluggyConnection.isPending}
+              onRemoveConnection={setRemoveConnectionId}
+              removingConnection={removePluggyConnection.isPending}
+              months={months}
+              years={years}
+              debitPeriod={pluggyDebitPeriod ?? defaults}
+              onDebitPeriodChange={setPluggyDebitPeriod}
+              creditPeriod={pluggyCreditPeriod ?? defaults}
+              onCreditPeriodChange={setPluggyCreditPeriod}
+              previewing={previewing}
+              onPreview={runPreview}
+            />
+          ) : null}
         </>
       )}
 
@@ -364,6 +433,18 @@ export function OpenFinancePage() {
         danger={false}
         onClose={() => setDisconnectOpen(false)}
         onConfirm={() => disconnect.mutate()}
+      />
+
+      <ConfirmDialog
+        open={removeConnectionId !== null}
+        title="Remove Pluggy Connection"
+        message="Remove this Pluggy connection? You can add it back later using the same Item ID."
+        confirmLabel="Remove"
+        danger
+        onClose={() => setRemoveConnectionId(null)}
+        onConfirm={() => {
+          if (removeConnectionId) removePluggyConnection.mutate(removeConnectionId);
+        }}
       />
     </>
   );
@@ -400,6 +481,199 @@ function DisconnectedHub() {
         </article>
       </div>
     </div>
+  );
+}
+
+function PluggySection({
+  connections,
+  itemId,
+  onItemIdChange,
+  error,
+  onClearError,
+  onAddConnection,
+  addingConnection,
+  onRemoveConnection,
+  removingConnection,
+  months,
+  years,
+  debitPeriod,
+  onDebitPeriodChange,
+  creditPeriod,
+  onCreditPeriodChange,
+  previewing,
+  onPreview,
+}: {
+  connections: Connection[];
+  itemId: string;
+  onItemIdChange: (value: string) => void;
+  error: string | null;
+  onClearError: () => void;
+  onAddConnection: () => void;
+  addingConnection: boolean;
+  onRemoveConnection: (id: string) => void;
+  removingConnection: boolean;
+  months: string[];
+  years: number[];
+  debitPeriod: Period;
+  onDebitPeriodChange: (period: Period) => void;
+  creditPeriod: Period;
+  onCreditPeriodChange: (period: Period) => void;
+  previewing: string | null;
+  onPreview: (path: string, period?: Period) => Promise<void>;
+}) {
+  const hasConnections = connections.length > 0;
+
+  return (
+    <section className="of-section of-section--pluggy">
+      <h2 className="of-section__title">
+        <span>Meu Pluggy</span>
+        <span className="badge badge--new">Beta</span>
+      </h2>
+      <p className="of-section__lead">
+        Connect additional banks via{" "}
+        <a href="https://meu.pluggy.ai" target="_blank" rel="noopener noreferrer">
+          Meu Pluggy
+        </a>
+        . Banks are connected in the Pluggy dashboard, then you add them here using the Item ID.
+      </p>
+
+      {error ? (
+        <Alert tone="error">
+          {error}
+          <button type="button" className="btn btn--ghost btn--sm" onClick={onClearError} style={{ marginLeft: "1rem" }}>
+            Dismiss
+          </button>
+        </Alert>
+      ) : null}
+
+      {/* Connection List */}
+      {hasConnections ? (
+        <div className="of-connections">
+          <h3>Connected banks</h3>
+          <ul className="of-connections__list">
+            {connections.map((conn) => (
+              <li key={conn.id} className="of-connections__item">
+                <div className="of-connections__info">
+                  <strong>{conn.institution_name}</strong>
+                  <span className={`badge badge--${conn.status === "active" ? "ok" : "warn"}`}>
+                    {conn.status}
+                  </span>
+                  {conn.last_synced_at ? (
+                    <span className="of-connections__meta">
+                      Last synced: {new Date(conn.last_synced_at).toLocaleDateString()}
+                    </span>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm btn--danger"
+                  onClick={() => onRemoveConnection(conn.id)}
+                  disabled={removingConnection}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {/* Add Connection Form */}
+      <div className="of-add-connection">
+        <h3>{hasConnections ? "Add another bank" : "Add a bank"}</h3>
+        <p>
+          Copy the Item ID from your{" "}
+          <a href="https://meu.pluggy.ai" target="_blank" rel="noopener noreferrer">
+            Meu Pluggy dashboard
+          </a>{" "}
+          after connecting a bank there.
+        </p>
+        <form
+          className="of-add-connection__form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onAddConnection();
+          }}
+        >
+          <input
+            type="text"
+            className="field"
+            placeholder="Item ID (e.g., 550e8400-e29b-41d4-a716-446655440000)"
+            value={itemId}
+            onChange={(e) => onItemIdChange(e.target.value)}
+            disabled={addingConnection}
+          />
+          <button type="submit" className="btn" disabled={!itemId.trim() || addingConnection}>
+            {addingConnection ? "Adding…" : "Add connection"}
+          </button>
+        </form>
+      </div>
+
+      {/* Sync Options */}
+      {hasConnections ? (
+        <div className="of-actions of-actions--pluggy">
+          <ImportCard
+            tone="debits"
+            icon="out"
+            title="Pluggy debits"
+            description={
+              <>
+                Import expenses from your Pluggy-connected banks as{" "}
+                <Link to="/finance/expenses">expenses</Link>.
+              </>
+            }
+            available
+            unavailable=""
+            periodLabel="Month"
+            period={debitPeriod}
+            months={months}
+            years={years}
+            onPeriod={onDebitPeriodChange}
+            loading={previewing === "/api/open-finance/pluggy/sync/expenses/preview"}
+            submitLabel="Preview expenses"
+            onPreview={() => void onPreview("/api/open-finance/pluggy/sync/expenses/preview", debitPeriod)}
+          />
+          <ImportCard
+            tone="credits"
+            icon="in"
+            title="Pluggy credits"
+            description={
+              <>
+                Import income from your Pluggy-connected banks as{" "}
+                <Link to="/finance/income">income</Link>.
+              </>
+            }
+            available
+            unavailable=""
+            periodLabel="Month"
+            period={creditPeriod}
+            months={months}
+            years={years}
+            onPeriod={onCreditPeriodChange}
+            loading={previewing === "/api/open-finance/pluggy/sync/income/preview"}
+            submitLabel="Preview income"
+            onPreview={() => void onPreview("/api/open-finance/pluggy/sync/income/preview", creditPeriod)}
+          />
+          <ImportCard
+            tone="investments"
+            icon="bag"
+            title="Pluggy investments"
+            description={
+              <>
+                Sync investment positions from Pluggy to{" "}
+                <Link to="/portfolio/investments">Other investments</Link>.
+              </>
+            }
+            available
+            unavailable=""
+            note="Pulls all fixed-income positions. Stocks/ETFs stay in Securities."
+            loading={previewing === "/api/open-finance/pluggy/sync/investments/preview"}
+            submitLabel="Preview investments"
+            onPreview={() => void onPreview("/api/open-finance/pluggy/sync/investments/preview")}
+          />
+        </div>
+      ) : null}
+    </section>
   );
 }
 

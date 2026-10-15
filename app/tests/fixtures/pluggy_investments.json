@@ -1,0 +1,52 @@
+{
+  "results": [
+    {
+      "id": "inv-pluggy-cdb-001",
+      "itemId": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "FIXED_INCOME",
+      "subtype": "CDB",
+      "name": "CDB Nubank 100% CDI",
+      "value": 52000.00,
+      "currencyCode": "BRL",
+      "code": null,
+      "isin": null
+    },
+    {
+      "id": "inv-pluggy-tesouro-001",
+      "itemId": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "FIXED_INCOME",
+      "subtype": "TREASURY",
+      "name": "Tesouro Selic 2029",
+      "value": 85000.00,
+      "currencyCode": "BRL",
+      "code": null,
+      "isin": null
+    },
+    {
+      "id": "inv-pluggy-poupanca-001",
+      "itemId": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "FIXED_INCOME",
+      "subtype": "SAVINGS",
+      "name": "Poupança",
+      "value": 5000.00,
+      "currencyCode": "BRL",
+      "code": null,
+      "isin": null
+    },
+    {
+      "id": "inv-pluggy-stock-001",
+      "itemId": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "EQUITY",
+      "subtype": "STOCK",
+      "name": "PETR4",
+      "value": 12500.00,
+      "quantity": 500,
+      "currencyCode": "BRL",
+      "code": "PETR4",
+      "isin": "BRPETRACNPR6"
+    }
+  ],
+  "page": 1,
+  "total": 4,
+  "totalPages": 1
+}

@@ -1,0 +1,27 @@
+{
+  "results": [
+    {
+      "id": "acc-pluggy-checking-001",
+      "itemId": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "BANK",
+      "subtype": "CHECKING_ACCOUNT",
+      "name": "Conta Corrente",
+      "balance": 15420.50,
+      "currencyCode": "BRL",
+      "number": "12345-6"
+    },
+    {
+      "id": "acc-pluggy-credit-001",
+      "itemId": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "CREDIT",
+      "subtype": "CREDIT_CARD",
+      "name": "Cartão Nubank",
+      "balance": -2500.00,
+      "currencyCode": "BRL",
+      "number": "**** 1234"
+    }
+  ],
+  "page": 1,
+  "total": 2,
+  "totalPages": 1
+}
