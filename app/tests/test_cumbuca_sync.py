@@ -1059,3 +1059,27 @@ def test_reconnect_marks_disconnected_cumbuca_row_active(session):
     assert stored is not None
     assert stored.status == "active"
     assert stored.refresh_token == "new-refresh"
+
+
+def test_create_cumbuca_connection_without_tokens_is_pending(session):
+    from app.services.connections import (
+        create_or_update_cumbuca_connection,
+        get_cumbuca_connection,
+        user_has_cumbuca_connection,
+    )
+
+    user = session.exec(select(User)).one()
+    create_or_update_cumbuca_connection(
+        session,
+        user,
+        oauth_client_id="client",
+        oauth_client_secret="secret",
+    )
+    stored = get_cumbuca_connection(session, user.id)
+    assert stored is not None
+    assert stored.status == "pending"
+    assert stored.refresh_token is None
+    assert stored.oauth_client_id == "client"
+    assert not user_has_cumbuca_connection(session, user)
+    session.refresh(user)
+    assert user.cumbuca_connected_at is None

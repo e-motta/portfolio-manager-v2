@@ -936,6 +936,68 @@ class TestOpenFinanceMatch:
         assert overlapping_institutions(connections) == ["nubank"]
         assert both_providers_connected(connections)
 
+    def test_tokenless_active_cumbuca_is_not_live(self, session):
+        from app.services.open_finance_match import (
+            both_providers_connected,
+            overlapping_institutions,
+        )
+
+        user = session.exec(select(User)).one()
+        session.add(OpenFinanceConnection(
+            user_id=user.id,
+            provider="cumbuca",
+            external_id="",
+            institution_name="Nubank",
+            status="active",
+            refresh_token=None,
+            access_token=None,
+        ))
+        session.add(OpenFinanceConnection(
+            user_id=user.id,
+            provider=PLUGGY_PROVIDER,
+            external_id="550e8400-e29b-41d4-a716-446655440000",
+            institution_name="Nu Pagamentos",
+            status="active",
+        ))
+        session.commit()
+        connections = list(session.exec(select(OpenFinanceConnection)).all())
+        assert both_providers_connected(connections) is False
+        assert overlapping_institutions(connections) == []
+
+
+class TestOpenFinancePageState:
+    def test_page_exposes_provider_flags_and_hides_banner_for_tokenless_cumbuca(
+        self, client, session
+    ):
+        user = session.exec(select(User)).one()
+        session.add(OpenFinanceConnection(
+            user_id=user.id,
+            provider="cumbuca",
+            external_id="",
+            institution_name="Cumbuca Open Finance",
+            status="active",
+            oauth_client_id="client",
+        ))
+        session.add(OpenFinanceConnection(
+            user_id=user.id,
+            provider=PLUGGY_PROVIDER,
+            external_id="550e8400-e29b-41d4-a716-446655440000",
+            institution_name="Nubank",
+            status="active",
+        ))
+        session.commit()
+
+        with patch("app.web.routes.open_finance.is_pluggy_available", return_value=True):
+            response = client.get("/api/open-finance")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["cumbuca_connected"] is False
+        assert payload["pluggy_connected"] is True
+        assert payload["same_institution_warning"] is None
+        cumbuca = next(row for row in payload["connections"] if row["provider"] == "cumbuca")
+        assert cumbuca["status"] != "active"
+
 
 def test_unique_external_id_constraint_blocks_duplicate_expenses(session):
     from sqlalchemy.exc import IntegrityError

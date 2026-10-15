@@ -592,6 +592,7 @@ def build_pluggy_expense_import_rows(
     *,
     year: int,
     month: int,
+    account_types: set[str] | None = None,
 ) -> tuple[list[PluggyImportExpenseRow], list[str]]:
     """Build expense import rows from Pluggy bank and credit-card transactions.
 
@@ -630,6 +631,8 @@ def build_pluggy_expense_import_rows(
             account_id = account.get("id")
             account_type = str(account.get("type") or "")
             if not account_id:
+                continue
+            if account_types and account_type.upper() not in account_types:
                 continue
 
             try:

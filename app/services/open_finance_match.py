@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 
 from app.models.finance import FinanceExpenseEntry, FinanceIncomeEntry, FinanceTransferEntry
 from app.models.open_finance import OpenFinanceConnection
+from app.services.connections import cumbuca_connection_is_live
 from app.services.finance import normalize_vendor_key
 
 CUMBUCA_SOURCE = "open_finance"
@@ -92,11 +93,17 @@ def normalize_institution_name(name: str) -> str:
     return lowered
 
 
+def _connection_is_live(connection: OpenFinanceConnection) -> bool:
+    if connection.provider == "cumbuca":
+        return cumbuca_connection_is_live(connection)
+    return connection.status not in {"disconnected", "inactive"}
+
+
 def overlapping_institutions(connections: list[OpenFinanceConnection]) -> list[str]:
     """Return canonical institution names present on both Cumbuca and Pluggy."""
     by_provider: dict[str, set[str]] = {}
     for connection in connections:
-        if connection.status == "disconnected":
+        if not _connection_is_live(connection):
             continue
         name = normalize_institution_name(connection.institution_name)
         if not name or name == "cumbuca open finance":
@@ -111,7 +118,6 @@ def both_providers_connected(connections: list[OpenFinanceConnection]) -> bool:
     providers = {
         connection.provider
         for connection in connections
-        if connection.status not in {"disconnected", "inactive"}
-        and (connection.provider != "cumbuca" or connection.refresh_token or connection.status == "active")
+        if _connection_is_live(connection)
     }
     return "cumbuca" in providers and "pluggy" in providers
