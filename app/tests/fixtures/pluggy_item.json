@@ -1,0 +1,14 @@
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "UPDATED",
+  "createdAt": "2026-01-15T10:00:00Z",
+  "lastUpdatedAt": "2026-10-14T15:30:00Z",
+  "connector": {
+    "id": 201,
+    "name": "Nubank",
+    "institutionName": "Nubank",
+    "primaryColor": "#820AD1",
+    "imageUrl": "https://cdn.pluggy.ai/assets/connector-icons/201.svg"
+  },
+  "executionStatus": "SUCCESS"
+}

@@ -9,6 +9,7 @@ from app.models import (  # noqa: F401
     AssetType,
     Dividend,
     Investment,
+    OpenFinanceConnection,
     Portfolio,
     PortfolioSnapshot,
     SecurityLot,

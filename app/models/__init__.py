@@ -8,6 +8,7 @@ from app.models.finance import (
     FinanceVendorCategory,
 )
 from app.models.investment import Investment
+from app.models.open_finance import OpenFinanceConnection
 from app.models.portfolio import Portfolio
 from app.models.security import Security, SecurityLot
 from app.models.snapshot import (
@@ -28,6 +29,7 @@ __all__ = [
     "FinanceTransferEntry",
     "FinanceVendorCategory",
     "Investment",
+    "OpenFinanceConnection",
     "PortfolioSnapshot",
     "SnapshotAssetClass",
     "SnapshotHolding",

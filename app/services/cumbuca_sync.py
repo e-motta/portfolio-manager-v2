@@ -44,7 +44,16 @@ from app.services.finance import (
     validate_transfer_accounts,
     VendorRule,
 )
-from app.web.helpers import get_investable_asset_types, get_investments
+from app.models.asset_type import AssetType
+from app.models.portfolio import Portfolio
+from app.services.open_finance_match import (
+    PLUGGY_SOURCE as MATCH_PLUGGY_SOURCE,
+    expense_match_key,
+    existing_cross_provider_expense_keys,
+    existing_cross_provider_income_keys,
+    income_match_key,
+)
+from app.web.helpers import get_investable_asset_types
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures"
 
@@ -134,6 +143,7 @@ class ImportExpenseRow:
     to_account: str | None = None
     broker: str | None = None
     description: str = ""
+    likely_duplicate: bool = False
 
 
 @dataclass
@@ -150,6 +160,7 @@ class ImportIncomeRow:
     selected: bool
     import_kind: str = "income"
     broker: str | None = None
+    likely_duplicate: bool = False
 
 
 @dataclass
@@ -167,16 +178,19 @@ class ImportInvestmentRow:
 
 @dataclass
 class StashedFinanceImport:
+    user_id: UUID
     rows: list[ImportExpenseRow]
 
 
 @dataclass
 class StashedIncomeImport:
+    user_id: UUID
     rows: list[ImportIncomeRow]
 
 
 @dataclass
 class StashedInvestmentImport:
+    user_id: UUID
     rows: list[ImportInvestmentRow]
 
 
@@ -530,8 +544,15 @@ def _apply_imported_open_finance_credit(
     row.month = imported_income.month
 
 
-def _existing_investment_map(session: Session) -> dict[str, Investment]:
-    investments = get_investments(session)
+def _existing_investment_map(session: Session, user_id: UUID | None = None) -> dict[str, Investment]:
+    query = (
+        select(Investment)
+        .join(AssetType)
+        .where(AssetType.is_exchange_traded.is_(False))  # type: ignore[attr-defined]
+    )
+    if user_id is not None:
+        query = query.join(Portfolio).where(Portfolio.user_id == user_id)
+    investments = session.exec(query).all()
     return {
         investment.external_id: investment
         for investment in investments
@@ -854,6 +875,7 @@ def build_credit_card_expense_import_rows(
     )
     account_lookup = _account_lookup(accounts, credit_cards)
     existing_ids = _existing_expense_ids(session, user.id)
+    cross_keys = existing_cross_provider_expense_keys(session, user.id, MATCH_PLUGGY_SOURCE)
     vendor_rules = load_import_vendor_rule_map(session, user.id)
     rows: list[ImportExpenseRow] = []
 
@@ -869,7 +891,11 @@ def build_credit_card_expense_import_rows(
         if not _row_matches_import(row, tx, year, month):
             continue
         row.already_exists = row.external_id in existing_ids
-        row.selected = not row.already_exists
+        row.likely_duplicate = (
+            not row.already_exists
+            and expense_match_key(row.transaction_date, row.amount, row.vendor) in cross_keys
+        )
+        row.selected = not row.already_exists and not row.likely_duplicate
         rows.append(row)
 
     rows.sort(key=lambda item: (item.transaction_date, item.vendor))
@@ -897,6 +923,7 @@ def build_account_expense_import_rows(
     existing_ids = (
         set(existing_expenses) | set(existing_transfers) | set(existing_investments)
     )
+    cross_keys = existing_cross_provider_expense_keys(session, user.id, MATCH_PLUGGY_SOURCE)
     vendor_rules = load_import_vendor_rule_map(session, user.id)
     rows: list[ImportExpenseRow] = []
 
@@ -928,7 +955,11 @@ def build_account_expense_import_rows(
                 investments=existing_investments,
             )
         row.already_exists = row.external_id in existing_ids
-        row.selected = not row.already_exists
+        row.likely_duplicate = (
+            not row.already_exists
+            and expense_match_key(row.transaction_date, row.amount, row.vendor) in cross_keys
+        )
+        row.selected = not row.already_exists and not row.likely_duplicate
         rows.append(row)
 
     rows.sort(key=lambda item: (item.transaction_date, item.vendor))
@@ -953,6 +984,7 @@ def build_account_credit_import_rows(
     existing_incomes = _existing_open_finance_income_map(session, user.id)
     existing_investments = _existing_open_finance_investment_import_map(session, user.id)
     existing_ids = set(existing_incomes) | set(existing_investments)
+    cross_keys = existing_cross_provider_income_keys(session, user.id, MATCH_PLUGGY_SOURCE)
     rows: list[ImportIncomeRow] = []
 
     for tx in transactions:
@@ -971,7 +1003,11 @@ def build_account_credit_import_rows(
                 investments=existing_investments,
             )
         row.already_exists = row.external_id in existing_ids
-        row.selected = not row.already_exists
+        row.likely_duplicate = (
+            not row.already_exists
+            and income_match_key(row.year, row.month, row.amount, row.description) in cross_keys
+        )
+        row.selected = not row.already_exists and not row.likely_duplicate
         rows.append(row)
 
     rows.sort(key=lambda item: (item.transaction_date, item.description))
@@ -1026,6 +1062,7 @@ def build_investment_import_rows(
     session: Session,
     *,
     access_token: str | None = None,
+    user_id: UUID | None = None,
 ) -> list[ImportInvestmentRow]:
     asset_types = get_investable_asset_types(session)
     slug_by_name = {asset_type.slug: asset_type.slug for asset_type in asset_types}
@@ -1037,7 +1074,7 @@ def build_investment_import_rows(
     else:
         investments = fetch_investments(access_token)
 
-    existing = _existing_investment_map(session)
+    existing = _existing_investment_map(session, user_id)
     rows: list[ImportInvestmentRow] = []
 
     for item in investments:
@@ -1054,41 +1091,41 @@ def build_investment_import_rows(
     return rows
 
 
-def stash_finance_import(rows: list[ImportExpenseRow]) -> str:
+def stash_finance_import(user_id: UUID, rows: list[ImportExpenseRow]) -> str:
     token = str(uuid4())
-    _finance_stash[token] = StashedFinanceImport(rows=rows)
+    _finance_stash[token] = StashedFinanceImport(user_id=user_id, rows=rows)
     return token
 
 
-def pop_stashed_finance_import(token: str) -> list[ImportExpenseRow] | None:
+def pop_stashed_finance_import(token: str, user_id: UUID) -> list[ImportExpenseRow] | None:
     payload = _finance_stash.pop(token, None)
-    if payload is None:
+    if payload is None or payload.user_id != user_id:
         return None
     return payload.rows
 
 
-def stash_income_import(rows: list[ImportIncomeRow]) -> str:
+def stash_income_import(user_id: UUID, rows: list[ImportIncomeRow]) -> str:
     token = str(uuid4())
-    _income_stash[token] = StashedIncomeImport(rows=rows)
+    _income_stash[token] = StashedIncomeImport(user_id=user_id, rows=rows)
     return token
 
 
-def pop_stashed_income_import(token: str) -> list[ImportIncomeRow] | None:
+def pop_stashed_income_import(token: str, user_id: UUID) -> list[ImportIncomeRow] | None:
     payload = _income_stash.pop(token, None)
-    if payload is None:
+    if payload is None or payload.user_id != user_id:
         return None
     return payload.rows
 
 
-def stash_investment_import(rows: list[ImportInvestmentRow]) -> str:
+def stash_investment_import(user_id: UUID, rows: list[ImportInvestmentRow]) -> str:
     token = str(uuid4())
-    _investment_stash[token] = StashedInvestmentImport(rows=rows)
+    _investment_stash[token] = StashedInvestmentImport(user_id=user_id, rows=rows)
     return token
 
 
-def pop_stashed_investment_import(token: str) -> list[ImportInvestmentRow] | None:
+def pop_stashed_investment_import(token: str, user_id: UUID) -> list[ImportInvestmentRow] | None:
     payload = _investment_stash.pop(token, None)
-    if payload is None:
+    if payload is None or payload.user_id != user_id:
         return None
     return payload.rows
 
@@ -1113,10 +1150,12 @@ def import_selected_expenses(
     subcategory_overrides: dict[str, str | None] | None = None,
     period_overrides: dict[str, tuple[int, int]] | None = None,
     description_overrides: dict[str, str] | None = None,
+    source: str | None = None,
 ) -> int:
     overrides = category_overrides or {}
     subcategory_overrides = subcategory_overrides or {}
     description_overrides = description_overrides or {}
+    effective_source = source or OPEN_FINANCE_SOURCE
     vendor_rules = load_vendor_rule_map(session, user_id)
     created = 0
     for row in rows:
@@ -1160,7 +1199,7 @@ def import_selected_expenses(
                 payment_account=row.payment_account,
                 amount=row.amount,
                 subcategory=subcategory,
-                source=OPEN_FINANCE_SOURCE,
+                source=effective_source,
                 external_id=row.external_id,
             )
         )
@@ -1187,9 +1226,11 @@ def import_selected_transfers(
     kind_overrides: dict[str, str] | None = None,
     to_account_overrides: dict[str, str] | None = None,
     period_overrides: dict[str, tuple[int, int]] | None = None,
+    source: str | None = None,
 ) -> int:
     kind_overrides = kind_overrides or {}
     to_account_overrides = to_account_overrides or {}
+    effective_source = source or OPEN_FINANCE_SOURCE
     created = 0
     for row in rows:
         if row.row_key not in selected_keys or row.already_exists:
@@ -1218,7 +1259,7 @@ def import_selected_transfers(
                 to_account=parsed_to,
                 amount=abs(row.amount),
                 description=row.vendor,
-                source=OPEN_FINANCE_SOURCE,
+                source=effective_source,
                 external_id=row.external_id,
             )
         )
@@ -1237,9 +1278,11 @@ def import_selected_finance_investments(
     kind_overrides: dict[str, str] | None = None,
     broker_overrides: dict[str, str] | None = None,
     period_overrides: dict[str, tuple[int, int]] | None = None,
+    source: str | None = None,
 ) -> int:
     kind_overrides = kind_overrides or {}
     broker_overrides = broker_overrides or {}
+    effective_source = source or OPEN_FINANCE_SOURCE
     created = 0
     for row in rows:
         if row.row_key not in selected_keys or row.already_exists:
@@ -1262,7 +1305,7 @@ def import_selected_finance_investments(
             import_month,
             broker,
             amount,
-            source=OPEN_FINANCE_SOURCE,
+            source=effective_source,
         )
         session.add(
             FinanceInvestmentOpenFinanceImport(
@@ -1293,6 +1336,7 @@ def import_selected_account_debits(
     subcategory_overrides: dict[str, str | None] | None = None,
     period_overrides: dict[str, tuple[int, int]] | None = None,
     description_overrides: dict[str, str] | None = None,
+    source: str | None = None,
 ) -> tuple[int, int, int]:
     kind_overrides = kind_overrides or {}
     expense_rows: list[ImportExpenseRow] = []
@@ -1325,6 +1369,7 @@ def import_selected_account_debits(
         subcategory_overrides=subcategory_overrides,
         period_overrides=period_overrides,
         description_overrides=description_overrides,
+        source=source,
     )
     transfer_created = import_selected_transfers(
         session,
@@ -1334,6 +1379,7 @@ def import_selected_account_debits(
         kind_overrides=kind_overrides,
         to_account_overrides=to_account_overrides,
         period_overrides=period_overrides,
+        source=source,
     )
     investment_created = import_selected_finance_investments(
         session,
@@ -1343,6 +1389,7 @@ def import_selected_account_debits(
         kind_overrides=kind_overrides,
         broker_overrides=broker_overrides,
         period_overrides=period_overrides,
+        source=source,
     )
     return expense_created, transfer_created, investment_created
 
@@ -1355,8 +1402,10 @@ def import_selected_income(
     *,
     kind_overrides: dict[str, str] | None = None,
     period_overrides: dict[str, tuple[int, int]] | None = None,
+    source: str | None = None,
 ) -> int:
     kind_overrides = kind_overrides or {}
+    effective_source = source or OPEN_FINANCE_SOURCE
     created = 0
     for row in rows:
         if row.row_key not in selected_keys or row.already_exists:
@@ -1372,7 +1421,7 @@ def import_selected_income(
                 category="Outros",
                 description=row.description,
                 amount=row.amount,
-                source=OPEN_FINANCE_SOURCE,
+                source=effective_source,
                 external_id=row.external_id,
             )
         )
@@ -1391,9 +1440,11 @@ def import_selected_finance_investment_credits(
     kind_overrides: dict[str, str] | None = None,
     broker_overrides: dict[str, str] | None = None,
     period_overrides: dict[str, tuple[int, int]] | None = None,
+    source: str | None = None,
 ) -> int:
     kind_overrides = kind_overrides or {}
     broker_overrides = broker_overrides or {}
+    effective_source = source or OPEN_FINANCE_SOURCE
     created = 0
     for row in rows:
         if row.row_key not in selected_keys or row.already_exists:
@@ -1416,7 +1467,7 @@ def import_selected_finance_investment_credits(
             import_month,
             broker,
             amount,
-            source=OPEN_FINANCE_SOURCE,
+            source=effective_source,
         )
         session.add(
             FinanceInvestmentOpenFinanceImport(
@@ -1443,6 +1494,7 @@ def import_selected_account_credits(
     kind_overrides: dict[str, str] | None = None,
     broker_overrides: dict[str, str] | None = None,
     period_overrides: dict[str, tuple[int, int]] | None = None,
+    source: str | None = None,
 ) -> tuple[int, int]:
     kind_overrides = kind_overrides or {}
     income_rows: list[ImportIncomeRow] = []
@@ -1468,6 +1520,7 @@ def import_selected_account_credits(
         income_keys,
         kind_overrides=kind_overrides,
         period_overrides=period_overrides,
+        source=source,
     )
     investment_created = import_selected_finance_investment_credits(
         session,
@@ -1477,6 +1530,7 @@ def import_selected_account_credits(
         kind_overrides=kind_overrides,
         broker_overrides=broker_overrides,
         period_overrides=period_overrides,
+        source=source,
     )
     return income_created, investment_created
 
@@ -1485,12 +1539,15 @@ def import_selected_investments(
     session: Session,
     rows: list[ImportInvestmentRow],
     selected_keys: set[str],
+    source: str | None = None,
+    user_id: UUID | None = None,
 ) -> tuple[int, int]:
     asset_types = get_investable_asset_types(session)
     slug_to_id = {asset_type.slug: asset_type.id for asset_type in asset_types}
     name_to_id = {asset_type.name.lower(): asset_type.id for asset_type in asset_types}
 
-    existing = _existing_investment_map(session)
+    effective_source = source or OPEN_FINANCE_SOURCE
+    existing = _existing_investment_map(session, user_id)
     created = 0
     updated = 0
 
@@ -1509,7 +1566,7 @@ def import_selected_investments(
             current.name = row.name
             current.current_value = row.current_value
             current.asset_type_id = asset_type_id
-            current.source = OPEN_FINANCE_SOURCE
+            current.source = effective_source
             current.updated_at = datetime.utcnow()
             session.add(current)
             updated += 1
@@ -1520,7 +1577,7 @@ def import_selected_investments(
             institution=row.institution,
             name=row.name,
             current_value=row.current_value,
-            source=OPEN_FINANCE_SOURCE,
+            source=effective_source,
             external_id=row.external_id,
         )
         session.add(investment)

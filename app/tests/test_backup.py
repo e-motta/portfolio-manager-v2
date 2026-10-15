@@ -9,6 +9,7 @@ from app.models.finance import (
     FinanceExpenseEntry,
     FinanceIncomeEntry,
     FinanceInvestmentEntry,
+    FinanceTransferEntry,
 )
 from app.models.investment import Investment
 from app.models.security import SecurityLot
@@ -289,3 +290,111 @@ def test_backup_restore_roundtrip_with_finance_investments(session):
     assert entries[1].broker == "nubank"
     assert entries[1].amount == Decimal("2500.00")
     assert entries[1].source == "open_finance"
+
+
+def test_restore_dedupes_duplicate_external_ids(session):
+    """Older backups can contain duplicate (user_id, external_id) rows."""
+    import json
+
+    from app.services.backup import export_portfolio_data
+
+    payload = export_portfolio_data(session)
+    payload["finance_expenses"] = [
+        {
+            "year": 2026,
+            "month": 6,
+            "transaction_date": "2026-06-01",
+            "category": "Outros",
+            "vendor": "Older",
+            "description": "",
+            "payment_account": "Nuconta",
+            "amount": "-10.00",
+            "subcategory": None,
+            "source": "pluggy",
+            "external_id": "pluggy:dup",
+            "created_at": "2026-06-01T10:00:00+00:00",
+            "updated_at": "2026-06-01T10:00:00+00:00",
+        },
+        {
+            "year": 2026,
+            "month": 6,
+            "transaction_date": "2026-06-02",
+            "category": "Outros",
+            "vendor": "Newer",
+            "description": "",
+            "payment_account": "Nuconta",
+            "amount": "-20.00",
+            "subcategory": None,
+            "source": "pluggy",
+            "external_id": "pluggy:dup",
+            "created_at": "2026-06-02T10:00:00+00:00",
+            "updated_at": "2026-06-02T10:00:00+00:00",
+        },
+    ]
+    payload["finance_income"] = [
+        {
+            "year": 2026,
+            "month": 6,
+            "category": "Outros",
+            "description": "Older income",
+            "amount": "100.00",
+            "source": "pluggy",
+            "external_id": "pluggy:inc",
+            "created_at": "2026-06-01T10:00:00+00:00",
+            "updated_at": "2026-06-01T10:00:00+00:00",
+        },
+        {
+            "year": 2026,
+            "month": 6,
+            "category": "Outros",
+            "description": "Newer income",
+            "amount": "200.00",
+            "source": "pluggy",
+            "external_id": "pluggy:inc",
+            "created_at": "2026-06-02T10:00:00+00:00",
+            "updated_at": "2026-06-02T10:00:00+00:00",
+        },
+    ]
+    payload["finance_transfers"] = [
+        {
+            "year": 2026,
+            "month": 6,
+            "transaction_date": "2026-06-01",
+            "from_account": "Nuconta",
+            "to_account": "Nubank",
+            "amount": "50.00",
+            "description": "Older transfer",
+            "source": "pluggy",
+            "external_id": "pluggy:tr",
+            "created_at": "2026-06-01T10:00:00+00:00",
+            "updated_at": "2026-06-01T10:00:00+00:00",
+        },
+        {
+            "year": 2026,
+            "month": 6,
+            "transaction_date": "2026-06-02",
+            "from_account": "Nuconta",
+            "to_account": "Nubank",
+            "amount": "75.00",
+            "description": "Newer transfer",
+            "source": "pluggy",
+            "external_id": "pluggy:tr",
+            "created_at": "2026-06-02T10:00:00+00:00",
+            "updated_at": "2026-06-02T10:00:00+00:00",
+        },
+    ]
+
+    restore_portfolio_json(session, json.dumps(payload).encode("utf-8"))
+
+    expenses = session.exec(select(FinanceExpenseEntry)).all()
+    assert len(expenses) == 1
+    assert expenses[0].vendor == "Older"
+    assert expenses[0].external_id == "pluggy:dup"
+
+    income = session.exec(select(FinanceIncomeEntry)).all()
+    assert len(income) == 1
+    assert income[0].description == "Older income"
+
+    transfers = session.exec(select(FinanceTransferEntry)).all()
+    assert len(transfers) == 1
+    assert transfers[0].description == "Older transfer"

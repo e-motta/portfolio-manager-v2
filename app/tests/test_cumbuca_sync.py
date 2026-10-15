@@ -90,7 +90,7 @@ def test_access_token_is_valid_with_naive_expiry(session):
     user.cumbuca_access_token = "token"
     user.cumbuca_token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
     user.cumbuca_token_expires_at = user.cumbuca_token_expires_at.replace(tzinfo=None)
-    assert _access_token_is_valid(user)
+    assert _access_token_is_valid(user.cumbuca_access_token, user.cumbuca_token_expires_at)
 
 
 def test_map_category_transport():
@@ -983,3 +983,79 @@ def test_user_has_cumbuca_and_disconnect(session):
     disconnect_cumbuca(session, user)
     session.refresh(user)
     assert user.cumbuca_refresh_token is None
+
+
+def test_disconnect_cumbuca_clears_connection_row(session):
+    from app.models.open_finance import OpenFinanceConnection
+    from app.services.connections import (
+        PROVIDER_CUMBUCA,
+        get_cumbuca_connection,
+        user_has_cumbuca_connection,
+    )
+
+    user = session.exec(select(User)).one()
+    connection = OpenFinanceConnection(
+        user_id=user.id,
+        provider=PROVIDER_CUMBUCA,
+        external_id="",
+        institution_name="Cumbuca Open Finance",
+        status="active",
+        oauth_client_id="client",
+        oauth_client_secret="secret",
+        refresh_token="refresh",
+        access_token="access",
+    )
+    session.add(connection)
+    user.cumbuca_refresh_token = "refresh"
+    user.cumbuca_access_token = "access"
+    user.cumbuca_oauth_client_id = "client"
+    user.cumbuca_oauth_client_secret = "secret"
+    session.add(user)
+    session.commit()
+
+    assert user_has_cumbuca_connection(session, user)
+    disconnect_cumbuca(session, user)
+
+    stored = get_cumbuca_connection(session, user.id)
+    assert stored is not None
+    assert stored.status == "disconnected"
+    assert stored.refresh_token is None
+    assert stored.access_token is None
+    assert stored.token_expires_at is None
+    assert not user_has_cumbuca_connection(session, user)
+    session.refresh(user)
+    assert user.cumbuca_refresh_token is None
+    assert user.cumbuca_access_token is None
+
+
+def test_reconnect_marks_disconnected_cumbuca_row_active(session):
+    from app.models.open_finance import OpenFinanceConnection
+    from app.services.connections import (
+        PROVIDER_CUMBUCA,
+        create_or_update_cumbuca_connection,
+        get_cumbuca_connection,
+    )
+
+    user = session.exec(select(User)).one()
+    session.add(OpenFinanceConnection(
+        user_id=user.id,
+        provider=PROVIDER_CUMBUCA,
+        external_id="",
+        institution_name="Cumbuca Open Finance",
+        status="disconnected",
+        oauth_client_id="client",
+    ))
+    session.commit()
+
+    create_or_update_cumbuca_connection(
+        session,
+        user,
+        oauth_client_id="client",
+        oauth_client_secret="secret",
+        refresh_token="new-refresh",
+        access_token="new-access",
+    )
+    stored = get_cumbuca_connection(session, user.id)
+    assert stored is not None
+    assert stored.status == "active"
+    assert stored.refresh_token == "new-refresh"

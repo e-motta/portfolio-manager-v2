@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 from datetime import date
+from uuid import UUID
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -28,6 +30,27 @@ from app.services.cumbuca_sync import (
     stash_income_import,
     stash_investment_import,
 )
+from app.services.connections import (
+    connections_summary,
+    get_all_connections,
+)
+from app.services.open_finance_match import (
+    both_providers_connected,
+    overlapping_institutions,
+)
+from app.services.pluggy_client import is_pluggy_available
+from app.services.pluggy_sync import (
+    PluggyImportExpenseRow,
+    PluggyImportIncomeRow,
+    PluggyImportInvestmentRow,
+    add_pluggy_connection,
+    build_pluggy_expense_import_rows,
+    build_pluggy_income_import_rows,
+    build_pluggy_investment_import_rows,
+    get_pluggy_connections,
+    remove_pluggy_connection,
+    update_connection_last_synced,
+)
 from app.services.finance import (
     BILLS_CATEGORY,
     BILLS_SUBCATEGORIES,
@@ -46,6 +69,29 @@ router = APIRouter(prefix="/open-finance", tags=["open-finance"])
 _INVESTMENT_TOOL_NAMES = {"list_investments", "openfinance_list_investments"}
 _CREDIT_CARD_TOOL_NAMES = {"list_credit_card_bill_transactions"}
 _ACCOUNT_TOOL_NAMES = {"list_account_transactions"}
+
+
+@dataclass
+class StashedPluggyExpenseImport:
+    user_id: UUID
+    rows: list[PluggyImportExpenseRow]
+
+
+@dataclass
+class StashedPluggyIncomeImport:
+    user_id: UUID
+    rows: list[PluggyImportIncomeRow]
+
+
+@dataclass
+class StashedPluggyInvestmentImport:
+    user_id: UUID
+    rows: list[PluggyImportInvestmentRow]
+
+
+_pluggy_expense_stash: dict[str, StashedPluggyExpenseImport] = {}
+_pluggy_income_stash: dict[str, StashedPluggyIncomeImport] = {}
+_pluggy_investment_stash: dict[str, StashedPluggyInvestmentImport] = {}
 
 
 def _year_options(current_year: int) -> list[int]:
@@ -72,7 +118,7 @@ def _cc_expense_period(year: int, month: int) -> tuple[int, int, str]:
 def _open_finance_tools_context(session, user) -> dict:
     tool_names: list[str] = []
     tools_error = None
-    if user_has_cumbuca(user):
+    if user_has_cumbuca(user, session):
         try:
             access_token = get_access_token_for_user(session, user)
             from app.services.cumbuca_mcp import list_tool_names
@@ -98,11 +144,36 @@ def _open_finance_tools_context(session, user) -> dict:
 
 
 @router.get("")
-def open_finance_page(user: CurrentUserDep):
+def open_finance_page(
+    session: SessionDep,
+    user: CurrentUserDep,
+):
+    connections = get_all_connections(session, user.id)
+    summary = connections_summary(connections)
+
+    has_cumbuca = user_has_cumbuca(user, session) or summary["has_cumbuca"]
+    overlap = overlapping_institutions(connections)
+    same_institution_warning = None
+    if both_providers_connected(connections) or overlap:
+        if overlap:
+            names = ", ".join(name.title() for name in overlap)
+            same_institution_warning = (
+                f"{names} appears connected via both Cumbuca and Pluggy. "
+                "Likely duplicate transactions are left unselected at preview."
+            )
+        else:
+            same_institution_warning = (
+                "Cumbuca and Pluggy are both connected. Transactions from the "
+                "same bank may appear twice — likely duplicates are left unselected."
+            )
+
     return json_ok(
         {
-            "connected": user_has_cumbuca(user),
+            "connected": has_cumbuca,
             "connected_at": user.cumbuca_connected_at,
+            "pluggy_available": is_pluggy_available(),
+            "same_institution_warning": same_institution_warning,
+            **summary,
         }
     )
 
@@ -112,7 +183,7 @@ def open_finance_tools_partial(
     session: SessionDep,
     user: CurrentUserDep,
 ):
-    if not user_has_cumbuca(user):
+    if not user_has_cumbuca(user, session):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
 
     return json_ok(_open_finance_tools_context(session, user))
@@ -144,7 +215,7 @@ def _preview_expense_import(
     default_import_month: int | None = None,
     allow_transfer_import: bool = False,
 ):
-    if not user_has_cumbuca(user):
+    if not user_has_cumbuca(user, session):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
 
     resolved_year = resolve_year(year)
@@ -163,7 +234,7 @@ def _preview_expense_import(
             month=resolved_month,
             access_token=access_token,
         )
-        import_token = stash_finance_import(rows)
+        import_token = stash_finance_import(user.id, rows)
         if not rows and warnings:
             error = "; ".join(warnings)
     except HTTPException as exc:
@@ -329,7 +400,7 @@ async def _confirm_account_debits_import(
     form = await request.form()
     import_token = str(form.get("import_token") or "")
     selected_rows = form.getlist("selected_rows")
-    rows = pop_stashed_finance_import(import_token)
+    rows = pop_stashed_finance_import(import_token, user.id)
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
@@ -381,7 +452,7 @@ async def _confirm_expense_import(
     form = await request.form()
     import_token = str(form.get("import_token") or "")
     selected_rows = form.getlist("selected_rows")
-    rows = pop_stashed_finance_import(import_token)
+    rows = pop_stashed_finance_import(import_token, user.id)
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
@@ -458,7 +529,7 @@ def preview_account_credits_sync(
     year: int = Form(default=0),
     month: int = Form(default=0),
 ):
-    if not user_has_cumbuca(user):
+    if not user_has_cumbuca(user, session):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
 
     resolved_year = resolve_year(year)
@@ -478,7 +549,7 @@ def preview_account_credits_sync(
             month=resolved_month,
             access_token=access_token,
         )
-        import_token = stash_income_import(rows)
+        import_token = stash_income_import(user.id, rows)
         if not rows and warnings:
             error = "; ".join(warnings)
     except HTTPException as exc:
@@ -537,7 +608,7 @@ async def confirm_account_credits_sync(
     form = await request.form()
     import_token = str(form.get("import_token") or "")
     selected_rows = form.getlist("selected_rows")
-    rows = pop_stashed_income_import(import_token)
+    rows = pop_stashed_income_import(import_token, user.id)
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
@@ -583,7 +654,7 @@ def preview_investment_sync(
     session: SessionDep,
     user: CurrentUserDep,
 ):
-    if not user_has_cumbuca(user):
+    if not user_has_cumbuca(user, session):
         raise HTTPException(status_code=400, detail="Connect Open Finance first.")
 
     error = None
@@ -592,8 +663,8 @@ def preview_investment_sync(
 
     try:
         access_token = get_access_token_for_user(session, user)
-        rows = build_investment_import_rows(session, access_token=access_token)
-        import_token = stash_investment_import(rows)
+        rows = build_investment_import_rows(session, access_token=access_token, user_id=user.id)
+        import_token = stash_investment_import(user.id, rows)
     except HTTPException as exc:
         error = exc.detail
     except Exception as exc:
@@ -627,12 +698,541 @@ def confirm_investment_sync(
     import_token: str = Form(...),
     selected_rows: list[str] = Form(default=[]),
 ) -> RedirectResponse:
-    rows = pop_stashed_investment_import(import_token)
+    rows = pop_stashed_investment_import(import_token, user.id)
     if rows is None:
         raise HTTPException(status_code=400, detail="Import preview expired.")
 
-    created, updated = import_selected_investments(session, rows, set(selected_rows))
+    created, updated = import_selected_investments(
+        session, rows, set(selected_rows), user_id=user.id
+    )
     return RedirectResponse(
         url=f"/portfolio/investments?imported={created}&updated={updated}",
+        status_code=303,
+    )
+
+
+# --- Pluggy Connections ---
+
+
+@router.get("/connections")
+def list_connections(
+    session: SessionDep,
+    user: CurrentUserDep,
+):
+    """List all Open Finance connections for the current user."""
+    connections = get_all_connections(session, user.id)
+    return json_ok(connections_summary(connections))
+
+
+@router.post("/pluggy/connections")
+def add_pluggy_connection_endpoint(
+    session: SessionDep,
+    user: CurrentUserDep,
+    item_id: str = Form(...),
+):
+    """Add a Pluggy connection by item ID.
+
+    The user obtains the item ID from the Meu Pluggy dashboard after connecting
+    their bank. This endpoint validates the item ID and stores the connection.
+    """
+    from uuid import UUID as UUIDType
+
+    if not is_pluggy_available():
+        raise HTTPException(status_code=503, detail="Pluggy is not configured.")
+
+    item_id = item_id.strip()
+    if not item_id:
+        raise HTTPException(status_code=400, detail="Item ID is required.")
+
+    try:
+        UUIDType(item_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Item ID must be a valid UUID.")
+
+    connection, error = add_pluggy_connection(session, user.id, item_id)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+
+    return json_ok({
+        "connection": {
+            "id": str(connection.id),
+            "provider": connection.provider,
+            "external_id": connection.external_id,
+            "institution_name": connection.institution_name,
+            "status": connection.status,
+        },
+        "message": f"Connected to {connection.institution_name}",
+    })
+
+
+@router.delete("/pluggy/connections/{connection_id}")
+def remove_pluggy_connection_endpoint(
+    session: SessionDep,
+    user: CurrentUserDep,
+    connection_id: UUID,
+):
+    """Remove a Pluggy connection."""
+    removed = remove_pluggy_connection(session, user.id, connection_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Connection not found.")
+    return json_ok({"removed": True})
+
+
+@router.get("/pluggy/status")
+def pluggy_status(
+    session: SessionDep,
+    user: CurrentUserDep,
+):
+    """Get Pluggy integration status."""
+    connections = get_pluggy_connections(session, user.id)
+
+    return json_ok({
+        "available": is_pluggy_available(),
+        "connections": [
+            {
+                "id": str(conn.id),
+                "external_id": conn.external_id,
+                "institution_name": conn.institution_name,
+                "status": conn.status,
+                "last_synced_at": conn.last_synced_at.isoformat() if conn.last_synced_at else None,
+            }
+            for conn in connections
+        ],
+        "connection_count": len(connections),
+    })
+
+
+# --- Pluggy Sync Endpoints ---
+
+
+def _stash_pluggy_expense_import(user_id: UUID, rows: list[PluggyImportExpenseRow]) -> str:
+    from uuid import uuid4
+    token = str(uuid4())
+    _pluggy_expense_stash[token] = StashedPluggyExpenseImport(user_id=user_id, rows=rows)
+    return token
+
+
+def _pop_pluggy_expense_import(token: str, user_id: UUID) -> list[PluggyImportExpenseRow] | None:
+    """Pop stashed expense import, verifying user ownership."""
+    stashed = _pluggy_expense_stash.pop(token, None)
+    if stashed is None:
+        return None
+    if stashed.user_id != user_id:
+        return None
+    return stashed.rows
+
+
+def _stash_pluggy_income_import(user_id: UUID, rows: list[PluggyImportIncomeRow]) -> str:
+    from uuid import uuid4
+    token = str(uuid4())
+    _pluggy_income_stash[token] = StashedPluggyIncomeImport(user_id=user_id, rows=rows)
+    return token
+
+
+def _pop_pluggy_income_import(token: str, user_id: UUID) -> list[PluggyImportIncomeRow] | None:
+    """Pop stashed income import, verifying user ownership."""
+    stashed = _pluggy_income_stash.pop(token, None)
+    if stashed is None:
+        return None
+    if stashed.user_id != user_id:
+        return None
+    return stashed.rows
+
+
+def _stash_pluggy_investment_import(user_id: UUID, rows: list[PluggyImportInvestmentRow]) -> str:
+    from uuid import uuid4
+    token = str(uuid4())
+    _pluggy_investment_stash[token] = StashedPluggyInvestmentImport(user_id=user_id, rows=rows)
+    return token
+
+
+def _pop_pluggy_investment_import(token: str, user_id: UUID) -> list[PluggyImportInvestmentRow] | None:
+    """Pop stashed investment import, verifying user ownership."""
+    stashed = _pluggy_investment_stash.pop(token, None)
+    if stashed is None:
+        return None
+    if stashed.user_id != user_id:
+        return None
+    return stashed.rows
+
+
+@router.post("/pluggy/sync/expenses/preview")
+def preview_pluggy_expenses(
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+    year: int = Form(default=0),
+    month: int = Form(default=0),
+):
+    """Preview Pluggy expense import."""
+    connections = get_pluggy_connections(session, user.id)
+    if not connections:
+        raise HTTPException(status_code=400, detail="No Pluggy connections. Add one first.")
+
+    resolved_year = resolve_year(year)
+    resolved_month = resolve_month(month, resolved_year)
+    month_label = MONTH_LABELS[resolved_month - 1]
+
+    rows, warnings = build_pluggy_expense_import_rows(
+        session,
+        user.id,
+        connections,
+        year=resolved_year,
+        month=resolved_month,
+    )
+
+    import_token = _stash_pluggy_expense_import(user.id, rows)
+    new_count = sum(1 for row in rows if not row.already_exists)
+    existing_count = sum(1 for row in rows if row.already_exists)
+
+    return json_ok({
+        "error": None if rows else ("; ".join(warnings) if warnings else "No transactions found."),
+        "warnings": warnings,
+        "rows": [_expense_row_to_dict(row) for row in rows],
+        "import_token": import_token,
+        "year": resolved_year,
+        "month": resolved_month,
+        "month_label": month_label,
+        "new_count": new_count,
+        "existing_count": existing_count,
+        "confirm_action": "/api/open-finance/pluggy/sync/expenses/confirm",
+        "import_title": "Review Pluggy expenses",
+        "import_subtitle": f"Account debits from {month_label} {resolved_year}",
+        "period_label": "Month",
+        "expense_mapping": f"Transactions default to {month_label} {resolved_year}.",
+        "expense_categories": EXPENSE_CATEGORIES,
+        "expense_category_groups": EXPENSE_CATEGORY_GROUPS,
+        "bills_subcategories": BILLS_SUBCATEGORIES,
+        "bills_category": BILLS_CATEGORY,
+        "month_labels": MONTH_LABELS,
+        "year_options": _preview_year_options(resolved_year, rows),
+        "default_import_year": resolved_year,
+        "default_import_month": resolved_month,
+        "allow_transfer_import": True,
+        "transfer_accounts": TRANSFER_ACCOUNTS,
+        "investment_brokers": INVESTMENT_BROKERS,
+        "preview_kind": "account_debits",
+        "provider": "pluggy",
+    })
+
+
+def _expense_row_to_dict(row: PluggyImportExpenseRow) -> dict:
+    return {
+        "row_key": row.row_key,
+        "external_id": row.external_id,
+        "year": row.year,
+        "month": row.month,
+        "category": row.category,
+        "vendor": row.vendor,
+        "payment_account": row.payment_account,
+        "amount": float(row.amount),
+        "transaction_date": row.transaction_date.isoformat() if row.transaction_date else None,
+        "already_exists": row.already_exists,
+        "selected": row.selected,
+        "is_reversal": row.is_reversal,
+        "subcategory": row.subcategory,
+        "import_kind": row.import_kind,
+        "to_account": row.to_account,
+        "broker": row.broker,
+        "description": row.description,
+        "likely_duplicate": row.likely_duplicate,
+        "is_bill_payment": row.is_bill_payment,
+    }
+
+
+@router.post("/pluggy/sync/expenses/confirm")
+async def confirm_pluggy_expenses(
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+) -> RedirectResponse:
+    """Confirm Pluggy expense import."""
+    form = await request.form()
+    import_token = str(form.get("import_token") or "")
+    selected_rows = form.getlist("selected_rows")
+
+    rows = _pop_pluggy_expense_import(import_token, user.id)
+    if rows is None:
+        raise HTTPException(status_code=400, detail="Import preview expired.")
+
+    from app.services.cumbuca_sync import (
+        ImportExpenseRow,
+        import_selected_account_debits as cumbuca_import_debits,
+    )
+    from app.services.pluggy_sync import PLUGGY_SOURCE
+
+    converted_rows = [
+        ImportExpenseRow(
+            row_key=row.row_key,
+            external_id=row.external_id,
+            year=row.year,
+            month=row.month,
+            category=row.category,
+            vendor=row.vendor,
+            payment_account=row.payment_account,
+            amount=row.amount,
+            transaction_date=row.transaction_date,
+            already_exists=row.already_exists,
+            selected=row.selected,
+            is_reversal=row.is_reversal,
+            subcategory=row.subcategory,
+            import_kind=row.import_kind,
+            to_account=row.to_account,
+            broker=row.broker,
+            description=row.description,
+        )
+        for row in rows
+    ]
+
+    try:
+        expense_created, transfer_created, investment_created = cumbuca_import_debits(
+            session,
+            user.id,
+            converted_rows,
+            set(selected_rows),
+            kind_overrides=_parse_import_kind_overrides(form),
+            to_account_overrides=_parse_to_account_overrides(form),
+            broker_overrides=_parse_broker_overrides(form),
+            category_overrides=_parse_expense_category_overrides(form),
+            subcategory_overrides=_parse_expense_subcategory_overrides(form),
+            period_overrides=_parse_period_overrides(form),
+            description_overrides=_parse_expense_description_overrides(form),
+            source=PLUGGY_SOURCE,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    for conn in get_pluggy_connections(session, user.id):
+        update_connection_last_synced(session, conn)
+
+    total = expense_created + transfer_created + investment_created
+    return RedirectResponse(
+        url=f"/finance/expenses?imported={total}&pluggy=1",
+        status_code=303,
+    )
+
+
+@router.post("/pluggy/sync/income/preview")
+def preview_pluggy_income(
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+    year: int = Form(default=0),
+    month: int = Form(default=0),
+):
+    """Preview Pluggy income import."""
+    connections = get_pluggy_connections(session, user.id)
+    if not connections:
+        raise HTTPException(status_code=400, detail="No Pluggy connections. Add one first.")
+
+    resolved_year = resolve_year(year)
+    resolved_month = resolve_month(month, resolved_year)
+    month_label = MONTH_LABELS[resolved_month - 1]
+
+    rows, warnings = build_pluggy_income_import_rows(
+        session,
+        user.id,
+        connections,
+        year=resolved_year,
+        month=resolved_month,
+    )
+
+    import_token = _stash_pluggy_income_import(user.id, rows)
+    new_count = sum(1 for row in rows if not row.already_exists)
+    existing_count = sum(1 for row in rows if row.already_exists)
+
+    return json_ok({
+        "error": None if rows else ("; ".join(warnings) if warnings else "No transactions found."),
+        "warnings": warnings,
+        "rows": [_income_row_to_dict(row) for row in rows],
+        "import_token": import_token,
+        "year": resolved_year,
+        "month": resolved_month,
+        "month_label": month_label,
+        "new_count": new_count,
+        "existing_count": existing_count,
+        "confirm_action": "/api/open-finance/pluggy/sync/income/confirm",
+        "import_title": "Review Pluggy income",
+        "import_subtitle": f"Account credits from {month_label} {resolved_year}",
+        "month_labels": MONTH_LABELS,
+        "year_options": _preview_year_options(resolved_year, rows),
+        "default_import_year": resolved_year,
+        "default_import_month": resolved_month,
+        "investment_brokers": INVESTMENT_BROKERS,
+        "preview_kind": "account_credits",
+        "provider": "pluggy",
+    })
+
+
+def _income_row_to_dict(row: PluggyImportIncomeRow) -> dict:
+    return {
+        "row_key": row.row_key,
+        "external_id": row.external_id,
+        "year": row.year,
+        "month": row.month,
+        "description": row.description,
+        "amount": float(row.amount),
+        "transaction_date": row.transaction_date.isoformat() if row.transaction_date else None,
+        "payment_account": row.payment_account,
+        "already_exists": row.already_exists,
+        "selected": row.selected,
+        "import_kind": row.import_kind,
+        "broker": row.broker,
+        "likely_duplicate": row.likely_duplicate,
+    }
+
+
+@router.post("/pluggy/sync/income/confirm")
+async def confirm_pluggy_income(
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+) -> RedirectResponse:
+    """Confirm Pluggy income import."""
+    form = await request.form()
+    import_token = str(form.get("import_token") or "")
+    selected_rows = form.getlist("selected_rows")
+
+    rows = _pop_pluggy_income_import(import_token, user.id)
+    if rows is None:
+        raise HTTPException(status_code=400, detail="Import preview expired.")
+
+    from app.services.cumbuca_sync import (
+        ImportIncomeRow,
+        import_selected_account_credits as cumbuca_import_credits,
+    )
+    from app.services.pluggy_sync import PLUGGY_SOURCE
+
+    converted_rows = [
+        ImportIncomeRow(
+            row_key=row.row_key,
+            external_id=row.external_id,
+            year=row.year,
+            month=row.month,
+            description=row.description,
+            amount=row.amount,
+            transaction_date=row.transaction_date,
+            payment_account=row.payment_account,
+            already_exists=row.already_exists,
+            selected=row.selected,
+            import_kind=row.import_kind,
+            broker=row.broker,
+        )
+        for row in rows
+    ]
+
+    try:
+        income_created, investment_created = cumbuca_import_credits(
+            session,
+            user.id,
+            converted_rows,
+            set(selected_rows),
+            kind_overrides=_parse_credit_import_kind_overrides(form),
+            broker_overrides=_parse_broker_overrides(form),
+            period_overrides=_parse_period_overrides(form),
+            source=PLUGGY_SOURCE,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    for conn in get_pluggy_connections(session, user.id):
+        update_connection_last_synced(session, conn)
+
+    total = income_created + investment_created
+    return RedirectResponse(
+        url=f"/finance/income?imported={total}&pluggy=1",
+        status_code=303,
+    )
+
+
+@router.post("/pluggy/sync/investments/preview")
+def preview_pluggy_investments(
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+):
+    """Preview Pluggy investment import."""
+    connections = get_pluggy_connections(session, user.id)
+    if not connections:
+        raise HTTPException(status_code=400, detail="No Pluggy connections. Add one first.")
+
+    rows, warnings = build_pluggy_investment_import_rows(session, user.id, connections)
+
+    import_token = _stash_pluggy_investment_import(user.id, rows)
+    new_count = sum(1 for row in rows if not row.already_exists)
+    update_count = sum(1 for row in rows if row.is_update)
+
+    return json_ok({
+        "error": None if rows else ("; ".join(warnings) if warnings else "No investments found."),
+        "warnings": warnings,
+        "rows": [_investment_row_to_dict(row) for row in rows],
+        "import_token": import_token,
+        "new_count": new_count,
+        "update_count": update_count,
+        "confirm_action": "/api/open-finance/pluggy/sync/investments/confirm",
+        "import_title": "Review Pluggy investments",
+        "import_subtitle": "Non-exchange positions only · updates existing matches by external ID",
+        "preview_kind": "investments",
+        "provider": "pluggy",
+    })
+
+
+def _investment_row_to_dict(row: PluggyImportInvestmentRow) -> dict:
+    return {
+        "row_key": row.row_key,
+        "external_id": row.external_id,
+        "institution": row.institution,
+        "name": row.name,
+        "asset_type_slug": row.asset_type_slug,
+        "current_value": float(row.current_value),
+        "already_exists": row.already_exists,
+        "selected": row.selected,
+        "is_update": row.is_update,
+    }
+
+
+@router.post("/pluggy/sync/investments/confirm")
+def confirm_pluggy_investments(
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+    import_token: str = Form(...),
+    selected_rows: list[str] = Form(default=[]),
+) -> RedirectResponse:
+    """Confirm Pluggy investment import."""
+    rows = _pop_pluggy_investment_import(import_token, user.id)
+    if rows is None:
+        raise HTTPException(status_code=400, detail="Import preview expired.")
+
+    from app.services.cumbuca_sync import (
+        ImportInvestmentRow,
+        import_selected_investments as cumbuca_import_investments,
+    )
+    from app.services.pluggy_sync import PLUGGY_SOURCE
+
+    converted_rows = [
+        ImportInvestmentRow(
+            row_key=row.row_key,
+            external_id=row.external_id,
+            institution=row.institution,
+            name=row.name,
+            asset_type_slug=row.asset_type_slug,
+            current_value=row.current_value,
+            already_exists=row.already_exists,
+            selected=row.selected,
+            is_update=row.is_update,
+        )
+        for row in rows
+    ]
+
+    created, updated = cumbuca_import_investments(
+        session, converted_rows, set(selected_rows), source=PLUGGY_SOURCE, user_id=user.id
+    )
+
+    for conn in get_pluggy_connections(session, user.id):
+        update_connection_last_synced(session, conn)
+
+    return RedirectResponse(
+        url=f"/portfolio/investments?imported={created}&updated={updated}&pluggy=1",
         status_code=303,
     )

@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.core.auth import CurrentUserDep
 from app.core.config import settings
 from app.core.db import SessionDep
+from app.services.cumbuca_oauth import user_has_cumbuca
 from app.services.allocation import allocation_sleeve_value, allocation_target_total
 from app.web.helpers import build_dashboard_rows, get_asset_types, sort_asset_types_for_display
 from app.web.jsonutil import json_ok
@@ -13,7 +14,7 @@ router = APIRouter(tags=["dashboard"])
 
 
 @router.get("/me")
-def current_user_profile(current_user: CurrentUserDep):
+def current_user_profile(session: SessionDep, current_user: CurrentUserDep):
     return json_ok(
         {
             "id": current_user.id,
@@ -22,7 +23,7 @@ def current_user_profile(current_user: CurrentUserDep):
             "picture_url": current_user.picture_url,
             "google_configured": bool(settings.GOOGLE_CLIENT_ID),
             "drive_connected": bool(current_user.google_refresh_token),
-            "cumbuca_connected": bool(current_user.cumbuca_refresh_token),
+            "cumbuca_connected": user_has_cumbuca(current_user, session),
             "display_timezone": settings.DISPLAY_TIMEZONE,
             "display_timezone_label": settings.DISPLAY_TIMEZONE_LABEL,
         }
