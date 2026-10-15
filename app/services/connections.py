@@ -97,11 +97,25 @@ def get_cumbuca_connection_or_from_user(
     return None
 
 
+def cumbuca_connection_is_live(connection: OpenFinanceConnection) -> bool:
+    """A Cumbuca row is live only when it is active and has a refresh token."""
+    return connection.status == "active" and bool(connection.refresh_token)
+
+
+def public_connection_status(connection: OpenFinanceConnection) -> str:
+    """Status shown to clients. Tokenless Cumbuca rows are never reported as active."""
+    if connection.provider == PROVIDER_CUMBUCA and not connection.refresh_token:
+        if connection.status == "active":
+            return "pending"
+        return connection.status
+    return connection.status
+
+
 def user_has_cumbuca_connection(session: Session, user: User) -> bool:
     """Check if user has an active Cumbuca connection (in either location)."""
     connection = get_cumbuca_connection(session, user.id)
     if connection:
-        return connection.status == "active" and bool(connection.refresh_token)
+        return cumbuca_connection_is_live(connection)
     return bool(user.cumbuca_refresh_token)
 
 
@@ -124,19 +138,25 @@ def create_or_update_cumbuca_connection(
             provider=PROVIDER_CUMBUCA,
             external_id="",
             institution_name="Cumbuca Open Finance",
-            status="active",
+            status="pending",
         )
 
     connection.oauth_client_id = oauth_client_id
     connection.oauth_client_secret = oauth_client_secret
+    if refresh_token is None and not connection.refresh_token:
+        refresh_token = user.cumbuca_refresh_token
+    if access_token is None and not connection.access_token:
+        access_token = user.cumbuca_access_token
+    if token_expires_at is None and not connection.token_expires_at:
+        token_expires_at = user.cumbuca_token_expires_at
     if refresh_token is not None:
         connection.refresh_token = refresh_token
     if access_token is not None:
         connection.access_token = access_token
     if token_expires_at is not None:
         connection.token_expires_at = token_expires_at
-    if refresh_token or access_token:
-        connection.status = "active"
+    has_tokens = bool(connection.refresh_token or connection.access_token)
+    connection.status = "active" if has_tokens else "pending"
     connection.updated_at = datetime.utcnow()
 
     session.add(connection)
@@ -151,7 +171,8 @@ def create_or_update_cumbuca_connection(
         user.cumbuca_access_token = access_token
     if token_expires_at is not None:
         user.cumbuca_token_expires_at = token_expires_at
-    user.cumbuca_connected_at = connection.updated_at
+    if has_tokens:
+        user.cumbuca_connected_at = connection.updated_at
     session.add(user)
     session.commit()
 
@@ -230,40 +251,30 @@ def delete_connection(session: Session, connection: OpenFinanceConnection) -> No
     session.commit()
 
 
+def _connection_payload(conn: OpenFinanceConnection) -> dict:
+    return {
+        "id": str(conn.id),
+        "provider": conn.provider,
+        "external_id": conn.external_id,
+        "institution_name": conn.institution_name,
+        "status": public_connection_status(conn),
+        "last_synced_at": conn.last_synced_at.isoformat() if conn.last_synced_at else None,
+        "created_at": conn.created_at.isoformat() if conn.created_at else None,
+    }
+
+
 def connections_summary(connections: list[OpenFinanceConnection]) -> dict:
     """Generate a summary of connections for API responses."""
     by_provider: dict[str, list[dict]] = {}
 
     for conn in connections:
-        if conn.provider not in by_provider:
-            by_provider[conn.provider] = []
-
-        by_provider[conn.provider].append({
-            "id": str(conn.id),
-            "provider": conn.provider,
-            "external_id": conn.external_id,
-            "institution_name": conn.institution_name,
-            "status": conn.status,
-            "last_synced_at": conn.last_synced_at.isoformat() if conn.last_synced_at else None,
-            "created_at": conn.created_at.isoformat() if conn.created_at else None,
-        })
+        by_provider.setdefault(conn.provider, []).append(_connection_payload(conn))
 
     return {
-        "connections": [
-            {
-                "id": str(conn.id),
-                "provider": conn.provider,
-                "external_id": conn.external_id,
-                "institution_name": conn.institution_name,
-                "status": conn.status,
-                "last_synced_at": conn.last_synced_at.isoformat() if conn.last_synced_at else None,
-                "created_at": conn.created_at.isoformat() if conn.created_at else None,
-            }
-            for conn in connections
-        ],
+        "connections": [_connection_payload(conn) for conn in connections],
         "by_provider": by_provider,
         "has_cumbuca": any(
-            c.provider == PROVIDER_CUMBUCA and c.status == "active" and bool(c.refresh_token)
+            c.provider == PROVIDER_CUMBUCA and cumbuca_connection_is_live(c)
             for c in connections
         ),
         "has_pluggy": any(

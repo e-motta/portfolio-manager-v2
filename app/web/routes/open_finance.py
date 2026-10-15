@@ -151,10 +151,11 @@ def open_finance_page(
     connections = get_all_connections(session, user.id)
     summary = connections_summary(connections)
 
-    has_cumbuca = user_has_cumbuca(user, session) or summary["has_cumbuca"]
+    cumbuca_connected = user_has_cumbuca(user, session)
+    pluggy_connected = summary["has_pluggy"]
     overlap = overlapping_institutions(connections)
     same_institution_warning = None
-    if both_providers_connected(connections) or overlap:
+    if both_providers_connected(connections):
         if overlap:
             names = ", ".join(name.title() for name in overlap)
             same_institution_warning = (
@@ -169,8 +170,10 @@ def open_finance_page(
 
     return json_ok(
         {
-            "connected": has_cumbuca,
-            "connected_at": user.cumbuca_connected_at,
+            "connected": cumbuca_connected,
+            "cumbuca_connected": cumbuca_connected,
+            "pluggy_connected": pluggy_connected,
+            "connected_at": user.cumbuca_connected_at if cumbuca_connected else None,
             "pluggy_available": is_pluggy_available(),
             "same_institution_warning": same_institution_warning,
             **summary,
@@ -802,6 +805,25 @@ def pluggy_status(
     })
 
 
+def _pluggy_connections_for_preview(
+    session,
+    user_id: UUID,
+    connection_id: str | None = None,
+):
+    connections = get_pluggy_connections(session, user_id)
+    if connection_id:
+        try:
+            wanted = UUID(str(connection_id).strip())
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid connection ID.") from exc
+        connections = [conn for conn in connections if conn.id == wanted]
+        if not connections:
+            raise HTTPException(status_code=404, detail="Connection not found.")
+    if not connections:
+        raise HTTPException(status_code=400, detail="No Pluggy connections. Add one first.")
+    return connections
+
+
 # --- Pluggy Sync Endpoints ---
 
 
@@ -856,18 +878,21 @@ def _pop_pluggy_investment_import(token: str, user_id: UUID) -> list[PluggyImpor
     return stashed.rows
 
 
-@router.post("/pluggy/sync/expenses/preview")
-def preview_pluggy_expenses(
-    request: Request,
-    session: SessionDep,
-    user: CurrentUserDep,
-    year: int = Form(default=0),
-    month: int = Form(default=0),
+def _preview_pluggy_expenses(
+    session,
+    user,
+    *,
+    year: int,
+    month: int,
+    connection_id: str | None,
+    account_types: set[str] | None,
+    import_title: str,
+    import_subtitle: str,
+    confirm_action: str,
+    preview_kind: str,
+    allow_transfer_import: bool,
 ):
-    """Preview Pluggy expense import."""
-    connections = get_pluggy_connections(session, user.id)
-    if not connections:
-        raise HTTPException(status_code=400, detail="No Pluggy connections. Add one first.")
+    connections = _pluggy_connections_for_preview(session, user.id, connection_id)
 
     resolved_year = resolve_year(year)
     resolved_month = resolve_month(month, resolved_year)
@@ -879,6 +904,7 @@ def preview_pluggy_expenses(
         connections,
         year=resolved_year,
         month=resolved_month,
+        account_types=account_types,
     )
 
     import_token = _stash_pluggy_expense_import(user.id, rows)
@@ -895,9 +921,9 @@ def preview_pluggy_expenses(
         "month_label": month_label,
         "new_count": new_count,
         "existing_count": existing_count,
-        "confirm_action": "/api/open-finance/pluggy/sync/expenses/confirm",
-        "import_title": "Review Pluggy expenses",
-        "import_subtitle": f"Account debits from {month_label} {resolved_year}",
+        "confirm_action": confirm_action,
+        "import_title": import_title,
+        "import_subtitle": import_subtitle.format(month_label=month_label, year=resolved_year),
         "period_label": "Month",
         "expense_mapping": f"Transactions default to {month_label} {resolved_year}.",
         "expense_categories": EXPENSE_CATEGORIES,
@@ -908,12 +934,62 @@ def preview_pluggy_expenses(
         "year_options": _preview_year_options(resolved_year, rows),
         "default_import_year": resolved_year,
         "default_import_month": resolved_month,
-        "allow_transfer_import": True,
+        "allow_transfer_import": allow_transfer_import,
         "transfer_accounts": TRANSFER_ACCOUNTS,
         "investment_brokers": INVESTMENT_BROKERS,
-        "preview_kind": "account_debits",
+        "preview_kind": preview_kind,
         "provider": "pluggy",
     })
+
+
+@router.post("/pluggy/sync/expenses/preview")
+def preview_pluggy_expenses(
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+    year: int = Form(default=0),
+    month: int = Form(default=0),
+    connection_id: str = Form(default=""),
+):
+    """Preview Pluggy account-debit import."""
+    return _preview_pluggy_expenses(
+        session,
+        user,
+        year=year,
+        month=month,
+        connection_id=connection_id or None,
+        account_types={"BANK"},
+        import_title="Review Pluggy account debits",
+        import_subtitle="Account debits from {month_label} {year}",
+        confirm_action="/api/open-finance/pluggy/sync/expenses/confirm",
+        preview_kind="account_debits",
+        allow_transfer_import=True,
+    )
+
+
+@router.post("/pluggy/sync/credit-card/preview")
+def preview_pluggy_credit_card(
+    request: Request,
+    session: SessionDep,
+    user: CurrentUserDep,
+    year: int = Form(default=0),
+    month: int = Form(default=0),
+    connection_id: str = Form(default=""),
+):
+    """Preview Pluggy credit-card purchase import."""
+    return _preview_pluggy_expenses(
+        session,
+        user,
+        year=year,
+        month=month,
+        connection_id=connection_id or None,
+        account_types={"CREDIT"},
+        import_title="Review Pluggy card purchases",
+        import_subtitle="Card purchases from {month_label} {year}",
+        confirm_action="/api/open-finance/pluggy/sync/expenses/confirm",
+        preview_kind="credit_card",
+        allow_transfer_import=False,
+    )
 
 
 def _expense_row_to_dict(row: PluggyImportExpenseRow) -> dict:
@@ -1019,11 +1095,10 @@ def preview_pluggy_income(
     user: CurrentUserDep,
     year: int = Form(default=0),
     month: int = Form(default=0),
+    connection_id: str = Form(default=""),
 ):
     """Preview Pluggy income import."""
-    connections = get_pluggy_connections(session, user.id)
-    if not connections:
-        raise HTTPException(status_code=400, detail="No Pluggy connections. Add one first.")
+    connections = _pluggy_connections_for_preview(session, user.id, connection_id or None)
 
     resolved_year = resolve_year(year)
     resolved_month = resolve_month(month, resolved_year)
@@ -1150,11 +1225,10 @@ def preview_pluggy_investments(
     request: Request,
     session: SessionDep,
     user: CurrentUserDep,
+    connection_id: str = Form(default=""),
 ):
     """Preview Pluggy investment import."""
-    connections = get_pluggy_connections(session, user.id)
-    if not connections:
-        raise HTTPException(status_code=400, detail="No Pluggy connections. Add one first.")
+    connections = _pluggy_connections_for_preview(session, user.id, connection_id or None)
 
     rows, warnings = build_pluggy_investment_import_rows(session, user.id, connections)
 
