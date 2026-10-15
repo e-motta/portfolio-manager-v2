@@ -61,6 +61,35 @@ def _parse_optional_date(value: str | None) -> date | None:
     return date.fromisoformat(value)
 
 
+def _dedupe_finance_rows_by_external_id(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep one row per external_id so older backups with duplicates still restore.
+
+    Restore assigns the current user_id to every finance row, so uniqueness is
+    (user_id, external_id). Keep the oldest ``created_at``; ties keep the first
+    row in the file. Rows with a null/empty external_id are all kept.
+    """
+    winner_index: dict[str, int] = {}
+    for index, row in enumerate(rows):
+        external_id = row.get("external_id")
+        if not external_id:
+            continue
+        previous = winner_index.get(external_id)
+        if previous is None:
+            winner_index[external_id] = index
+            continue
+        previous_created = str(rows[previous].get("created_at") or "")
+        created = str(row.get("created_at") or "")
+        if created and (not previous_created or created < previous_created):
+            winner_index[external_id] = index
+
+    winners = set(winner_index.values())
+    kept: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        if not row.get("external_id") or index in winners:
+            kept.append(row)
+    return kept
+
+
 def export_portfolio_data(session: Session) -> dict[str, Any]:
     portfolio = get_portfolio(session)
     asset_types = list(
@@ -564,7 +593,7 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
 
     user_id = get_current_user_id(session)
 
-    for row in payload.get("finance_income", []):
+    for row in _dedupe_finance_rows_by_external_id(list(payload.get("finance_income") or [])):
         entry = FinanceIncomeEntry(
             user_id=user_id,
             year=row["year"],
@@ -581,7 +610,7 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
             entry.updated_at = datetime.fromisoformat(row["updated_at"])
         session.add(entry)
 
-    for row in payload.get("finance_expenses", []):
+    for row in _dedupe_finance_rows_by_external_id(list(payload.get("finance_expenses") or [])):
         entry = FinanceExpenseEntry(
             user_id=user_id,
             year=row["year"],
@@ -617,7 +646,7 @@ def restore_portfolio_data(session: Session, payload: dict[str, Any]) -> None:
             entry.updated_at = datetime.fromisoformat(row["updated_at"])
         session.add(entry)
 
-    for row in payload.get("finance_transfers", []):
+    for row in _dedupe_finance_rows_by_external_id(list(payload.get("finance_transfers") or [])):
         entry = FinanceTransferEntry(
             user_id=user_id,
             year=row["year"],
