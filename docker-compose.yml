@@ -14,6 +14,8 @@ services:
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-https://finance.eduardomotta.dev/auth/callback}
       CUMBUCA_REDIRECT_URI: ${CUMBUCA_REDIRECT_URI:-https://finance.eduardomotta.dev/auth/cumbuca/callback}
       ALLOWED_GOOGLE_EMAILS: ${ALLOWED_GOOGLE_EMAILS:-}
+      PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
+      PLUGGY_CLIENT_SECRET: ${PLUGGY_CLIENT_SECRET:-}
     networks:
       - internal
     healthcheck:
