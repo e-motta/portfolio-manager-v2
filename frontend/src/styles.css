@@ -866,7 +866,8 @@ select.compact.wide, input.compact.wide { width: 9rem; }
   .stats .stat--combined { grid-column: span 2; }
   .cards { grid-template-columns: 1fr; }
   .user-chip span { display: none; }
-  .of-hero, .of-actions--finance, .split-panel { grid-template-columns: 1fr; }
+  .of-hero, .of-providers, .of-actions--finance, .split-panel { grid-template-columns: 1fr; }
+  .of-add-connection__form { grid-template-columns: 1fr; }
   .of-actions--investments { grid-template-columns: 1fr; }
   .subnav-wrap {
     width: 100%;
@@ -1226,6 +1227,77 @@ table.data tr.is-imported { opacity: 0.55; }
 table.data tr.needs-category td { background: rgba(138, 90, 18, 0.06); }
 .col-check { width: 2rem; }
 
+.of-providers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+.of-providers--single { grid-template-columns: minmax(0, 36rem); }
+.of-provider {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.4rem 1.3rem 1.3rem;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 1rem;
+}
+.of-provider__head {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+}
+.of-provider__head h2 { margin: 0 0 0.2rem; font-family: var(--serif); font-size: 1.25rem; }
+.of-provider__head p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.of-provider .of-hero__icon { margin-bottom: 0; }
+.of-provider .of-status { margin-bottom: 0; }
+.of-provider .of-actions--finance { grid-template-columns: 1fr; }
+.of-provider .of-actions--investments { grid-template-columns: 1fr; }
+.of-add-connection__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: start;
+}
+.of-connections {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.of-connection {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  display: grid;
+  gap: 0.75rem;
+  background: var(--paper);
+}
+.of-connection__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+.of-connections__meta { display: block; color: var(--muted); font-size: 0.8rem; }
+.of-connection__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+@media (max-width: 820px) {
+  .of-providers,
+  .of-providers--single {
+    grid-template-columns: 1fr;
+  }
+  .of-add-connection__form { grid-template-columns: 1fr; }
+  .of-provider .of-status {
+    flex-wrap: wrap;
+  }
+}
 .of-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);

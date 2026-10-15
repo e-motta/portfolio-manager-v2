@@ -25,6 +25,8 @@ type Connection = {
 
 type Status = {
   connected: boolean;
+  cumbuca_connected: boolean;
+  pluggy_connected: boolean;
   connected_at: string | null;
   pluggy_available: boolean;
   connections: Connection[];
@@ -157,10 +159,11 @@ export function OpenFinancePage() {
     queryKey: ["open-finance"],
     queryFn: () => getJson<Status>("/api/open-finance"),
   });
+  const cumbucaConnected = Boolean(status.data?.cumbuca_connected ?? status.data?.connected);
   const tools = useQuery({
     queryKey: ["open-finance-tools"],
     queryFn: () => getJson<Tools>("/api/open-finance/partials/tools"),
-    enabled: Boolean(status.data?.connected),
+    enabled: cumbucaConnected,
     retry: false,
   });
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -171,11 +174,9 @@ export function OpenFinancePage() {
   const [creditPeriod, setCreditPeriod] = useState<Period | null>(null);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
 
-  // Pluggy state
   const [pluggyItemId, setPluggyItemId] = useState("");
   const [pluggyError, setPluggyError] = useState<string | null>(null);
-  const [pluggyDebitPeriod, setPluggyDebitPeriod] = useState<Period | null>(null);
-  const [pluggyCreditPeriod, setPluggyCreditPeriod] = useState<Period | null>(null);
+  const [pluggyPeriod, setPluggyPeriod] = useState<Period | null>(null);
   const [removeConnectionId, setRemoveConnectionId] = useState<string | null>(null);
 
   const disconnect = useMutation({
@@ -217,13 +218,19 @@ export function OpenFinancePage() {
     month: tools.data?.default_month ?? new Date().getMonth() + 1,
   };
   const months = tools.data?.month_labels?.length ? tools.data.month_labels : FALLBACK_MONTHS;
-  const years = tools.data?.year_options?.length ? tools.data.year_options : [defaults.year];
+  const years = tools.data?.year_options?.length
+    ? tools.data.year_options
+    : [defaults.year - 2, defaults.year - 1, defaults.year, defaults.year + 1, defaults.year + 2];
 
-  async function runPreview(path: string, period?: Period) {
-    setPreviewing(path);
+  async function runPreview(path: string, period?: Period, extra?: Record<string, string>) {
+    const previewKey = extra?.connection_id ? `${path}:${extra.connection_id}` : path;
+    setPreviewing(previewKey);
     setPreviewError(null);
     try {
-      const body = period ? { year: String(period.year), month: String(period.month) } : {};
+      const body = {
+        ...(period ? { year: String(period.year), month: String(period.month) } : {}),
+        ...extra,
+      };
       const response = await sendForm(path, body);
       const payload = (await response.json()) as Preview;
       setPreview(payload);
@@ -235,7 +242,6 @@ export function OpenFinancePage() {
   }
 
   if (status.isLoading) return <p className="empty">Loading Open Finance…</p>;
-  const connected = Boolean(status.data?.connected);
 
   if (preview) {
     return (
@@ -251,10 +257,13 @@ export function OpenFinancePage() {
     );
   }
 
+  const pluggyAvailable = Boolean(status.data?.pluggy_available);
+  const pluggyConnections = status.data?.connections?.filter((c) => c.provider === "pluggy") ?? [];
+
   return (
     <>
       <p className="page-lead">
-        Import credit card charges, account debits, credits, and investment balances — each with its own preview.
+        Choose a provider. Each import has its own preview; nothing is saved until you confirm.
       </p>
       <QueryFlash />
       {previewError ? <Alert tone="error">{previewError}</Alert> : null}
@@ -262,172 +271,49 @@ export function OpenFinancePage() {
         <Alert tone="warn">{status.data.same_institution_warning}</Alert>
       ) : null}
 
-      {!connected ? (
-        <DisconnectedHub />
-      ) : (
-        <>
-          <div className="of-status">
-            <div className="of-status__dot" aria-hidden="true" />
-            <div className="of-status__body">
-              <div className="of-status__title">Bank connected</div>
-              <div className="of-status__meta">
-                {connectedSince(status.data?.connected_at || null) ? (
-                  <>
-                    <span>Since {connectedSince(status.data?.connected_at || null)}</span>
-                    <span aria-hidden="true"> · </span>
-                  </>
-                ) : null}
-                <span>
-                  {tools.isLoading
-                    ? "Loading data sources…"
-                    : `${tools.data?.tool_names?.length ?? 0} data source${(tools.data?.tool_names?.length ?? 0) === 1 ? "" : "s"} available`}
-                </span>
-              </div>
-            </div>
-            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setDisconnectOpen(true)}>
-              Disconnect
-            </button>
-          </div>
-
-          {tools.data?.tools_error ? <Alert tone="error">{tools.data.tools_error}</Alert> : null}
-          {tools.isError ? <Alert tone="error">{tools.error instanceof Error ? tools.error.message : "Could not load bank tools."}</Alert> : null}
-
-          {tools.isLoading ? (
-            <p className="empty">Loading import options from your bank…</p>
-          ) : (
-            <>
-              <section className="of-section">
-                <h2 className="of-section__title">Finance</h2>
-                <div className="of-actions of-actions--finance">
-                  <ImportCard
-                    tone="card"
-                    icon="card"
-                    title="Credit card charges"
-                    description={
-                      <>
-                        Import card statement charges into <Link to="/finance/expenses">Finance expenses</Link>.
-                      </>
-                    }
-                    available={Boolean(tools.data?.has_credit_card_tools)}
-                    unavailable="Credit card tools are not available for your bank connection."
-                    periodLabel="Statement month"
-                    period={ccPeriod ?? defaults}
-                    months={months}
-                    years={years}
-                    onPeriod={setCcPeriod}
-                    loading={previewing === "/api/open-finance/sync/credit-card/preview"}
-                    submitLabel="Preview charges"
-                    onPreview={() => void runPreview("/api/open-finance/sync/credit-card/preview", ccPeriod ?? defaults)}
-                  />
-                  <ImportCard
-                    tone="debits"
-                    icon="out"
-                    title="Account debits"
-                    description={
-                      <>
-                        Import PIX, boletos, and account outflows as <Link to="/finance/expenses">expenses</Link>,{" "}
-                        <Link to="/finance/transfers">transfers</Link>, or <Link to="/finance/investments">investments</Link>.
-                      </>
-                    }
-                    available={Boolean(tools.data?.has_account_tools)}
-                    unavailable="Account transaction tools are not available for your bank connection."
-                    periodLabel="Month"
-                    period={debitPeriod ?? defaults}
-                    months={months}
-                    years={years}
-                    onPeriod={setDebitPeriod}
-                    loading={previewing === "/api/open-finance/sync/account-debits/preview"}
-                    submitLabel="Preview debits"
-                    onPreview={() => void runPreview("/api/open-finance/sync/account-debits/preview", debitPeriod ?? defaults)}
-                  />
-                  <ImportCard
-                    tone="credits"
-                    icon="in"
-                    title="Account credits"
-                    description={
-                      <>
-                        Import salary, transfers in, and other credits as <Link to="/finance/income">income</Link> or{" "}
-                        <Link to="/finance/investments">investments</Link>.
-                      </>
-                    }
-                    available={Boolean(tools.data?.has_account_tools)}
-                    unavailable="Account transaction tools are not available for your bank connection."
-                    periodLabel="Month"
-                    period={creditPeriod ?? defaults}
-                    months={months}
-                    years={years}
-                    onPeriod={setCreditPeriod}
-                    loading={previewing === "/api/open-finance/sync/account-credits/preview"}
-                    submitLabel="Preview credits"
-                    onPreview={() => void runPreview("/api/open-finance/sync/account-credits/preview", creditPeriod ?? defaults)}
-                  />
-                </div>
-              </section>
-
-              <section className="of-section">
-                <h2 className="of-section__title">Investments</h2>
-                <div className="of-actions of-actions--investments">
-                  <ImportCard
-                    tone="investments"
-                    icon="bag"
-                    title="Other investments"
-                    description={
-                      <>
-                        Sync fixed-income and savings balances in <Link to="/portfolio/investments">Other investments</Link>.
-                        Exchange-traded positions stay in Securities.
-                      </>
-                    }
-                    available={Boolean(tools.data?.has_investment_tools)}
-                    unavailable="Investment tools are not exposed by Cumbuca for your bank yet."
-                    note="Pulls all importable non-exchange positions from your bank in one step."
-                    loading={previewing === "/api/open-finance/sync/investments/preview"}
-                    submitLabel="Preview investment sync"
-                    onPreview={() => void runPreview("/api/open-finance/sync/investments/preview")}
-                  />
-                </div>
-              </section>
-
-              {tools.data?.tool_names?.length ? (
-                <details className="of-details">
-                  <summary>
-                    Technical details
-                    <span>{tools.data.tool_names.length} MCP tools</span>
-                  </summary>
-                  <p>Tools exposed by your bank through the Cumbuca MCP server.</p>
-                  <ul>
-                    {tools.data.tool_names.map((tool) => (
-                      <li key={tool}><code>{tool}</code></li>
-                    ))}
-                  </ul>
-                </details>
-              ) : null}
-            </>
-          )}
-
-          {/* Pluggy Section */}
-          {status.data?.pluggy_available ? (
-            <PluggySection
-              connections={status.data?.connections?.filter((c) => c.provider === "pluggy") ?? []}
-              itemId={pluggyItemId}
-              onItemIdChange={setPluggyItemId}
-              error={pluggyError}
-              onClearError={() => setPluggyError(null)}
-              onAddConnection={() => addPluggyConnection.mutate(pluggyItemId)}
-              addingConnection={addPluggyConnection.isPending}
-              onRemoveConnection={setRemoveConnectionId}
-              removingConnection={removePluggyConnection.isPending}
-              months={months}
-              years={years}
-              debitPeriod={pluggyDebitPeriod ?? defaults}
-              onDebitPeriodChange={setPluggyDebitPeriod}
-              creditPeriod={pluggyCreditPeriod ?? defaults}
-              onCreditPeriodChange={setPluggyCreditPeriod}
-              previewing={previewing}
-              onPreview={runPreview}
-            />
-          ) : null}
-        </>
-      )}
+      <div className={`of-providers${pluggyAvailable ? "" : " of-providers--single"}`}>
+        <CumbucaCard
+          connected={cumbucaConnected}
+          connectedAt={status.data?.connected_at || null}
+          tools={tools.data}
+          toolsLoading={tools.isLoading}
+          toolsError={
+            tools.data?.tools_error
+            || (tools.isError ? (tools.error instanceof Error ? tools.error.message : "Could not load bank tools.") : null)
+          }
+          months={months}
+          years={years}
+          defaults={defaults}
+          ccPeriod={ccPeriod}
+          debitPeriod={debitPeriod}
+          creditPeriod={creditPeriod}
+          onCcPeriod={setCcPeriod}
+          onDebitPeriod={setDebitPeriod}
+          onCreditPeriod={setCreditPeriod}
+          previewing={previewing}
+          onPreview={runPreview}
+          onDisconnect={() => setDisconnectOpen(true)}
+        />
+        {pluggyAvailable ? (
+          <PluggyCard
+            connections={pluggyConnections}
+            itemId={pluggyItemId}
+            onItemIdChange={setPluggyItemId}
+            error={pluggyError}
+            onClearError={() => setPluggyError(null)}
+            onAddConnection={() => addPluggyConnection.mutate(pluggyItemId)}
+            addingConnection={addPluggyConnection.isPending}
+            onRemoveConnection={setRemoveConnectionId}
+            removingConnection={removePluggyConnection.isPending}
+            months={months}
+            years={years}
+            period={pluggyPeriod ?? defaults}
+            onPeriod={setPluggyPeriod}
+            previewing={previewing}
+            onPreview={runPreview}
+          />
+        ) : null}
+      </div>
 
       <ConfirmDialog
         open={disconnectOpen}
@@ -454,41 +340,202 @@ export function OpenFinancePage() {
   );
 }
 
-function DisconnectedHub() {
+function CumbucaCard({
+  connected,
+  connectedAt,
+  tools,
+  toolsLoading,
+  toolsError,
+  months,
+  years,
+  defaults,
+  ccPeriod,
+  debitPeriod,
+  creditPeriod,
+  onCcPeriod,
+  onDebitPeriod,
+  onCreditPeriod,
+  previewing,
+  onPreview,
+  onDisconnect,
+}: {
+  connected: boolean;
+  connectedAt: string | null;
+  tools: Tools | undefined;
+  toolsLoading: boolean;
+  toolsError: string | null;
+  months: string[];
+  years: number[];
+  defaults: Period;
+  ccPeriod: Period | null;
+  debitPeriod: Period | null;
+  creditPeriod: Period | null;
+  onCcPeriod: (period: Period) => void;
+  onDebitPeriod: (period: Period) => void;
+  onCreditPeriod: (period: Period) => void;
+  previewing: string | null;
+  onPreview: (path: string, period?: Period, extra?: Record<string, string>) => Promise<void>;
+  onDisconnect: () => void;
+}) {
+  const since = connectedSince(connectedAt);
   return (
-    <div className="of-hero">
-      <div className="of-hero__panel">
+    <section className="of-provider">
+      <div className="of-provider__head">
         <div className="of-hero__icon" aria-hidden="true"><Icon name="bank" /></div>
-        <h2>Connect your bank</h2>
-        <p>
-          Authorize read-only access through Open Finance (CPF + your bank). Data is fetched in real time
-          and is not stored by Cumbuca.
-        </p>
-        <a href="/auth/cumbuca" className="btn of-hero__cta">Connect via Open Finance</a>
-        <p className="of-hero__note">You will be redirected to Cumbuca to complete authorization.</p>
+        <div>
+          <h2>Cumbuca</h2>
+          <p>One bank via Open Finance</p>
+        </div>
       </div>
-      <div className="of-features">
-        <article className="of-feature">
-          <div className="of-feature__icon of-feature__icon--shield"><Icon name="shield" /></div>
-          <h3>Read-only access</h3>
-          <p>Portfolio Manager can read transactions and balances, not move money.</p>
-        </article>
-        <article className="of-feature">
-          <div className="of-feature__icon of-feature__icon--preview"><Icon name="preview" /></div>
-          <h3>Preview every row</h3>
-          <p>Nothing is saved until you review and confirm the import.</p>
-        </article>
-        <article className="of-feature">
-          <div className="of-feature__icon of-feature__icon--bank"><Icon name="bank" /></div>
-          <h3>One bank at a time</h3>
-          <p>The current Cumbuca connection links a single account per user.</p>
-        </article>
-      </div>
-    </div>
+
+      {connected ? (
+        <>
+          <div className="of-status">
+            <div className="of-status__dot" aria-hidden="true" />
+            <div className="of-status__body">
+              <div className="of-status__title">Connected</div>
+              <div className="of-status__meta">
+                {since ? <span>Since {since}</span> : null}
+                {since ? <span aria-hidden="true"> · </span> : null}
+                <span>
+                  {toolsLoading
+                    ? "Loading data sources…"
+                    : `${tools?.tool_names?.length ?? 0} data source${(tools?.tool_names?.length ?? 0) === 1 ? "" : "s"} available`}
+                </span>
+              </div>
+            </div>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={onDisconnect}>
+              Disconnect
+            </button>
+          </div>
+
+          {toolsError ? <Alert tone="error">{toolsError}</Alert> : null}
+
+          {toolsLoading ? (
+            <p className="empty">Loading import options from your bank…</p>
+          ) : (
+            <>
+              <div className="of-actions of-actions--finance">
+                <ImportCard
+                  tone="card"
+                  icon="card"
+                  title="Credit card charges"
+                  description={
+                    <>
+                      Import card statement charges into <Link to="/finance/expenses">Finance expenses</Link>.
+                    </>
+                  }
+                  available={Boolean(tools?.has_credit_card_tools)}
+                  unavailable="Credit card tools are not available for your bank connection."
+                  periodLabel="Statement month"
+                  period={ccPeriod ?? defaults}
+                  months={months}
+                  years={years}
+                  onPeriod={onCcPeriod}
+                  loading={previewing === "/api/open-finance/sync/credit-card/preview"}
+                  submitLabel="Preview charges"
+                  onPreview={() => void onPreview("/api/open-finance/sync/credit-card/preview", ccPeriod ?? defaults)}
+                />
+                <ImportCard
+                  tone="debits"
+                  icon="out"
+                  title="Account debits"
+                  description={
+                    <>
+                      Import PIX, boletos, and account outflows as <Link to="/finance/expenses">expenses</Link>,{" "}
+                      <Link to="/finance/transfers">transfers</Link>, or <Link to="/finance/investments">investments</Link>.
+                    </>
+                  }
+                  available={Boolean(tools?.has_account_tools)}
+                  unavailable="Account transaction tools are not available for your bank connection."
+                  periodLabel="Month"
+                  period={debitPeriod ?? defaults}
+                  months={months}
+                  years={years}
+                  onPeriod={onDebitPeriod}
+                  loading={previewing === "/api/open-finance/sync/account-debits/preview"}
+                  submitLabel="Preview debits"
+                  onPreview={() => void onPreview("/api/open-finance/sync/account-debits/preview", debitPeriod ?? defaults)}
+                />
+                <ImportCard
+                  tone="credits"
+                  icon="in"
+                  title="Account credits"
+                  description={
+                    <>
+                      Import salary, transfers in, and other credits as <Link to="/finance/income">income</Link> or{" "}
+                      <Link to="/finance/investments">investments</Link>.
+                    </>
+                  }
+                  available={Boolean(tools?.has_account_tools)}
+                  unavailable="Account transaction tools are not available for your bank connection."
+                  periodLabel="Month"
+                  period={creditPeriod ?? defaults}
+                  months={months}
+                  years={years}
+                  onPeriod={onCreditPeriod}
+                  loading={previewing === "/api/open-finance/sync/account-credits/preview"}
+                  submitLabel="Preview credits"
+                  onPreview={() => void onPreview("/api/open-finance/sync/account-credits/preview", creditPeriod ?? defaults)}
+                />
+              </div>
+              <div className="of-actions of-actions--investments">
+                <ImportCard
+                  tone="investments"
+                  icon="bag"
+                  title="Other investments"
+                  description={
+                    <>
+                      Sync fixed-income and savings balances in <Link to="/portfolio/investments">Other investments</Link>.
+                      Exchange-traded positions stay in Securities.
+                    </>
+                  }
+                  available={Boolean(tools?.has_investment_tools)}
+                  unavailable="Investment tools are not exposed by Cumbuca for your bank yet."
+                  note="Pulls all importable non-exchange positions from your bank in one step."
+                  loading={previewing === "/api/open-finance/sync/investments/preview"}
+                  submitLabel="Preview investment sync"
+                  onPreview={() => void onPreview("/api/open-finance/sync/investments/preview")}
+                />
+              </div>
+              {tools?.tool_names?.length ? (
+                <details className="of-details">
+                  <summary>
+                    Technical details
+                    <span>{tools.tool_names.length} MCP tools</span>
+                  </summary>
+                  <p>Tools exposed by your bank through the Cumbuca MCP server.</p>
+                  <ul>
+                    {tools.tool_names.map((tool) => (
+                      <li key={tool}><code>{tool}</code></li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          <p>
+            Authorize read-only access through Open Finance (CPF + your bank). Data is fetched in real time
+            and is not stored by Cumbuca.
+          </p>
+          <a href="/auth/cumbuca" className="btn of-hero__cta">Connect</a>
+          <p className="of-hero__note">You will be redirected to Cumbuca to complete authorization.</p>
+        </>
+      )}
+    </section>
   );
 }
 
-function PluggySection({
+function statusBadgeLabel(status: string): string {
+  if (status === "needs_attention") return "Needs attention";
+  if (status === "active") return "Active";
+  return status.replace(/_/g, " ");
+}
+
+function PluggyCard({
   connections,
   itemId,
   onItemIdChange,
@@ -500,10 +547,8 @@ function PluggySection({
   removingConnection,
   months,
   years,
-  debitPeriod,
-  onDebitPeriodChange,
-  creditPeriod,
-  onCreditPeriodChange,
+  period,
+  onPeriod,
   previewing,
   onPreview,
 }: {
@@ -518,28 +563,20 @@ function PluggySection({
   removingConnection: boolean;
   months: string[];
   years: number[];
-  debitPeriod: Period;
-  onDebitPeriodChange: (period: Period) => void;
-  creditPeriod: Period;
-  onCreditPeriodChange: (period: Period) => void;
+  period: Period;
+  onPeriod: (period: Period) => void;
   previewing: string | null;
-  onPreview: (path: string, period?: Period) => Promise<void>;
+  onPreview: (path: string, period?: Period, extra?: Record<string, string>) => Promise<void>;
 }) {
-  const hasConnections = connections.length > 0;
-
   return (
-    <section className="of-section of-section--pluggy">
-      <h2 className="of-section__title">
-        <span>Meu Pluggy</span>
-        <span className="badge badge--new">Beta</span>
-      </h2>
-      <p className="of-section__lead">
-        Connect additional banks via{" "}
-        <a href="https://meu.pluggy.ai" target="_blank" rel="noopener noreferrer">
-          Meu Pluggy
-        </a>
-        . Banks are connected in the Pluggy dashboard, then you add them here using the Item ID.
-      </p>
+    <section className="of-provider">
+      <div className="of-provider__head">
+        <div className="of-hero__icon" aria-hidden="true"><Icon name="preview" /></div>
+        <div>
+          <h2>Meu Pluggy</h2>
+          <p>Multiple banks via item ID</p>
+        </div>
+      </div>
 
       {error ? (
         <Alert tone="error">
@@ -550,138 +587,144 @@ function PluggySection({
         </Alert>
       ) : null}
 
-      {/* Connection List */}
-      {hasConnections ? (
-        <div className="of-connections">
-          <h3>Connected banks</h3>
-          <ul className="of-connections__list">
-            {connections.map((conn) => (
-              <li key={conn.id} className="of-connections__item">
-                <div className="of-connections__info">
-                  <strong>{conn.institution_name}</strong>
-                  <span className={`badge badge--${conn.status === "active" ? "ok" : "warn"}`}>
-                    {conn.status === "needs_attention" ? "Needs attention" : conn.status}
-                  </span>
+      <div className="of-add-connection">
+        <form
+          className="of-add-connection__form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onAddConnection();
+          }}
+        >
+          <label className="field">
+            <span className="sr-only">Pluggy item ID</span>
+            <input
+              type="text"
+              placeholder="Item ID"
+              value={itemId}
+              onChange={(event) => onItemIdChange(event.target.value)}
+              disabled={addingConnection}
+            />
+          </label>
+          <button type="submit" className="btn" disabled={!itemId.trim() || addingConnection}>
+            {addingConnection ? "Adding…" : "Add item"}
+          </button>
+        </form>
+        <p className="of-hero__note">
+          The item ID is the UUID at the end of the connection URL on{" "}
+          <a href="https://meu.pluggy.ai/connections" target="_blank" rel="noopener noreferrer">
+            meu.pluggy.ai/connections/…
+          </a>
+        </p>
+      </div>
+
+      {connections.length ? (
+        <ul className="of-connections">
+          {connections.map((conn) => {
+            const extra = { connection_id: conn.id };
+            const debitPath = "/api/open-finance/pluggy/sync/expenses/preview";
+            const creditPath = "/api/open-finance/pluggy/sync/income/preview";
+            const cardPath = "/api/open-finance/pluggy/sync/credit-card/preview";
+            const investPath = "/api/open-finance/pluggy/sync/investments/preview";
+            return (
+              <li key={conn.id} className="of-connection">
+                <div className="of-connection__info">
+                  <div className="of-connection__title">
+                    <strong>{conn.institution_name}</strong>
+                    <span className={`badge badge--${conn.status === "active" ? "ok" : "warn"}`}>
+                      {statusBadgeLabel(conn.status)}
+                    </span>
+                  </div>
+                  {conn.last_synced_at ? (
+                    <span className="of-connections__meta">
+                      Last synced {new Date(conn.last_synced_at).toLocaleDateString()}
+                    </span>
+                  ) : (
+                    <span className="of-connections__meta">Not synced yet</span>
+                  )}
                   {conn.status === "needs_attention" ? (
                     <span className="of-connections__meta">
                       Reconnect this bank in Meu Pluggy (login error, outdated, or waiting for input).
                     </span>
                   ) : null}
-                  {conn.last_synced_at ? (
-                    <span className="of-connections__meta">
-                      Last synced: {new Date(conn.last_synced_at).toLocaleDateString()}
-                    </span>
-                  ) : null}
                 </div>
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--sm btn--danger"
-                  onClick={() => onRemoveConnection(conn.id)}
-                  disabled={removingConnection}
-                >
-                  Remove
-                </button>
+
+                <div className="of-period of-connection__period">
+                  <span className="of-period__label">Month</span>
+                  <div className="of-period__fields">
+                    <label className="field">
+                      <span className="sr-only">Month</span>
+                      <select
+                        value={period.month}
+                        onChange={(event) => onPeriod({ ...period, month: Number(event.target.value) })}
+                      >
+                        {months.map((label, index) => (
+                          <option key={label} value={index + 1}>{label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span className="sr-only">Year</span>
+                      <select
+                        value={period.year}
+                        onChange={(event) => onPeriod({ ...period, year: Number(event.target.value) })}
+                      >
+                        {years.map((year) => (
+                          <option key={year} value={year}>{year}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="of-connection__actions">
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--sm"
+                    disabled={previewing === `${debitPath}:${conn.id}`}
+                    onClick={() => void onPreview(debitPath, period, extra)}
+                  >
+                    {previewing === `${debitPath}:${conn.id}` ? "Loading…" : "Account debits"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--sm"
+                    disabled={previewing === `${creditPath}:${conn.id}`}
+                    onClick={() => void onPreview(creditPath, period, extra)}
+                  >
+                    {previewing === `${creditPath}:${conn.id}` ? "Loading…" : "Credits"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--sm"
+                    disabled={previewing === `${cardPath}:${conn.id}`}
+                    onClick={() => void onPreview(cardPath, period, extra)}
+                  >
+                    {previewing === `${cardPath}:${conn.id}` ? "Loading…" : "Card purchases"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--sm"
+                    disabled={previewing === `${investPath}:${conn.id}`}
+                    onClick={() => void onPreview(investPath, undefined, extra)}
+                  >
+                    {previewing === `${investPath}:${conn.id}` ? "Loading…" : "Investments"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--sm btn--danger"
+                    onClick={() => onRemoveConnection(conn.id)}
+                    disabled={removingConnection}
+                  >
+                    Remove
+                  </button>
+                </div>
               </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {/* Add Connection Form */}
-      <div className="of-add-connection">
-        <h3>{hasConnections ? "Add another bank" : "Add a bank"}</h3>
-        <p>
-          Copy the Item ID from your{" "}
-          <a href="https://meu.pluggy.ai" target="_blank" rel="noopener noreferrer">
-            Meu Pluggy dashboard
-          </a>{" "}
-          after connecting a bank there.
-        </p>
-        <form
-          className="of-add-connection__form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            onAddConnection();
-          }}
-        >
-          <input
-            type="text"
-            className="field"
-            placeholder="Item ID (e.g., 550e8400-e29b-41d4-a716-446655440000)"
-            value={itemId}
-            onChange={(e) => onItemIdChange(e.target.value)}
-            disabled={addingConnection}
-          />
-          <button type="submit" className="btn" disabled={!itemId.trim() || addingConnection}>
-            {addingConnection ? "Adding…" : "Add connection"}
-          </button>
-        </form>
-      </div>
-
-      {/* Sync Options */}
-      {hasConnections ? (
-        <div className="of-actions of-actions--pluggy">
-          <ImportCard
-            tone="debits"
-            icon="out"
-            title="Pluggy debits"
-            description={
-              <>
-                Import expenses from your Pluggy-connected banks as{" "}
-                <Link to="/finance/expenses">expenses</Link>.
-              </>
-            }
-            available
-            unavailable=""
-            periodLabel="Month"
-            period={debitPeriod}
-            months={months}
-            years={years}
-            onPeriod={onDebitPeriodChange}
-            loading={previewing === "/api/open-finance/pluggy/sync/expenses/preview"}
-            submitLabel="Preview expenses"
-            onPreview={() => void onPreview("/api/open-finance/pluggy/sync/expenses/preview", debitPeriod)}
-          />
-          <ImportCard
-            tone="credits"
-            icon="in"
-            title="Pluggy credits"
-            description={
-              <>
-                Import income from your Pluggy-connected banks as{" "}
-                <Link to="/finance/income">income</Link>.
-              </>
-            }
-            available
-            unavailable=""
-            periodLabel="Month"
-            period={creditPeriod}
-            months={months}
-            years={years}
-            onPeriod={onCreditPeriodChange}
-            loading={previewing === "/api/open-finance/pluggy/sync/income/preview"}
-            submitLabel="Preview income"
-            onPreview={() => void onPreview("/api/open-finance/pluggy/sync/income/preview", creditPeriod)}
-          />
-          <ImportCard
-            tone="investments"
-            icon="bag"
-            title="Pluggy investments"
-            description={
-              <>
-                Sync investment positions from Pluggy to{" "}
-                <Link to="/portfolio/investments">Other investments</Link>.
-              </>
-            }
-            available
-            unavailable=""
-            note="Pulls all fixed-income positions. Stocks/ETFs stay in Securities."
-            loading={previewing === "/api/open-finance/pluggy/sync/investments/preview"}
-            submitLabel="Preview investments"
-            onPreview={() => void onPreview("/api/open-finance/pluggy/sync/investments/preview")}
-          />
-        </div>
-      ) : null}
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="of-hero__note">No Pluggy banks added yet.</p>
+      )}
     </section>
   );
 }
