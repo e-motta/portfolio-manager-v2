@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
@@ -191,6 +192,63 @@ def _paginate(path: str, params: dict[str, Any] | None = None) -> list[dict]:
     return results
 
 
+def _cursor_next_path(path: str, next_value: str) -> str:
+    """Turn a v2 ``next`` value into a request path.
+
+    Pluggy returns a ready-to-use query string (``?accountId=...&after=...``)
+    that must be appended as-is. Some payloads use a full URL or a bare
+    query string; accept those without rebuilding ``after``.
+    """
+    text = str(next_value).strip()
+    if not text:
+        return path
+    if text.startswith("http://") or text.startswith("https://"):
+        parsed = urlparse(text)
+        return f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
+    if text.startswith("/"):
+        return text
+    if text.startswith("?"):
+        return f"{path}{text}"
+    return f"{path}?{text}"
+
+
+def _paginate_cursor(path: str, params: dict[str, Any] | None = None) -> list[dict]:
+    """Fetch every page of a Pluggy v2 cursor endpoint.
+
+    The first request uses ``params``. Later pages follow ``next`` until it is
+    null. Warns if the page cap is hit. Must not send ``page`` / ``pageSize``.
+    """
+    results: list[dict] = []
+    request_path = path
+    request_params: dict[str, Any] | None = dict(params or {})
+    page = 1
+
+    while page <= MAX_PAGES:
+        data = _get(request_path, request_params)
+        if not isinstance(data, dict):
+            break
+
+        items = data.get("results", [])
+        if isinstance(items, list):
+            results.extend(items)
+
+        next_value = data.get("next")
+        if not next_value:
+            break
+        if page >= MAX_PAGES:
+            PaginationCapWarning.add(
+                f"Pluggy pagination cap reached for {path}: "
+                f"fetched {len(results)} items"
+            )
+            break
+
+        request_path = _cursor_next_path(path, str(next_value))
+        request_params = None
+        page += 1
+
+    return results
+
+
 def _validate_uuid(value: str) -> str:
     """Validate that a string is a valid UUID, returning it in lowercase canonical form.
 
@@ -246,15 +304,20 @@ def fetch_transactions(
     from_date: date | None = None,
     to_date: date | None = None,
 ) -> list[dict[str, Any]]:
-    """Fetch transactions for an account with optional date range."""
+    """Fetch transactions for an account via GET /v2/transactions.
+
+    v1 ``GET /transactions`` is deprecated (410 ENDPOINT_DEPRECATED). v2
+    accepts ``accountId``, ``dateFrom``, and ``dateTo`` and paginates with
+    a ``next`` cursor. It rejects ``from`` / ``to`` / ``pageSize``.
+    """
     validated_id = _validate_uuid(account_id)
     params: dict[str, Any] = {"accountId": validated_id}
     if from_date:
-        params["from"] = from_date.isoformat()
+        params["dateFrom"] = from_date.isoformat()
     if to_date:
-        params["to"] = to_date.isoformat()
+        params["dateTo"] = to_date.isoformat()
 
-    return _paginate("/transactions", params)
+    return _paginate_cursor("/v2/transactions", params)
 
 
 def fetch_credit_cards(item_id: str) -> list[dict[str, Any]]:

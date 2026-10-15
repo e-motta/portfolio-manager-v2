@@ -1,5 +1,6 @@
 """Tests for the Pluggy API client."""
 
+from datetime import date
 from unittest.mock import patch
 
 import httpx
@@ -12,10 +13,14 @@ from app.services.pluggy_client import (
     PluggyInvalidItemIdError,
     _get,
     _paginate,
+    _paginate_cursor,
     _validate_uuid,
     clear_auth_cache,
     fetch_item,
+    fetch_transactions,
 )
+
+ACCOUNT_ID = "550e8400-e29b-41d4-a716-446655440000"
 
 
 @pytest.fixture(autouse=True)
@@ -69,6 +74,71 @@ def test_paginate_warns_when_page_cap_is_hit():
 
     with patch("app.services.pluggy_client._get", side_effect=_page):
         results = _paginate("/transactions")
+
+    assert len(results) == MAX_PAGES
+    warnings = PaginationCapWarning.pop_all()
+    assert warnings
+    assert "pagination cap" in warnings[0]
+
+
+def test_fetch_transactions_uses_v2_date_params():
+    with patch("app.services.pluggy_client._get") as mock_get:
+        mock_get.return_value = {"results": [{"id": "1"}], "next": None}
+        results = fetch_transactions(
+            ACCOUNT_ID,
+            from_date=date(2026, 6, 1),
+            to_date=date(2026, 6, 30),
+        )
+
+    assert results == [{"id": "1"}]
+    path, params = mock_get.call_args.args
+    assert path == "/v2/transactions"
+    assert params["accountId"] == ACCOUNT_ID
+    assert params["dateFrom"] == "2026-06-01"
+    assert params["dateTo"] == "2026-06-30"
+    assert "from" not in params
+    assert "to" not in params
+    assert "pageSize" not in params
+    assert "page" not in params
+
+
+def test_fetch_transactions_follows_next_cursor():
+    pages = [
+        {
+            "results": [{"id": "a"}],
+            "next": f"?accountId={ACCOUNT_ID}&after=CURSOR1",
+        },
+        {
+            "results": [{"id": "b"}],
+            "next": None,
+        },
+    ]
+    with patch("app.services.pluggy_client._get", side_effect=pages) as mock_get:
+        results = fetch_transactions(ACCOUNT_ID, from_date=date(2026, 6, 1))
+
+    assert [row["id"] for row in results] == ["a", "b"]
+    assert mock_get.call_count == 2
+    first_path, first_params = mock_get.call_args_list[0].args
+    assert first_path == "/v2/transactions"
+    assert first_params["accountId"] == ACCOUNT_ID
+    assert first_params["dateFrom"] == "2026-06-01"
+    assert "pageSize" not in first_params
+    second_path, second_params = mock_get.call_args_list[1].args
+    assert second_path == f"/v2/transactions?accountId={ACCOUNT_ID}&after=CURSOR1"
+    assert second_params is None
+
+
+def test_paginate_cursor_warns_when_page_cap_is_hit():
+    from app.services.pluggy_client import MAX_PAGES
+
+    def _page(path, _params):
+        return {
+            "results": [{"id": path}],
+            "next": "?accountId=x&after=MORE",
+        }
+
+    with patch("app.services.pluggy_client._get", side_effect=_page):
+        results = _paginate_cursor("/v2/transactions", {"accountId": "x"})
 
     assert len(results) == MAX_PAGES
     warnings = PaginationCapWarning.pop_all()
