@@ -32,16 +32,25 @@ depends_on: Union[str, Sequence[str], None] = None
 def _deduplicate_table(bind, table_name: str, dialect: str) -> None:
     """Remove duplicate rows with the same (user_id, external_id) keeping the earliest."""
     if dialect == "sqlite":
+        # Keep the oldest row by created_at; ties keep the lower id (same as Postgres).
         bind.execute(
             sa.text(f"""
                 DELETE FROM {table_name}
-                WHERE id NOT IN (
-                    SELECT MIN(id)
-                    FROM {table_name}
-                    WHERE external_id IS NOT NULL
-                    GROUP BY user_id, external_id
-                )
-                AND external_id IS NOT NULL
+                WHERE external_id IS NOT NULL
+                  AND EXISTS (
+                    SELECT 1
+                    FROM {table_name} AS keeper
+                    WHERE keeper.external_id IS NOT NULL
+                      AND keeper.user_id = {table_name}.user_id
+                      AND keeper.external_id = {table_name}.external_id
+                      AND (
+                        keeper.created_at < {table_name}.created_at
+                        OR (
+                          keeper.created_at = {table_name}.created_at
+                          AND keeper.id < {table_name}.id
+                        )
+                      )
+                  )
             """)
         )
     else:
