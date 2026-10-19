@@ -7,7 +7,9 @@
       "subtype": "CDB",
       "institution": "Nubank",
       "balance": 45000.0,
-      "amount": 45000.0,
+      "value": 1.04,
+      "amount": 43000.0,
+      "quantity": 43000,
       "currencyCode": "BRL"
     },
     {
@@ -27,7 +29,9 @@
       "subtype": "REIT",
       "institution": "XP",
       "balance": 8500.0,
+      "value": 85.0,
       "amount": 100.0,
+      "quantity": 100,
       "currencyCode": "BRL"
     },
     {

@@ -480,13 +480,18 @@ class PluggyTransaction:
 
 @dataclass
 class PluggyInvestment:
-    """Represents a Pluggy investment position."""
+    """Represents a Pluggy investment position.
+
+    ``balance`` is the net position (after fees and taxes). ``value`` is the
+    quota unit price and must not be treated as the position total.
+    """
 
     id: str
     item_id: str
     type: str
     subtype: str | None
     name: str
+    balance: Decimal
     value: Decimal
     quantity: Decimal | None
     currency: str
@@ -496,13 +501,17 @@ class PluggyInvestment:
 
     @classmethod
     def from_api(cls, data: dict[str, Any]) -> "PluggyInvestment":
+        raw_balance = data.get("balance")
+        if raw_balance is None:
+            raw_balance = data.get("amount", 0)
         return cls(
             id=str(data.get("id", "")),
             item_id=str(data.get("itemId", "")),
             type=data.get("type", ""),
             subtype=data.get("subtype"),
             name=data.get("name", ""),
-            value=_parse_decimal(data.get("value") or data.get("balance", 0)),
+            balance=_parse_decimal(raw_balance),
+            value=_parse_decimal(data.get("value", 0)),
             quantity=_parse_decimal(data.get("quantity")),
             currency=data.get("currencyCode", "BRL"),
             code=data.get("code"),

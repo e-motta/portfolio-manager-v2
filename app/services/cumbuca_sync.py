@@ -766,6 +766,20 @@ def _normalize_transaction(
     return _normalize_expense_transaction(tx, account_lookup, source_kind=source_kind)
 
 
+def cumbuca_investment_current_value(item: dict[str, Any]) -> Decimal | None:
+    """Lump-sum current value for Other Investments (no quantity × price).
+
+    Prefer ``balance`` / ``currentValue``, then ``amount``. Never use ``value``
+    (a unit/quota price in Pluggy-shaped payloads) and never multiply
+    ``quantity`` by a unit price.
+    """
+    for key in ("balance", "currentValue", "current_value", "amount"):
+        parsed = _parse_decimal(item.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def _normalize_investment(
     item: dict[str, Any],
     slug_by_name: dict[str, str],
@@ -777,9 +791,7 @@ def _normalize_investment(
     if not external_id:
         return None
 
-    balance = _parse_decimal(
-        item.get("balance") or item.get("currentValue") or item.get("amount")
-    )
+    balance = cumbuca_investment_current_value(item)
     if balance is None or balance < 0:
         return None
 

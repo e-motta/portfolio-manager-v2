@@ -1,6 +1,7 @@
 """Tests for the Pluggy API client."""
 
 from datetime import date
+from decimal import Decimal
 from unittest.mock import patch
 
 import httpx
@@ -11,6 +12,7 @@ from app.services.pluggy_client import (
     PaginationCapWarning,
     PluggyAuthError,
     PluggyInvalidItemIdError,
+    PluggyInvestment,
     _get,
     _paginate,
     _paginate_cursor,
@@ -168,3 +170,21 @@ def test_get_raises_after_second_401():
         with pytest.raises(PluggyAuthError):
             _get("/items/x")
     assert mock_get.call_count == 2
+
+
+def test_pluggy_investment_from_api_keeps_balance_and_unit_price_separate():
+    parsed = PluggyInvestment.from_api({
+        "id": "inv-1",
+        "itemId": ACCOUNT_ID,
+        "type": "FIXED_INCOME",
+        "subtype": "CDB",
+        "name": "CDB",
+        "balance": 52000.00,
+        "value": 1.04,
+        "amount": 50000.00,
+        "quantity": 50000,
+        "currencyCode": "BRL",
+    })
+    assert parsed.balance == Decimal("52000.00")
+    assert parsed.value == Decimal("1.04")
+    assert parsed.quantity == Decimal("50000")
