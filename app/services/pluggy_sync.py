@@ -948,12 +948,33 @@ def build_pluggy_investment_import_rows(
     return rows, warnings
 
 
+def pluggy_investment_current_value(inv: dict[str, Any]) -> Decimal | None:
+    """Lump-sum current value for Other Investments (no quantity × price).
+
+    Pluggy documents ``balance`` as the net position after fees and taxes,
+    ``value`` as the quota unit price, and ``amount`` as the gross amount.
+    The app stores a single ``current_value`` on ``Investment``, so this
+    uses ``balance`` and never multiplies ``quantity`` by ``value``.
+    ``amount`` is a fallback only when ``balance`` is absent.
+    """
+    for key in ("balance", "amount"):
+        parsed = _parse_decimal(inv.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def _normalize_pluggy_investment(
     inv: dict[str, Any],
     connection: OpenFinanceConnection,
     slug_by_name: dict[str, str],
 ) -> PluggyImportInvestmentRow | None:
-    """Normalize a Pluggy investment to an import row."""
+    """Normalize a Pluggy investment to an import row.
+
+    Exchange-traded positions stay in Securities. Other Investments store
+    ``current_value`` as Pluggy's ``balance`` (see
+    ``pluggy_investment_current_value``).
+    """
     if is_exchange_traded_investment(inv):
         return None
 
@@ -963,7 +984,7 @@ def _normalize_pluggy_investment(
 
     external_id = f"pluggy:{inv_id}"
 
-    balance = _parse_decimal(inv.get("value") or inv.get("balance") or inv.get("amount"))
+    balance = pluggy_investment_current_value(inv)
     if balance is None or balance < 0:
         return None
 

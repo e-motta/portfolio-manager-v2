@@ -30,6 +30,7 @@ from app.services.pluggy_sync import (
     map_asset_type_slug,
     map_category,
     map_payment_account,
+    pluggy_investment_current_value,
     remove_pluggy_connection,
     suggest_pluggy_debit_import_kind,
 )
@@ -419,7 +420,8 @@ class TestPluggyInvestmentImport:
         assert "CDB Nubank 100% CDI" in names
         assert "Tesouro Selic 2029" in names
         assert "Poupança" in names
-        assert "PETR4" not in names
+        assert "Fundo DI" not in names
+        assert "BOVA11" not in names
 
     def test_investment_import_maps_asset_types(self, session, pluggy_investments):
         user = session.exec(select(User)).one()
@@ -447,6 +449,119 @@ class TestPluggyInvestmentImport:
         poupanca = next((r for r in rows if "Poupança" in r.name), None)
         assert poupanca is not None
         assert poupanca.asset_type_slug == "cash"
+
+    def test_current_value_uses_balance_not_unit_price(self, session, pluggy_investments):
+        user = session.exec(select(User)).one()
+        _add_pluggy_connection(session, user)
+        connections = get_pluggy_connections(session, user.id)
+
+        with patch("app.services.pluggy_sync.fetch_investments") as mock_inv:
+            mock_inv.return_value = pluggy_investments["results"]
+            rows, _ = build_pluggy_investment_import_rows(session, user.id, connections)
+
+        cdb = next(row for row in rows if row.external_id == "pluggy:inv-pluggy-cdb-001")
+        tesouro = next(row for row in rows if "Tesouro" in row.name)
+        assert cdb.current_value == Decimal("52000.00")
+        assert tesouro.current_value == Decimal("85000.00")
+        assert cdb.current_value != Decimal("1.04")
+        assert cdb.current_value != Decimal("50000.00")
+
+    def test_resync_updates_existing_pluggy_investment_value(self, session, pluggy_investments):
+        from app.services.cumbuca_sync import ImportInvestmentRow, import_selected_investments
+        from app.services.pluggy_sync import PLUGGY_SOURCE
+
+        user = session.exec(select(User)).one()
+        _add_pluggy_connection(session, user)
+        connections = get_pluggy_connections(session, user.id)
+
+        with patch("app.services.pluggy_sync.fetch_investments") as mock_inv:
+            mock_inv.return_value = pluggy_investments["results"]
+            rows, _ = build_pluggy_investment_import_rows(session, user.id, connections)
+
+        converted = [
+            ImportInvestmentRow(
+                row_key=row.row_key,
+                external_id=row.external_id,
+                institution=row.institution,
+                name=row.name,
+                asset_type_slug=row.asset_type_slug,
+                current_value=row.current_value,
+                already_exists=row.already_exists,
+                selected=row.selected,
+                is_update=row.is_update,
+            )
+            for row in rows
+        ]
+        created, updated = import_selected_investments(
+            session, converted, {row.row_key for row in converted},
+            source=PLUGGY_SOURCE, user_id=user.id,
+        )
+        assert created == len(converted)
+        assert updated == 0
+
+        stored = session.exec(
+            select(Investment).where(Investment.external_id == "pluggy:inv-pluggy-cdb-001")
+        ).one()
+        stored.current_value = Decimal("1.04")
+        session.add(stored)
+        session.commit()
+
+        with patch("app.services.pluggy_sync.fetch_investments") as mock_inv:
+            mock_inv.return_value = pluggy_investments["results"]
+            again, _ = build_pluggy_investment_import_rows(session, user.id, connections)
+
+        cdb = next(row for row in again if row.external_id == "pluggy:inv-pluggy-cdb-001")
+        assert cdb.is_update
+        assert cdb.already_exists
+        assert cdb.selected
+        assert cdb.current_value == Decimal("52000.00")
+
+        converted_again = [
+            ImportInvestmentRow(
+                row_key=row.row_key,
+                external_id=row.external_id,
+                institution=row.institution,
+                name=row.name,
+                asset_type_slug=row.asset_type_slug,
+                current_value=row.current_value,
+                already_exists=row.already_exists,
+                selected=row.selected,
+                is_update=row.is_update,
+            )
+            for row in again
+        ]
+        created, updated = import_selected_investments(
+            session, converted_again, {cdb.row_key},
+            source=PLUGGY_SOURCE, user_id=user.id,
+        )
+        assert created == 0
+        assert updated == 1
+        session.refresh(stored)
+        assert stored.current_value == Decimal("52000.00")
+        assert stored.source == "pluggy"
+
+
+def test_pluggy_investment_current_value_ignores_unit_price():
+    cdb = {
+        "type": "FIXED_INCOME",
+        "subtype": "CDB",
+        "balance": 52000.00,
+        "value": 1.04,
+        "amount": 50000.00,
+        "quantity": 50000,
+    }
+    fund = {
+        "type": "MUTUAL_FUND",
+        "subtype": "ETF",
+        "balance": 15000.00,
+        "value": 3.25,
+        "amount": 14000.00,
+        "quantity": 4307.69,
+    }
+    assert pluggy_investment_current_value(cdb) == Decimal("52000.00")
+    assert pluggy_investment_current_value(fund) == Decimal("15000.00")
+    assert pluggy_investment_current_value({"value": 1.04, "quantity": 10}) is None
+    assert pluggy_investment_current_value({"amount": 4800.00}) == Decimal("4800.00")
 
 
 class TestPluggyDeduplication:

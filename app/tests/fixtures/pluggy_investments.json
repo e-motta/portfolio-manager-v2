@@ -6,7 +6,10 @@
       "type": "FIXED_INCOME",
       "subtype": "CDB",
       "name": "CDB Nubank 100% CDI",
-      "value": 52000.00,
+      "balance": 52000.00,
+      "value": 1.04,
+      "amount": 50000.00,
+      "quantity": 50000,
       "currencyCode": "BRL",
       "code": null,
       "isin": null
@@ -17,7 +20,10 @@
       "type": "FIXED_INCOME",
       "subtype": "TREASURY",
       "name": "Tesouro Selic 2029",
-      "value": 85000.00,
+      "balance": 85000.00,
+      "value": 1.12,
+      "amount": 80000.00,
+      "quantity": 1,
       "currencyCode": "BRL",
       "code": null,
       "isin": null
@@ -28,7 +34,24 @@
       "type": "FIXED_INCOME",
       "subtype": "SAVINGS",
       "name": "Poupança",
-      "value": 5000.00,
+      "balance": 5000.00,
+      "value": 1.00,
+      "amount": 4800.00,
+      "quantity": 1,
+      "currencyCode": "BRL",
+      "code": null,
+      "isin": null
+    },
+    {
+      "id": "inv-pluggy-fund-001",
+      "itemId": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "MUTUAL_FUND",
+      "subtype": "INVESTMENT_FUND",
+      "name": "Fundo DI",
+      "balance": 15000.00,
+      "value": 3.25,
+      "amount": 14000.00,
+      "quantity": 4307.69,
       "currencyCode": "BRL",
       "code": null,
       "isin": null
@@ -37,16 +60,16 @@
       "id": "inv-pluggy-stock-001",
       "itemId": "550e8400-e29b-41d4-a716-446655440000",
       "type": "EQUITY",
-      "subtype": "STOCK",
-      "name": "PETR4",
-      "value": 12500.00,
+      "subtype": "ETF",
+      "name": "BOVA11",
+      "balance": 12500.00,
+      "value": 25.00,
+      "amount": 12000.00,
       "quantity": 500,
       "currencyCode": "BRL",
-      "code": "PETR4",
-      "isin": "BRPETRACNPR6"
+      "code": "BOVA11",
+      "isin": "BRBOVACTF007"
     }
   ],
-  "page": 1,
-  "total": 4,
-  "totalPages": 1
+  "next": null
 }

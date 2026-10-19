@@ -27,6 +27,7 @@ from app.services.cumbuca_sync import (
     build_credit_card_expense_import_rows,
     build_expense_import_rows,
     build_investment_import_rows,
+    cumbuca_investment_current_value,
     import_selected_account_credits,
     import_selected_account_debits,
     import_selected_expenses,
@@ -939,6 +940,25 @@ def test_build_investment_import_rows_filters_equity(session):
     names = {row.name for row in rows}
     assert "HGLG11" not in names
     assert "CDB Liquidez Diária" in names
+
+
+def test_cumbuca_investment_current_value_uses_balance_not_unit_price(session):
+    rows = build_investment_import_rows(session)
+    cdb = next(row for row in rows if row.external_id == "inv-cdb-nubank-001")
+    assert cdb.current_value == Decimal("45000.0")
+    assert cdb.current_value != Decimal("1.04")
+    assert cdb.current_value != Decimal("43000.0")
+
+    fund = {
+        "type": "MUTUAL_FUND",
+        "subtype": "ETF",
+        "balance": 8500.0,
+        "value": 85.0,
+        "amount": 100.0,
+        "quantity": 100,
+    }
+    assert cumbuca_investment_current_value(fund) == Decimal("8500.0")
+    assert cumbuca_investment_current_value({"value": 85.0, "quantity": 100}) is None
 
 
 def test_import_selected_investments_create_and_update(session):
