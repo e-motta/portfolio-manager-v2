@@ -25,11 +25,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline' https://stats.eduardomotta.dev; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
             "font-src 'self' data:; "
-            "connect-src 'self' https://query1.finance.yahoo.com https://query2.finance.yahoo.com; "
+            "connect-src 'self' https://query1.finance.yahoo.com https://query2.finance.yahoo.com https://stats.eduardomotta.dev; "
             "frame-ancestors 'none'"
         )
         return response
